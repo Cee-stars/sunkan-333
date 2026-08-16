@@ -13,6 +13,7 @@
   var LS_SETTINGS = 'sunkan:settings';
   var LS_DECKS = 'sunkan:decks';
   var LS_STARS = 'sunkan:stars';
+  var LS_ADDED = 'sunkan:added';   // アプリ内で 1 文ずつ足した分（デッキ id ごと）
 
   var MASK_STYLES = ['blur', 'block', 'hidden'];
   var DIRECTIONS = ['ja-en', 'en-ja'];
@@ -27,6 +28,7 @@
     autoHide: false,
     direction: 'ja-en',
     starredOnly: false,
+    autoSpeak: false,
     deckId: ''
   };
 
@@ -148,6 +150,7 @@
       autoHide: DEFAULT_SETTINGS.autoHide,
       direction: DEFAULT_SETTINGS.direction,
       starredOnly: DEFAULT_SETTINGS.starredOnly,
+      autoSpeak: DEFAULT_SETTINGS.autoSpeak,
       deckId: DEFAULT_SETTINGS.deckId
     };
     if (!raw || typeof raw !== 'object') return s;
@@ -156,6 +159,7 @@
     s.direction = inList(str(raw.direction), DIRECTIONS, s.direction);
     if (isBool(raw.autoHide)) s.autoHide = raw.autoHide;
     if (isBool(raw.starredOnly)) s.starredOnly = raw.starredOnly;
+    if (isBool(raw.autoSpeak)) s.autoSpeak = raw.autoSpeak;
     if (typeof raw.deckId === 'string') s.deckId = raw.deckId;
     return s;
   }
@@ -212,6 +216,27 @@
         if (typeof arr[i] === 'string' && arr[i]) ids.push(arr[i]);
       }
       out[key] = ids;
+    }
+    return out;
+  }
+
+  /** { deckId: [{ja,en,note}, ...] } の形に整える。壊れた項目は落とす */
+  function sanitizeAdded(raw) {
+    var out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (var key in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
+      var arr = raw[key];
+      if (!Array.isArray(arr)) continue;
+      var items = [];
+      for (var i = 0; i < arr.length; i++) {
+        var it = arr[i];
+        if (!it || typeof it !== 'object') continue;
+        var ja = trim(it.ja), en = trim(it.en);
+        if (!ja || !en) continue;
+        items.push({ ja: ja, en: en, note: trim(it.note) });
+      }
+      if (items.length) out[key] = items;
     }
     return out;
   }
@@ -377,10 +402,10 @@
     return result;
   }
 
-  /** デッキを TSV 文字列に（タブ・改行はスペースに潰す） */
-  function deckToTSV(deck) {
+  /** {ja,en,note} の配列を TSV 文字列に（タブ・改行はスペースに潰す） */
+  function itemsToTSV(items) {
     var lines = [];
-    var items = (deck && deck.items) || [];
+    items = items || [];
     var hasNote = false;
     var i;
     for (i = 0; i < items.length; i++) {
@@ -413,6 +438,7 @@
     shuffled: false,
     query: '',
     stars: {},        // { deckId: [itemId...] }
+    added: {},        // { deckId: [{ja,en,note}...] } アプリ内で足した文
     settings: sanitizeSettings(readJSON(LS_SETTINGS)),
     currentId: null,
     lastRevealed: null,
@@ -455,6 +481,18 @@
   var elBtnData = $('btn-data');
   var elBtnSettings = $('btn-settings');
 
+  var elBtnAdd = $('btn-add');
+  var elBtnAddRow = $('btn-add-row');
+  var elAddDialog = $('add-dialog');
+  var elAddDeckName = $('add-deck-name');
+  var elAddJa = $('add-ja');
+  var elAddEn = $('add-en');
+  var elAddNote = $('add-note');
+  var elAddStatus = $('add-status');
+  var elAddSave = $('btn-add-save');
+  var elAddClose = $('btn-add-close');
+  var elAddedList = $('added-list');
+
   var elDataDialog = $('data-dialog');
   var elImportName = $('import-name');
   var elImportText = $('import-text');
@@ -469,6 +507,7 @@
   var elOptAutoHide = $('opt-auto-hide');
   var elOptHideJa = $('opt-hide-ja');
   var elOptStarredOnly = $('opt-starred-only');
+  var elOptAutoSpeak = $('opt-auto-speak');
   var elOptFontSize = $('opt-font-size');
   var elOptFontOut = $('opt-font-size-out');
 
@@ -547,6 +586,48 @@
    * 10. ★（チェック）の保存
    * ========================================================== */
 
+  /* --- アプリ内で足した文 ------------------------------------- */
+
+  function loadAdded() {
+    state.added = sanitizeAdded(readJSON(LS_ADDED));
+  }
+
+  function saveAdded() {
+    writeJSON(LS_ADDED, state.added);
+  }
+
+  function addedFor(deckId) {
+    if (!deckId) return [];
+    return state.added[deckId] || [];
+  }
+
+  /** 1 文足す。同じ内容が既にあれば false を返す */
+  function addSentence(deckId, ja, en, note) {
+    if (!deckId || !ja || !en) return false;
+    var list = state.added[deckId] || (state.added[deckId] = []);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].ja === ja && list[i].en === en) return false;
+    }
+    list.push({ ja: ja, en: en, note: note || '' });
+    saveAdded();
+    return true;
+  }
+
+  /** 足した文を 1 件消す（deck の元データには触らない） */
+  function removeAddedSentence(deckId, ja, en) {
+    var list = state.added[deckId];
+    if (!list) return false;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].ja === ja && list[i].en === en) {
+        list.splice(i, 1);
+        if (!list.length) delete state.added[deckId];
+        saveAdded();
+        return true;
+      }
+    }
+    return false;
+  }
+
   function loadStars() {
     state.stars = sanitizeStars(readJSON(LS_STARS));
   }
@@ -581,7 +662,12 @@
   function buildRecords(deck) {
     var records = [];
     var used = {};
-    var items = (deck && deck.items) || [];
+    var base = (deck && deck.items) || [];
+    var extra = addedFor(deck && deck.id);
+    // 収録データの後ろに、アプリ内で足した分をつなげる。
+    // 元のデッキ（data.js やユーザーの取り込み）は書き換えない。
+    var items = base.concat(extra);
+    var firstAdded = base.length;
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       var id = trim(it.id);
@@ -602,6 +688,7 @@
         jaLower: it.ja.toLowerCase(),
         enLower: it.en.toLowerCase(),
         noteLower: (it.note || '').toLowerCase(),
+        added: i >= firstAdded,
         el: null,
         numEl: null,
         mainEl: null,
@@ -649,6 +736,14 @@
 
     // 読み上げ API が無い環境ではボタンごと隠す
     if (speakEl && !state.speechOK) speakEl.hidden = true;
+
+    // 自分で足した文だけ、その場で消せるようにする。
+    // 収録データや取り込んだ表は、行単位では消せない（セットごと削除する）。
+    if (record.added) {
+      li.classList.add('is-added');
+      var delEl = li.querySelector('.row-delete');
+      if (delEl) delEl.hidden = false;
+    }
 
     record.el = li;
     record.numEl = numEl;
@@ -743,6 +838,15 @@
     state.lastRevealed = next ? rec : null;
     setCurrent(rec, false);
     syncToggleAllButton();
+    if (next) maybeAutoSpeak(rec);
+  }
+
+  /** 「表示したら自動で読み上げる」設定のときだけ喋る。
+      逆向き（英語→日本語）のときは英語が最初から見えているので読み上げない。 */
+  function maybeAutoSpeak(rec) {
+    if (!rec || !state.settings.autoSpeak) return;
+    if (state.settings.direction === 'en-ja') return;
+    speak(rec.en);
   }
 
   function setAllRevealed(on) {
@@ -969,6 +1073,121 @@
   }
 
   /* ============================================================
+   * 17b. 1 文ずつ追加する
+   * ========================================================== */
+
+  /** いま開いているセットを保ったまま、行を作り直して表示を更新する */
+  function refreshCurrentDeck() {
+    if (!state.deck) return;
+    var keepQuery = state.query;
+    var keepCurrent = state.currentId;
+    selectDeck(state.deck.id, { persist: false });
+    if (keepQuery && elSearch) {
+      elSearch.value = keepQuery;
+      state.query = keepQuery;
+      applyFilter();
+    }
+    if (keepCurrent && state.byId[keepCurrent]) setCurrent(state.byId[keepCurrent], false);
+  }
+
+  function currentDeckId() {
+    return state.deck ? state.deck.id : '';
+  }
+
+  function setAddStatus(msg, isError) {
+    if (!elAddStatus) return;
+    elAddStatus.textContent = msg || '';
+    if (isError) elAddStatus.setAttribute('data-error', 'true');
+    else elAddStatus.removeAttribute('data-error');
+  }
+
+  /** 入力欄の内容を 1 文として足す。連続で足せるよう、欄を空にして日本語へ戻す */
+  function submitAddSentence() {
+    var deckId = currentDeckId();
+    if (!deckId) {
+      setAddStatus('先にセットを選んでください。', true);
+      return;
+    }
+    var ja = elAddJa ? trim(elAddJa.value) : '';
+    var en = elAddEn ? trim(elAddEn.value) : '';
+    var note = elAddNote ? trim(elAddNote.value) : '';
+
+    if (!ja || !en) {
+      setAddStatus('日本語と英語の両方を入れてください。', true);
+      (!ja && elAddJa ? elAddJa : elAddEn).focus();
+      return;
+    }
+
+    if (!addSentence(deckId, ja, en, note)) {
+      setAddStatus('同じ文がすでにあります。', true);
+      return;
+    }
+
+    if (elAddJa) elAddJa.value = '';
+    if (elAddEn) elAddEn.value = '';
+    if (elAddNote) elAddNote.value = '';
+
+    refreshCurrentDeck();
+    renderAddedList();
+    setAddStatus('「' + ja + '」を追加しました。続けて入力できます。', false);
+    if (elAddJa) elAddJa.focus();
+  }
+
+  /** 行の 🗑 から呼ばれる。自分で足した文だけ消せる */
+  function deleteAddedRecord(rec) {
+    if (!rec || !rec.added) return;
+    if (!window.confirm('「' + rec.ja + '」を削除します。よろしいですか？')) return;
+    removeAddedSentence(currentDeckId(), rec.ja, rec.en);
+    refreshCurrentDeck();
+    renderAddedList();
+  }
+
+  function renderAddedList() {
+    if (!elAddedList) return;
+    while (elAddedList.firstChild) elAddedList.removeChild(elAddedList.firstChild);
+
+    var list = addedFor(currentDeckId());
+    if (!list.length) {
+      var li0 = document.createElement('li');
+      li0.className = 'added-empty';
+      li0.textContent = 'まだありません。';
+      elAddedList.appendChild(li0);
+      return;
+    }
+
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      var li = document.createElement('li');
+      li.className = 'added-item';
+
+      var textSpan = document.createElement('span');
+      textSpan.className = 'added-text';
+      textSpan.textContent = item.ja + ' / ' + item.en;
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn--ghost added-delete';
+      del.textContent = '削除';
+      del.setAttribute('data-ja', item.ja);
+      del.setAttribute('data-en', item.en);
+      del.setAttribute('aria-label', item.ja + ' を削除');
+
+      li.appendChild(textSpan);
+      li.appendChild(del);
+      elAddedList.appendChild(li);
+    }
+  }
+
+  /** ダイアログを開くたびに、対象セット名と一覧を今の状態に合わせる */
+  function prepareAddDialog() {
+    if (elAddDeckName) {
+      elAddDeckName.textContent = state.deck ? '「' + state.deck.name + '」' : '';
+    }
+    setAddStatus('', false);
+    renderAddedList();
+  }
+
+  /* ============================================================
    * 18. ステータスバー
    * ========================================================== */
 
@@ -1017,6 +1236,13 @@
     if (starBtn && elRows.contains(starBtn)) {
       var recT = recordFromEvent(starBtn);
       if (recT) toggleStar(recT);
+      return;
+    }
+
+    var delBtn = target.closest('.row-delete');
+    if (delBtn && elRows.contains(delBtn)) {
+      var recD = recordFromEvent(delBtn);
+      if (recD) deleteAddedRecord(recD);
       return;
     }
 
@@ -1291,6 +1517,12 @@
       saveStars();
     }
 
+    // このセットに足した文も一緒に片付ける
+    if (state.added[deckId]) {
+      delete state.added[deckId];
+      saveAdded();
+    }
+
     renderDeckSelect();
     renderDeckManageList();
 
@@ -1317,12 +1549,14 @@
       if (elImportPreview) elImportPreview.textContent = 'コピーできるセットがありません。';
       return;
     }
-    var tsv = deckToTSV(state.deck);
+    // 表示されている全行（＝収録分＋自分で足した分）をそのまま書き出す
+    var tsv = itemsToTSV(state.records);
+    var rowCount = state.records.length;
 
     function done(ok) {
       if (!elImportPreview) return;
       elImportPreview.textContent = ok
-        ? state.deck.name + ' を TSV でコピーしました（' + state.deck.items.length + ' 行）。'
+        ? state.deck.name + ' を TSV でコピーしました（' + rowCount + ' 行）。'
         : 'コピーできませんでした。テキストを手動で選択してコピーしてください。';
     }
 
@@ -1371,6 +1605,11 @@
     if (elOptAutoHide) elOptAutoHide.checked = state.settings.autoHide;
     if (elOptHideJa) elOptHideJa.checked = (state.settings.direction === 'en-ja');
     if (elOptStarredOnly) elOptStarredOnly.checked = state.settings.starredOnly;
+    if (elOptAutoSpeak) {
+      elOptAutoSpeak.checked = state.settings.autoSpeak;
+      // 読み上げできない環境では触らせない
+      elOptAutoSpeak.disabled = !state.speechOK;
+    }
     if (elOptFontSize) elOptFontSize.value = String(state.settings.fontSize);
     if (elOptFontOut) elOptFontOut.textContent = FONT_LABELS[state.settings.fontSize] || '標準';
   }
@@ -1409,6 +1648,11 @@
     applyFilter();
   }
 
+  function onAutoSpeakChange() {
+    state.settings.autoSpeak = !!elOptAutoSpeak.checked;
+    saveSettings();
+  }
+
   /* ============================================================
    * 24. イベント登録
    * ========================================================== */
@@ -1444,9 +1688,55 @@
 
     document.addEventListener('keydown', onKeyDown);
 
+    // --- 追加ダイアログ ---
+    function openAddDialog(invoker) {
+      prepareAddDialog();
+      openDialog(elAddDialog, invoker);
+      if (elAddJa) elAddJa.focus();
+    }
+    if (elBtnAdd) {
+      elBtnAdd.addEventListener('click', function () { openAddDialog(elBtnAdd); });
+    }
+    if (elBtnAddRow) {
+      elBtnAddRow.addEventListener('click', function () { openAddDialog(elBtnAddRow); });
+    }
+    if (elAddSave) elAddSave.addEventListener('click', submitAddSentence);
+    if (elAddClose) elAddClose.addEventListener('click', function () { closeDialog(elAddDialog); });
+
+    // 入力欄で Enter を押したら次へ／追加する（フォーム送信で閉じてしまうのを防ぐ）
+    if (elAddJa) {
+      elAddJa.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); if (elAddEn) elAddEn.focus(); }
+      });
+    }
+    if (elAddEn) {
+      elAddEn.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitAddSentence(); }
+      });
+    }
+    if (elAddNote) {
+      elAddNote.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitAddSentence(); }
+      });
+    }
+    if (elAddedList) {
+      elAddedList.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('.added-delete') : null;
+        if (!btn) return;
+        var ja = btn.getAttribute('data-ja');
+        var en = btn.getAttribute('data-en');
+        if (!window.confirm('「' + ja + '」を削除します。よろしいですか？')) return;
+        removeAddedSentence(currentDeckId(), ja, en);
+        refreshCurrentDeck();
+        renderAddedList();
+        setAddStatus('削除しました。', false);
+      });
+    }
+
     // --- データダイアログ ---
     if (elBtnData) {
       elBtnData.addEventListener('click', function () {
+        closeDialog(elAddDialog);   // 追加ダイアログの中から開くので、先に閉じる
         renderDeckManageList();
         updateImportPreview();
         openDialog(elDataDialog, elBtnData);
@@ -1497,6 +1787,7 @@
     if (elOptAutoHide) elOptAutoHide.addEventListener('change', onAutoHideChange);
     if (elOptHideJa) elOptHideJa.addEventListener('change', onHideJaChange);
     if (elOptStarredOnly) elOptStarredOnly.addEventListener('change', onStarredOnlyChange);
+    if (elOptAutoSpeak) elOptAutoSpeak.addEventListener('change', onAutoSpeakChange);
 
     // Esc などで閉じたときもフォーカスを戻す
     [elDataDialog, elSettingsDialog].forEach(function (d) {
@@ -1515,6 +1806,7 @@
 
     initSpeech();
     loadStars();
+    loadAdded();
 
     state.builtinDecks = loadBuiltinDecks();
     state.userDecks = loadUserDecks();

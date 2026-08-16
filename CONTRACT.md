@@ -85,6 +85,13 @@ window.SUNKAN_DECKS = [
 | `sunkan:settings` | `{ maskStyle, fontSize, autoHide, direction, starredOnly, deckId }` |
 | `sunkan:decks` | ユーザーが取り込んだ自作デッキの配列（`data.js` と同じ形） |
 | `sunkan:stars` | `{ [deckId]: string[] }` … ★を付けた項目の id |
+| `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
+
+`sunkan:added` はデッキ本体を書き換えずに後ろへ足す方式。収録セット（`data.js`）にも
+取り込んだセットにも同じように足せて、元データは無傷のまま保てる。
+足した行には `.row.is-added` が付き、行内の `.row-delete` で1件ずつ消せる。
+
+`settings.autoSpeak` … 英語を表示したときに自動で読み上げるか。逆向き（`en-ja`）のときは読み上げない。
 
 ## やらないこと
 
