@@ -12,8 +12,17 @@
 | `assets/app.js` | C | 瞬間英作文の動作すべて（描画・隠す/表示・検索・取り込み・保存） |
 | `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え |
 
-`app.js` と `paraphrase.js` は状態も保存先も共有しない。触れ合うのは `<html data-mode>` だけで、
-`app.js` は `data-mode="para"` の間キー操作を受け取らない（表が画面に無いため）。
+`app.js` と `paraphrase.js` は状態も保存先も共有しない。触れ合うのは `<html data-mode>` と
+下の `window.SUNKAN_DRILL` だけで、`app.js` は `data-mode="para"` の間キー操作を受け取らない
+（表が画面に無いため）。
+
+### `window.SUNKAN_DRILL`（app.js が開けている口。ここ以外から中身を触らせない）
+
+| 関数 | 内容 |
+| --- | --- |
+| `addSentences(deckName, items)` | 名前でセットを探し（無ければ作って開き）、`{ja,en,note}` を足す。戻り値は `{added, skipped, deckId, deckName}`。足し方は「＋追加」と同じ（`sunkan:added` 行き）なので元データは無傷 |
+| `splitTable(text)` | 貼り付けテキストを行×列に割る（TSV / CSV 自動判定）。戻り値は `{rows, delimiter}` |
+| `copyText(text, done)` | クリップボードへ。非同期なので結果は `done(ok)` で返す |
 
 ## データ形式（`assets/data.js`）
 
@@ -119,6 +128,17 @@ window.SUNKAN_DECKS = [
 - 言い換えは**枠の外**に 4 行まで。見出しより少し小さい英文と、その下に意味（`.para-line-en` / `.para-line-ja`）。
 - ジャンルはいちばん上。入力欄もチップも太字で、他より目立たせる。
 - `.para-card.is-revealed` … `data-para-mask="on"` のとき、この札だけ言い換えが見えている。
+- `.para-card.is-starred` … ★が付いている（見出しの縦線を `--star` に替える）。
+
+### 表の列（📋 の読み込み・書き出し）
+
+`ジャンル / 見出しの英文 / 見出しの意味 / 言い換え1の英文 / 言い換え1の意味 / …（4 組）` の 11 列。
+2 列目（見出しの英文）だけ必須。読み込みは `SUNKAN_DRILL.splitTable` に任せ、見出し行は自動で外す。
+
+### 瞬間英作文へ送る
+
+パラフレ 1 枚は `{ja: 意味, en: 英文}` の並びになる（言い換えに意味が無ければ見出しの意味を使う）。
+送り先は `パラフレ帳（ジャンル名）` というセットで、ジャンルごとに分ける。元のパラフレは消さない。
 
 ## 保存（localStorage キー）
 
@@ -131,7 +151,8 @@ window.SUNKAN_DECKS = [
 | `sunkan:mode` | `drill` / `para` … 最後に開いていたモード |
 | `sunkan:para:genres` | パラフレ帳のジャンル `[{id,name}]` |
 | `sunkan:para:cards` | パラフレ本体 `[{id,genreId,headEn,headJa,lines}]` |
-| `sunkan:para:ui` | `{ genreId, mask }` … 選んでいるジャンルと、伏せているか |
+| `sunkan:para:stars` | ★を付けたパラフレの id `string[]` |
+| `sunkan:para:ui` | `{ genreId, mask, sort, starredOnly }` … 表示の状態（シャッフルは持ち越さない） |
 
 `sunkan:added` はデッキ本体を書き換えずに後ろへ足す方式。収録セット（`data.js`）にも
 取り込んだセットにも同じように足せて、元データは無傷のまま保てる。

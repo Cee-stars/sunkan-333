@@ -85,14 +85,40 @@
         <span aria-hidden="true">＋</span><span class="btn-label">作る</span>
       </button>
     </div>
-
-    <button type="button" id="btn-para-mask" class="btn btn--ghost" aria-pressed="false" aria-label="言い換えを隠す">
-      <span aria-hidden="true">👁</span><span class="btn-label" id="btn-para-mask-label">言い換えを隠す</span>
-    </button>
   </div>
 
   <div class="header-row header-row--genres" data-mode-view="para">
     <ul class="genre-chips" id="genre-chips"></ul>
+  </div>
+
+  <div class="header-row header-row--controls" data-mode-view="para">
+    <button type="button" id="btn-para-mask" class="btn btn--primary" aria-pressed="false" aria-label="言い換えを隠す">
+      <span class="btn-label" id="btn-para-mask-label">言い換えを隠す</span>
+    </button>
+
+    <div class="search-wrap">
+      <label class="visually-hidden" for="para-search">パラフレを検索</label>
+      <input type="search" id="para-search" class="search-input" placeholder="英文・意味で検索" autocomplete="off" enterkeyhint="search">
+      <button type="button" id="btn-para-search-clear" class="btn btn--icon search-clear" aria-label="検索をクリア" hidden>×</button>
+    </div>
+
+    <label class="visually-hidden" for="para-sort">並べ替え</label>
+    <select id="para-sort" class="deck-select para-sort">
+      <option value="added">追加順</option>
+      <option value="newest">新しい順</option>
+      <option value="alpha">A → Z</option>
+      <option value="genre">ジャンル順</option>
+    </select>
+
+    <button type="button" id="btn-para-shuffle" class="btn btn--ghost" aria-pressed="false" aria-label="順番をシャッフル">
+      <span aria-hidden="true">⇅</span><span class="btn-label">シャッフル</span>
+    </button>
+
+    <button type="button" id="btn-para-starred" class="btn btn--ghost" aria-pressed="false" aria-label="★を付けたものだけ表示">
+      <span aria-hidden="true">★</span><span class="btn-label">だけ表示</span>
+    </button>
+
+    <button type="button" id="btn-para-data" class="btn btn--icon" aria-label="表の読み込み・書き出し" aria-haspopup="dialog">📋</button>
   </div>
 
   <p class="status-bar" id="status-bar" data-mode-view="drill" role="status" aria-live="polite"></p>
@@ -173,6 +199,8 @@
       <span class="para-genre-tag"></span>
       <span class="para-tools">
         <button type="button" class="btn btn--icon para-speak" aria-label="見出しの英文を読み上げる">🔈</button>
+        <button type="button" class="btn btn--icon para-star" aria-label="チェックを付ける" aria-pressed="false">★</button>
+        <button type="button" class="btn btn--icon para-send" aria-label="瞬間英作文へ送る">📤</button>
         <button type="button" class="btn btn--icon para-edit" aria-label="このパラフレを編集する">✎</button>
         <button type="button" class="btn btn--icon para-delete" aria-label="このパラフレを削除する">🗑</button>
       </span>
@@ -359,6 +387,45 @@
         <button type="button" id="btn-para-new-genre" class="btn btn--ghost">作る</button>
       </div>
       <ul class="deck-manage-list" id="genre-manage-list"></ul>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== パラフレ帳のデータダイアログ ===== -->
+<dialog id="para-data-dialog" class="dialog" aria-labelledby="para-data-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="para-data-dialog-title" class="dialog-title">表でまとめて出し入れする</h2>
+    <p class="dialog-desc">
+      1 行が 1 枚です。左から
+      <strong>ジャンル / 見出しの英文 / 見出しの意味 / 言い換え1の英文 / 言い換え1の意味 …</strong>
+      の順で、言い換えは 4 つまで（全 11 列）。タブ区切り・カンマ区切りのどちらでも読み込めます。
+      見出し行が付いていれば自動で外します。
+    </p>
+
+    <label class="field">
+      <span class="field-label">貼り付け</span>
+      <textarea id="para-import-text" class="field-input field-textarea" rows="8"
+        placeholder="日常会話&#9;It is important to keep trying.&#9;やり続けることが大切だ。&#9;Persistence matters.&#9;粘り強さが物を言う。"></textarea>
+    </label>
+
+    <p class="dialog-note" id="para-import-preview" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-para-import-cancel" class="btn btn--ghost">キャンセル</button>
+      <button type="button" id="btn-para-import-save" class="btn btn--primary">読み込む</button>
+    </div>
+
+    <hr class="dialog-sep">
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">いま表示しているパラフレ</h3>
+      <p class="dialog-hint">ジャンルの絞り込み・検索で表示されているぶんが対象です。</p>
+      <button type="button" id="btn-para-export" class="btn btn--ghost">表にしてコピー（TSV）</button>
+      <button type="button" id="btn-para-send-all" class="btn btn--ghost">まとめて瞬間英作文へ送る</button>
+      <p class="dialog-hint">
+        送ると「パラフレ帳（ジャンル名）」というセットができ、同じ日本語に対する言い換えが
+        1 文ずつ並びます。元のパラフレはそのまま残ります。
+      </p>
     </div>
   </form>
 </dialog>

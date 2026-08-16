@@ -1856,7 +1856,85 @@
   }
 
   /* ============================================================
-   * 25. 起動
+   * 25. 外から使う口（パラフレ帳のためだけに開けてある）
+   *     ここ以外から app.js の中身は触らせない。
+   * ========================================================== */
+
+  /**
+   * 名前でセットを探し（無ければ作って開き）、{ja,en,note} を足す。
+   * 足し方は「＋追加」と同じ（sunkan:added 行き）なので、元データは無傷のまま。
+   */
+  function addSentencesToNamedDeck(deckName, items) {
+    var result = { added: 0, skipped: 0, deckId: '', deckName: '' };
+    var name = trim(deckName) || 'パラフレ帳';
+    var deck = null, i;
+
+    for (i = 0; i < state.userDecks.length; i++) {
+      if (state.userDecks[i].name === name) { deck = state.userDecks[i]; break; }
+    }
+    if (!deck) deck = createEmptyDeck(name);   // 作ったセットはそのまま開く
+    result.deckId = deck.id;
+    result.deckName = deck.name;
+
+    items = items || [];
+    for (i = 0; i < items.length; i++) {
+      var ja = trim(items[i].ja);
+      var en = trim(items[i].en);
+      if (!ja || !en) { result.skipped++; continue; }
+      if (addSentence(deck.id, ja, en, trim(items[i].note))) result.added++;
+      else result.skipped++;   // 同じ文がすでにある
+    }
+
+    if (result.added) {
+      refreshCurrentDeck();
+      renderAddedList();
+      renderDeckManageList();
+      updateStatusBar();
+    }
+    return result;
+  }
+
+  /** 貼り付けテキストを行×列に割る（TSV / CSV 自動判定。空行は落とす） */
+  function splitTable(text) {
+    var src = str(text).replace(/^\uFEFF/, '');
+    var out = { rows: [], delimiter: '\t' };
+    if (!trim(src)) return out;
+
+    out.delimiter = detectDelimiter(src);
+    var rows = parseDelimited(src, out.delimiter);
+    for (var i = 0; i < rows.length; i++) {
+      var cells = [], nonEmpty = 0;
+      for (var j = 0; j < rows[i].length; j++) {
+        var cell = trim(rows[i][j]);
+        cells.push(cell);
+        if (cell) nonEmpty++;
+      }
+      if (!nonEmpty) continue;
+      out.rows.push(cells);
+    }
+    return out;
+  }
+
+  window.SUNKAN_DRILL = {
+    addSentences: addSentencesToNamedDeck,
+    splitTable: splitTable,
+    /** クリップボードへ。非同期なので結果は done(ok) で返す */
+    copyText: function (text, done) {
+      done = done || function () {};
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          done(true);
+        }, function () {
+          done(legacyCopy(text));
+        });
+        return;
+      }
+      done(legacyCopy(text));
+    }
+  };
+
+  /* ============================================================
+   * 26. 起動
    * ========================================================== */
 
   function init() {

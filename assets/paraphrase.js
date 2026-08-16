@@ -14,15 +14,21 @@
   var LS_MODE = 'sunkan:mode';            // 'drill' | 'para'
   var LS_GENRES = 'sunkan:para:genres';
   var LS_CARDS = 'sunkan:para:cards';
-  var LS_UI = 'sunkan:para:ui';           // { genreId, mask }
+  var LS_STARS = 'sunkan:para:stars';     // ★を付けたパラフレの id
+  var LS_UI = 'sunkan:para:ui';           // { genreId, mask, sort, starredOnly }
 
   var MODES = ['drill', 'para'];
+  var SORTS = ['added', 'newest', 'alpha', 'genre'];
 
   var LINE_COUNT = 4;        // 見出しの下に置ける言い換えの数
   var ALL = '';              // ジャンル絞り込み: すべて
   var NONE = 'none';         // ジャンル絞り込み: ジャンルなし（作るジャンルの id は 'g…' なので衝突しない）
 
+  var SEND_DECK_PREFIX = 'パラフレ帳';   // 送り先の瞬間英作文セット名
+
   var FILTER_DEBOUNCE = 120;
+  var SEARCH_DEBOUNCE = 120;
+  var FLASH_MS = 4000;       // 送った結果などを status に出しておく時間
 
   /* ============================================================
    * 2. 小さなユーティリティ（app.js とは独立に持つ）
@@ -139,11 +145,22 @@
     return out;
   }
 
+  function sanitizeStars(raw) {
+    var out = [];
+    if (!Array.isArray(raw)) return out;
+    for (var i = 0; i < raw.length; i++) {
+      if (typeof raw[i] === 'string' && raw[i] && out.indexOf(raw[i]) < 0) out.push(raw[i]);
+    }
+    return out;
+  }
+
   function sanitizeUI(raw) {
-    var ui = { genreId: ALL, mask: false };
+    var ui = { genreId: ALL, mask: false, sort: 'added', starredOnly: false };
     if (!raw || typeof raw !== 'object') return ui;
     if (typeof raw.genreId === 'string') ui.genreId = raw.genreId;
     if (raw.mask === true) ui.mask = true;
+    if (SORTS.indexOf(str(raw.sort)) >= 0) ui.sort = str(raw.sort);
+    if (raw.starredOnly === true) ui.starredOnly = true;
     return ui;
   }
 
@@ -159,11 +176,17 @@
     mode: sanitizeMode(lsGet(LS_MODE)),
     genres: [],
     cards: [],
+    stars: [],        // ★を付けたパラフレの id
     genreId: ALL,     // 表示中のジャンル（'' すべて / 'none' ジャンルなし / ジャンル id）
     mask: false,      // 言い換えを伏せているか
     filter: '',       // ジャンル欄に打った文字（ジャンルの絞り込みに使う）
+    query: '',        // 検索欄に打った文字（パラフレ本文の絞り込み）
+    sort: 'added',    // 並べ替え
+    starredOnly: false,
+    shuffleOrder: null, // シャッフル中の並び（id の配列）。解除で null に戻す
     editingId: null,  // 編集中のパラフレ id（新規は null）
     speechOK: false,
+    flashTimer: null,
     lastFocus: null
   };
 
@@ -181,6 +204,13 @@
   var elGenreTitle = $('para-genre-title');
   var elMaskBtn = $('btn-para-mask');
   var elMaskLabel = $('btn-para-mask-label');
+
+  var elSearch = $('para-search');
+  var elSearchClear = $('btn-para-search-clear');
+  var elSort = $('para-sort');
+  var elShuffle = $('btn-para-shuffle');
+  var elStarredOnly = $('btn-para-starred');
+  var elDataBtn = $('btn-para-data');
 
   var elList = $('para-list');
   var elEmpty = $('para-empty');
@@ -202,6 +232,14 @@
   var elNewGenreBtn = $('btn-para-new-genre');
   var elGenreManageList = $('genre-manage-list');
 
+  var elDataDialog = $('para-data-dialog');
+  var elImportText = $('para-import-text');
+  var elImportPreview = $('para-import-preview');
+  var elImportCancel = $('btn-para-import-cancel');
+  var elImportSave = $('btn-para-import-save');
+  var elExport = $('btn-para-export');
+  var elSendAll = $('btn-para-send-all');
+
   /** 言い換え 4 行分の入力欄（英文・意味） */
   var lineInputs = [];
   (function collectLineInputs() {
@@ -216,8 +254,17 @@
 
   function saveGenres() { return writeJSON(LS_GENRES, state.genres); }
   function saveCards() { return writeJSON(LS_CARDS, state.cards); }
-  function saveUI() { return writeJSON(LS_UI, { genreId: state.genreId, mask: state.mask }); }
+  function saveStars() { return writeJSON(LS_STARS, state.stars); }
   function saveMode() { return lsSet(LS_MODE, state.mode); }
+
+  function saveUI() {
+    return writeJSON(LS_UI, {
+      genreId: state.genreId,
+      mask: state.mask,
+      sort: state.sort,
+      starredOnly: state.starredOnly
+    });
+  }
 
   /* ============================================================
    * 7. モード切り替え
@@ -437,13 +484,71 @@
    * 9. パラフレの描画
    * ========================================================== */
 
-  function visibleCards() {
-    if (state.genreId === ALL) return state.cards.slice();
-    var out = [];
-    for (var i = 0; i < state.cards.length; i++) {
-      if (cardGenreKey(state.cards[i]) === state.genreId) out.push(state.cards[i]);
+  /* --- ★ --- */
+
+  function isStarred(id) {
+    return state.stars.indexOf(id) >= 0;
+  }
+
+  function setStar(id, on) {
+    var idx = state.stars.indexOf(id);
+    if (on && idx < 0) state.stars.push(id);
+    if (!on && idx >= 0) state.stars.splice(idx, 1);
+    saveStars();
+  }
+
+  /* --- 絞り込みと並べ替え --- */
+
+  /** 検索に使う文字列（見出し・言い換え・ジャンル名をまとめて小文字で持つ） */
+  function cardHaystack(card) {
+    var parts = [card.headEn, card.headJa, genreName(cardGenreKey(card))];
+    for (var i = 0; i < card.lines.length; i++) {
+      parts.push(card.lines[i].en, card.lines[i].ja);
     }
-    return out;
+    return parts.join('\n').toLowerCase();
+  }
+
+  function sortCards(list) {
+    // シャッフル中は、そのときに決めた並びをそのまま使う（絞り込みを変えても崩れない）
+    if (state.shuffleOrder) {
+      var pos = {}, i;
+      for (i = 0; i < state.shuffleOrder.length; i++) pos[state.shuffleOrder[i]] = i;
+      list.sort(function (a, b) {
+        var pa = pos[a.id] === undefined ? Infinity : pos[a.id];
+        var pb = pos[b.id] === undefined ? Infinity : pos[b.id];
+        return pa - pb;
+      });
+      return list;
+    }
+
+    if (state.sort === 'newest') {
+      list.reverse();                       // 追加順の逆＝新しい順
+    } else if (state.sort === 'alpha') {
+      list.sort(function (a, b) {
+        return a.headEn.toLowerCase().localeCompare(b.headEn.toLowerCase());
+      });
+    } else if (state.sort === 'genre') {
+      list.sort(function (a, b) {
+        var ga = genreName(cardGenreKey(a));
+        var gb = genreName(cardGenreKey(b));
+        if (ga !== gb) return ga.localeCompare(gb, 'ja');
+        return a.headEn.toLowerCase().localeCompare(b.headEn.toLowerCase());
+      });
+    }
+    return list;                            // 'added' は state.cards の順のまま
+  }
+
+  function visibleCards() {
+    var out = [];
+    var q = state.query;
+    for (var i = 0; i < state.cards.length; i++) {
+      var card = state.cards[i];
+      if (state.genreId !== ALL && cardGenreKey(card) !== state.genreId) continue;
+      if (state.starredOnly && !isStarred(card.id)) continue;
+      if (q && cardHaystack(card).indexOf(q) < 0) continue;
+      out.push(card);
+    }
+    return sortCards(out);
   }
 
   function createCardElement(card) {
@@ -455,6 +560,8 @@
     var lines = li.querySelector('.para-lines');
     var tag = li.querySelector('.para-genre-tag');
     var speakBtn = li.querySelector('.para-speak');
+    var starBtn = li.querySelector('.para-star');
+    var sendBtn = li.querySelector('.para-send');
 
     li.setAttribute('data-id', card.id);
     headEn.textContent = card.headEn;
@@ -482,9 +589,18 @@
 
     tag.textContent = genreName(cardGenreKey(card));
 
+    if (starBtn && isStarred(card.id)) {
+      li.classList.add('is-starred');
+      starBtn.setAttribute('aria-pressed', 'true');
+      starBtn.setAttribute('aria-label', 'チェックを外す');
+    }
+
     // 読み上げできない環境ではボタンごと隠す
     if (speakBtn && !state.speechOK) speakBtn.hidden = true;
     if (speakBtn && !card.headEn) speakBtn.hidden = true;
+
+    // 瞬間英作文側が読み込まれていないときは送りようがない
+    if (sendBtn && !drillAPI()) sendBtn.hidden = true;
 
     // 伏せていないときは開いた状態から始める
     if (!state.mask) {
@@ -513,26 +629,57 @@
         elEmpty.hidden = true;
       } else {
         elEmpty.hidden = false;
-        elEmpty.textContent = state.cards.length
-          ? '「' + genreName(state.genreId) + '」にはまだパラフレがありません。'
-          : 'まだパラフレがありません。下の「＋ パラフレを追加」から作れます。';
+        elEmpty.textContent = emptyMessage();
       }
     }
+    if (elSearchClear) elSearchClear.hidden = !state.query;
 
     updateStatus(list.length);
   }
 
+  function emptyMessage() {
+    if (!state.cards.length) {
+      return 'まだパラフレがありません。下の「＋ パラフレを追加」から作れます。';
+    }
+    if (state.query) return '「' + trim(elSearch ? elSearch.value : '') + '」に当てはまるパラフレがありません。';
+    if (state.starredOnly) return '★を付けたパラフレがまだありません。';
+    return '「' + genreName(state.genreId) + '」にはまだパラフレがありません。';
+  }
+
   function updateStatus(shown) {
     if (!elStatus) return;
+    // 知らせは出したあとに書くので、ここでは黙って上書きしてよい。
+    // 次に何か操作すれば、そのときの描画でふつうの件数に戻る。
+    if (state.flashTimer) {
+      window.clearTimeout(state.flashTimer);
+      state.flashTimer = null;
+    }
     if (!state.cards.length) {
       elStatus.textContent = '';
       return;
     }
     var text = '全 ' + state.cards.length + ' 枚';
-    if (state.genreId !== ALL) {
-      text += ' / ' + genreName(state.genreId) + ' ' + shown + ' 枚';
-    }
+    if (shown !== state.cards.length) text += ' / 表示中 ' + shown + ' 枚';
+    var marks = [];
+    if (state.genreId !== ALL) marks.push(genreName(state.genreId));
+    if (state.starredOnly) marks.push('★だけ');
+    if (state.shuffleOrder) marks.push('シャッフル中');
+    if (marks.length) text += '［' + marks.join(' / ') + '］';
     elStatus.textContent = text;
+  }
+
+  /** 送った結果などを status に少しのあいだ出す（次の描画までは残る） */
+  function flash(msg) {
+    if (!elStatus) return;
+    if (state.flashTimer) {
+      window.clearTimeout(state.flashTimer);
+      state.flashTimer = null;
+    }
+    elStatus.textContent = msg;
+    state.flashTimer = window.setTimeout(function () {
+      state.flashTimer = null;
+      updateStatus(visibleCards().length);
+    }, FLASH_MS);
   }
 
   /* ============================================================
@@ -624,7 +771,234 @@
   }
 
   /* ============================================================
-   * 12. ダイアログ（<dialog> が無い環境でも壊れない）
+   * 12. 瞬間英作文へ送る
+   * ========================================================== */
+
+  /** app.js が開けている口。読み込まれていなければ null */
+  function drillAPI() {
+    var api = window.SUNKAN_DRILL;
+    return (api && typeof api.addSentences === 'function') ? api : null;
+  }
+
+  /**
+   * パラフレ 1 枚を {ja,en,note} の並びに直す。
+   * 同じ日本語に英文が何通りも付くので、瞬間英作文では
+   * 「この意味を、別の言い方でも言えるか」を試す形になる。
+   */
+  function cardToItems(card) {
+    var items = [];
+    var meaning = card.headJa;
+    if (card.headEn && meaning) items.push({ ja: meaning, en: card.headEn, note: '' });
+    for (var i = 0; i < card.lines.length; i++) {
+      var en = card.lines[i].en;
+      var ja = card.lines[i].ja || meaning;
+      if (!en || !ja) continue;
+      items.push({ ja: ja, en: en, note: card.headEn ? '元の文: ' + card.headEn : '' });
+    }
+    return items;
+  }
+
+  function sendDeckName(genreKey) {
+    if (genreKey === ALL || genreKey === NONE) return SEND_DECK_PREFIX;
+    return SEND_DECK_PREFIX + '（' + genreName(genreKey) + '）';
+  }
+
+  /** 何枚かまとめて送る。ジャンルごとにセットを分ける */
+  function sendCards(cards) {
+    var api = drillAPI();
+    if (!api) {
+      flash('瞬間英作文側が読み込めていないので送れませんでした。');
+      return;
+    }
+
+    var groups = {}, order = [], i;
+    for (i = 0; i < cards.length; i++) {
+      var key = cardGenreKey(cards[i]);
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key] = groups[key].concat(cardToItems(cards[i]));
+    }
+
+    var added = 0, skipped = 0, names = [];
+    for (i = 0; i < order.length; i++) {
+      var items = groups[order[i]];
+      if (!items.length) continue;
+      var res = api.addSentences(sendDeckName(order[i]), items);
+      added += res.added;
+      skipped += res.skipped;
+      if (names.indexOf(res.deckName) < 0) names.push(res.deckName);
+    }
+
+    if (!added && !skipped) {
+      flash('日本語の意味が入っていないので送れませんでした。');
+      return;
+    }
+    var msg = names.length === 1
+      ? '「' + names[0] + '」に ' + added + ' 文送りました。'
+      : added + ' 文を ' + names.length + ' つのセットに送りました。';
+    if (skipped) msg += '（' + skipped + ' 文は同じ文があったので省きました）';
+    flash(msg);
+  }
+
+  /* ============================================================
+   * 13. 表で出し入れする（TSV / CSV）
+   *     列は ジャンル / 見出しの英文 / 見出しの意味 / 言い換え(英文,意味)×4
+   * ========================================================== */
+
+  var IMPORT_HEADER = ['ジャンル', '見出しの英文', '見出しの意味'];
+  (function buildHeader() {
+    for (var i = 1; i <= LINE_COUNT; i++) {
+      IMPORT_HEADER.push('言い換え' + i + 'の英文', '言い換え' + i + 'の意味');
+    }
+  })();
+
+  function looksLikeParaHeader(cells) {
+    var a = trim(cells[0]).toLowerCase();
+    var b = trim(cells[1] || '').toLowerCase();
+    return /^(ジャンル|genre|分類|カテゴリ)$/.test(a) ||
+           /^(見出し|見出しの英文|英文|英語|english|en)$/.test(b);
+  }
+
+  function parseParaTable(text) {
+    var result = { cards: [], skipped: 0, headerDropped: false, delimiter: '\t' };
+    var api = drillAPI();
+    if (!api || typeof api.splitTable !== 'function') return result;
+
+    var table = api.splitTable(text);
+    result.delimiter = table.delimiter;
+
+    var rows = table.rows.slice();
+    if (rows.length && looksLikeParaHeader(rows[0])) {
+      rows.shift();
+      result.headerDropped = true;
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      var cells = rows[i];
+      var headEn = trim(cells[1] || '');
+      if (!headEn) { result.skipped++; continue; }   // 2 列目（見出しの英文）は必須
+
+      var lines = [];
+      for (var j = 0; j < LINE_COUNT; j++) {
+        var en = trim(cells[3 + j * 2] || '');
+        var ja = trim(cells[4 + j * 2] || '');
+        if (!en && !ja) continue;
+        lines.push({ en: en, ja: ja });
+      }
+
+      result.cards.push({
+        genreName: trim(cells[0] || ''),
+        headEn: headEn,
+        headJa: trim(cells[2] || ''),
+        lines: lines
+      });
+    }
+    return result;
+  }
+
+  function setImportPreview(msg) {
+    if (elImportPreview) elImportPreview.textContent = msg || '';
+  }
+
+  var IMPORT_HELP = '読み込める行がありません。1 列目にジャンル、2 列目に見出しの英文を置いてください。';
+
+  function updateImportPreview() {
+    var text = elImportText ? elImportText.value : '';
+    if (!trim(text)) { setImportPreview(''); return; }
+
+    var parsed = parseParaTable(text);
+    if (!parsed.cards.length) { setImportPreview(IMPORT_HELP); return; }
+
+    var head = parsed.cards[0].headEn;
+    if (head.length > 40) head = head.slice(0, 40) + '…';
+
+    var extra = [parsed.delimiter === '\t' ? 'タブ区切り' : 'カンマ区切り'];
+    if (parsed.headerDropped) extra.push('見出し行は除外');
+    if (parsed.skipped) extra.push(parsed.skipped + ' 行は英文が無いため除外');
+    setImportPreview(parsed.cards.length + ' 枚を読み込めます（最初の1枚: ' + head + '）［' + extra.join(' / ') + '］');
+  }
+
+  var runImportPreview = debounce(updateImportPreview, FILTER_DEBOUNCE);
+
+  /** 同じ見出しがすでにあるか（読み込みの重複よけ） */
+  function hasHeadEn(headEn) {
+    var key = headEn.toLowerCase();
+    for (var i = 0; i < state.cards.length; i++) {
+      if (state.cards[i].headEn.toLowerCase() === key) return true;
+    }
+    return false;
+  }
+
+  function saveImportedCards() {
+    var parsed = parseParaTable(elImportText ? elImportText.value : '');
+    if (!parsed.cards.length) { setImportPreview(IMPORT_HELP); return; }
+
+    var added = 0, dup = 0;
+    for (var i = 0; i < parsed.cards.length; i++) {
+      var row = parsed.cards[i];
+      if (hasHeadEn(row.headEn)) { dup++; continue; }
+      var genre = row.genreName ? addGenre(row.genreName) : null;
+      state.cards.push({
+        id: uid('p'),
+        genreId: genre ? genre.id : '',
+        headEn: row.headEn,
+        headJa: row.headJa,
+        lines: row.lines
+      });
+      added++;
+    }
+    var ok = saveCards();
+
+    if (elImportText) elImportText.value = '';
+    setImportPreview('');
+
+    renderGenreChips();
+    renderGenreSelect();
+    renderGenreManageList();
+    renderCards();
+    closeDialog(elDataDialog);
+
+    var msg = added + ' 枚を読み込みました。';
+    if (dup) msg += '（' + dup + ' 枚は同じ見出しがあったので省きました）';
+    if (ok === false) msg += 'この端末には保存できませんでした。';
+    flash(msg);
+  }
+
+  /** タブと改行はセルを壊すのでスペースに潰す */
+  function flat(v) {
+    return str(v).replace(/[\t\r\n]+/g, ' ');
+  }
+
+  function cardToRow(card) {
+    var cells = [flat(genreName(cardGenreKey(card))), flat(card.headEn), flat(card.headJa)];
+    for (var i = 0; i < LINE_COUNT; i++) {
+      var line = card.lines[i];
+      cells.push(line ? flat(line.en) : '', line ? flat(line.ja) : '');
+    }
+    return cells.join('\t');
+  }
+
+  function exportVisibleCards() {
+    var api = drillAPI();
+    var list = visibleCards();
+    if (!list.length) { setImportPreview('書き出せるパラフレがありません。'); return; }
+
+    var rows = [IMPORT_HEADER.join('\t')];
+    for (var i = 0; i < list.length; i++) rows.push(cardToRow(list[i]));
+    var tsv = rows.join('\n');
+
+    if (!api || typeof api.copyText !== 'function') {
+      setImportPreview('コピーできませんでした。');
+      return;
+    }
+    api.copyText(tsv, function (okCopy) {
+      setImportPreview(okCopy
+        ? list.length + ' 枚を TSV でコピーしました。'
+        : 'コピーできませんでした。テキストを手動で選択してコピーしてください。');
+    });
+  }
+
+  /* ============================================================
+   * 14. ダイアログ（<dialog> が無い環境でも壊れない）
    * ========================================================== */
 
   function openDialog(dialog, invoker) {
@@ -825,13 +1199,18 @@
   }
 
   /* ============================================================
-   * 13. イベント
+   * 15. イベント
    * ========================================================== */
 
   var runGenreFilter = debounce(function () {
     state.filter = elGenreInput ? trim(elGenreInput.value) : '';
     renderGenreChips();
   }, FILTER_DEBOUNCE);
+
+  var runSearch = debounce(function () {
+    state.query = trim(elSearch ? elSearch.value : '').toLowerCase();
+    renderCards();
+  }, SEARCH_DEBOUNCE);
 
   function onListClick(e) {
     var target = e.target;
@@ -845,6 +1224,15 @@
       speakCard(findCard(id));
       return;
     }
+    if (target.closest('.para-star')) {
+      toggleStar(li, id);
+      return;
+    }
+    if (target.closest('.para-send')) {
+      var recS = findCard(id);
+      if (recS) sendCards([recS]);
+      return;
+    }
     if (target.closest('.para-edit')) {
       openParaDialog(id, target.closest('.para-edit'));
       return;
@@ -856,6 +1244,61 @@
     if (target.closest('.para-head')) {
       toggleCard(li);
     }
+  }
+
+  function toggleStar(li, id) {
+    var btn = li.querySelector('.para-star');
+    var on = !isStarred(id);
+    setStar(id, on);
+    if (on) li.classList.add('is-starred');
+    else li.classList.remove('is-starred');
+    if (btn) {
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.setAttribute('aria-label', on ? 'チェックを外す' : 'チェックを付ける');
+    }
+    if (state.starredOnly) renderCards();   // ★だけ表示中なら、外した札は消える
+  }
+
+  function setStarredOnly(on) {
+    state.starredOnly = !!on;
+    if (elStarredOnly) elStarredOnly.setAttribute('aria-pressed', state.starredOnly ? 'true' : 'false');
+    saveUI();
+    renderCards();
+  }
+
+  function setSort(value) {
+    state.sort = SORTS.indexOf(value) >= 0 ? value : 'added';
+    if (elSort) elSort.value = state.sort;
+    // 並べ替えを選んだらシャッフルは解く（両方は効かない）
+    if (state.shuffleOrder) setShuffle(false, true);
+    saveUI();
+    renderCards();
+  }
+
+  function setShuffle(on, quiet) {
+    if (on) {
+      var ids = [];
+      for (var i = 0; i < state.cards.length; i++) ids.push(state.cards[i].id);
+      for (i = ids.length - 1; i > 0; i--) {          // Fisher–Yates
+        var j = Math.floor(Math.random() * (i + 1));
+        var t = ids[i]; ids[i] = ids[j]; ids[j] = t;
+      }
+      state.shuffleOrder = ids;
+    } else {
+      state.shuffleOrder = null;
+    }
+    if (elShuffle) {
+      elShuffle.setAttribute('aria-pressed', state.shuffleOrder ? 'true' : 'false');
+      elShuffle.setAttribute('aria-label', state.shuffleOrder ? '元の順番に戻す' : '順番をシャッフル');
+    }
+    if (!quiet) renderCards();
+  }
+
+  function clearSearch(blur) {
+    if (elSearch) elSearch.value = '';
+    state.query = '';
+    renderCards();
+    if (blur && elSearch) elSearch.blur();
   }
 
   function onTabsKeyDown(e) {
@@ -905,6 +1348,51 @@
     if (elMaskBtn) {
       elMaskBtn.addEventListener('click', function () { setMask(!state.mask); });
     }
+
+    if (elSearch) {
+      elSearch.addEventListener('input', runSearch);
+      elSearch.addEventListener('search', runSearch);   // type="search" の × ボタン
+    }
+    if (elSearchClear) {
+      elSearchClear.addEventListener('click', function () {
+        clearSearch(false);
+        if (elSearch) elSearch.focus();
+      });
+    }
+    if (elSort) elSort.addEventListener('change', function () { setSort(elSort.value); });
+    if (elShuffle) {
+      elShuffle.addEventListener('click', function () { setShuffle(!state.shuffleOrder); });
+    }
+    if (elStarredOnly) {
+      elStarredOnly.addEventListener('click', function () { setStarredOnly(!state.starredOnly); });
+    }
+
+    // --- 表で出し入れするダイアログ ---
+    if (elDataBtn) {
+      elDataBtn.addEventListener('click', function () {
+        updateImportPreview();
+        openDialog(elDataDialog, elDataBtn);
+        if (elImportText) elImportText.focus();
+      });
+    }
+    if (elImportText) {
+      elImportText.addEventListener('input', runImportPreview);
+      elImportText.addEventListener('paste', function () { window.setTimeout(updateImportPreview, 0); });
+    }
+    if (elImportSave) elImportSave.addEventListener('click', saveImportedCards);
+    if (elImportCancel) {
+      elImportCancel.addEventListener('click', function () { closeDialog(elDataDialog); });
+    }
+    if (elExport) elExport.addEventListener('click', exportVisibleCards);
+    if (elSendAll) {
+      elSendAll.addEventListener('click', function () {
+        var list = visibleCards();
+        if (!list.length) { setImportPreview('送れるパラフレがありません。'); return; }
+        sendCards(list);
+        closeDialog(elDataDialog);
+      });
+    }
+    if (elDataDialog) elDataDialog.addEventListener('close', restoreFocus);
 
     if (elList) elList.addEventListener('click', onListClick);
     if (elAddBtn) {
@@ -983,7 +1471,7 @@
   }
 
   /* ============================================================
-   * 14. 起動
+   * 16. 起動
    * ========================================================== */
 
   function init() {
@@ -993,9 +1481,16 @@
 
     state.genres = sanitizeGenres(readJSON(LS_GENRES));
     state.cards = sanitizeCards(readJSON(LS_CARDS));
+    state.stars = sanitizeStars(readJSON(LS_STARS));
 
     var ui = sanitizeUI(readJSON(LS_UI));
     state.genreId = (ui.genreId === ALL || ui.genreId === NONE || findGenre(ui.genreId)) ? ui.genreId : ALL;
+    state.sort = ui.sort;
+    state.starredOnly = ui.starredOnly;
+
+    if (elSort) elSort.value = state.sort;
+    if (elStarredOnly) elStarredOnly.setAttribute('aria-pressed', state.starredOnly ? 'true' : 'false');
+    setShuffle(false, true);   // シャッフルは持ち越さない
 
     setMode(state.mode, { persist: false });
     setMask(ui.mask);

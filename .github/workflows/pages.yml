@@ -27,6 +27,7 @@ jobs:
         run: |
           node --check assets/app.js
           node --check assets/data.js
+          node --check assets/paraphrase.js
           node --check sw.js
 
       - uses: actions/configure-pages@v5

@@ -1646,7 +1646,18 @@ legend.field-label {
   gap: 2px;
 }
 
-.para-tools .btn--icon { font-size: 1rem; }
+.para-tools .btn--icon {
+  width: 40px;
+  min-width: 40px;
+  font-size: 1rem;
+  color: var(--text-faint);
+}
+
+.para-star { color: var(--star-off); }
+.para-star[aria-pressed="true"] { color: var(--star); }
+
+/* ★が付いた札は左端にも印を出す（畳んでいても分かるように） */
+.para-card.is-starred .para-head { border-inline-start-color: var(--star); }
 
 /* --- 伏せる（言い換えだけを隠す。見出しは出したまま） --- */
 
@@ -1666,6 +1677,22 @@ legend.field-label {
 }
 
 :root[data-para-mask="on"] .para-card.is-revealed .para-head::after { content: none; }
+
+/* --- 並べ替え・★だけ --- */
+
+.para-sort {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 7.5rem;
+  /* font-size は .deck-select の 16px のまま（iOS のズーム防止） */
+}
+
+#btn-para-starred[aria-pressed="true"],
+#btn-para-shuffle[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 /* --- ダイアログの言い換え欄 --- */
 
