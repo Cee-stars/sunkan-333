@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="瞬間英作文">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2d6cdf"/>
+      <stop offset="1" stop-color="#1b3f8f"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- 左: 日本語の行（見える） -->
+  <g fill="#ffffff">
+    <rect x="88" y="150" width="150" height="22" rx="11"/>
+    <rect x="88" y="212" width="120" height="22" rx="11"/>
+    <rect x="88" y="274" width="150" height="22" rx="11"/>
+    <rect x="88" y="336" width="104" height="22" rx="11"/>
+  </g>
+
+  <!-- 中央の区切り線 -->
+  <rect x="253" y="132" width="6" height="248" rx="3" fill="#ffffff" opacity="0.35"/>
+
+  <!-- 右: 英語の行（隠れている） -->
+  <g fill="#ffffff" opacity="0.3">
+    <rect x="274" y="150" width="150" height="22" rx="11"/>
+    <rect x="274" y="274" width="132" height="22" rx="11"/>
+    <rect x="274" y="336" width="150" height="22" rx="11"/>
+  </g>
+
+  <!-- 1行だけ表示されている（答え合わせ中） -->
+  <rect x="274" y="212" width="150" height="22" rx="11" fill="#ffd54a"/>
+</svg>
