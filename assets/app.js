@@ -1322,6 +1322,8 @@
   function onKeyDown(e) {
     if (e.defaultPrevented) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // パラフレ帳を開いている間は表が画面に無い。キー操作はそちらに任せる。
+    if (docEl.getAttribute('data-mode') === 'para') return;
 
     var target = e.target;
     var typing = isTypingTarget(target);
@@ -1356,9 +1358,12 @@
       case ' ':
       case 'Spacebar':
       case 'Enter': {
-        // 行ボタンにフォーカスがあるときはブラウザの click に任せる（二重発火を防ぐ）
+        // 行ボタン・モードタブにフォーカスがあるときはブラウザの click に任せる（二重発火を防ぐ）
         var active = document.activeElement;
-        if (active && active.closest && active.closest('.row-main') && elRows.contains(active)) return;
+        if (active && active.closest) {
+          if (active.closest('.row-main') && elRows.contains(active)) return;
+          if (active.closest('.mode-tabs')) return;
+        }
         var rec = currentRecord();
         if (rec) {
           e.preventDefault();

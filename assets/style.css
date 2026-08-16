@@ -20,9 +20,11 @@
      10. 空状態・フッター
      11. ダイアログ
      12. フォーム部品
-     13. 画面幅ごとの調整
-     14. モーション配慮
-     15. 印刷
+     13. モード切り替え（瞬間英作文 / パラフレ帳）
+     14. パラフレ帳
+     15. 画面幅ごとの調整
+     16. モーション配慮
+     17. 印刷
    ============================================================= */
 
 
@@ -1311,7 +1313,403 @@ legend.field-label {
 
 
 /* =============================================================
-   13. 画面幅ごとの調整
+   13. モード切り替え（瞬間英作文 / パラフレ帳）
+   ============================================================= */
+
+/* 片方のモードの部品はまとめて畳む。JS は <html data-mode> を替えるだけでよい。 */
+:root[data-mode="drill"] [data-mode-view="para"],
+:root[data-mode="para"]  [data-mode-view="drill"] { display: none !important; }
+
+.header-row--modes {
+  padding-block: 8px 4px;
+  gap: 10px;
+}
+
+.mode-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 26rem;          /* 広い画面で間延びさせない */
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.mode-tab {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+/* 選ばれている側は data-mode で決める（aria-selected を待たないので初回に瞬かない） */
+:root[data-mode="drill"] #tab-drill,
+:root[data-mode="para"]  #tab-para {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(16, 22, 32, 0.16);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mode-tab:hover { color: var(--text); }
+}
+
+
+/* =============================================================
+   14. パラフレ帳
+   ============================================================= */
+
+/* --- ジャンル（いちばん上・太字で目立たせる） --- */
+
+.header-row--genre { padding-block: 6px 4px; flex-wrap: wrap; }
+
+.header-row--genres {
+  padding-block: 0 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.header-row--genres::-webkit-scrollbar { display: none; }
+
+.genre-field {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.genre-input {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 16px;                 /* iOS のズーム防止 */
+  font-weight: 700;                /* ジャンルは太字 */
+  letter-spacing: 0.01em;
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+.genre-input::placeholder { color: var(--text-faint); font-weight: 600; }
+
+.genre-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.genre-input::-webkit-search-decoration,
+.genre-input::-webkit-search-cancel-button,
+.genre-input::-webkit-search-results-button { -webkit-appearance: none; appearance: none; }
+
+.genre-add { flex: 0 0 auto; }
+
+.genre-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.genre-chip {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 700;                /* ジャンルは太字 */
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.genre-chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.genre-chip-count {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.genre-chip[aria-pressed="true"] .genre-chip-count { color: var(--accent-contrast); opacity: 0.8; }
+
+@media (hover: hover) and (pointer: fine) {
+  .genre-chip:hover { border-color: var(--border-strong); background: var(--hover); }
+  .genre-chip[aria-pressed="true"]:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+}
+
+.genre-chips-empty {
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+  padding-block: 8px;
+}
+
+/* --- 本文 --- */
+
+.view--para {
+  width: 100%;
+  max-width: var(--max-w);
+  margin-inline: auto;
+  padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+}
+
+.para-genre-title {
+  padding-block: 12px 10px;
+  font-size: 1.25rem;
+  font-weight: 700;                /* ジャンルは太字 */
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.para-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.para-card {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* --- 見出し（枠の中に英文と、その下へ小さく意味） --- */
+
+.para-head {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 14px var(--cell-pad-x);
+  border: 0;
+  border-inline-start: 4px solid var(--accent);
+  background: var(--surface-sunken);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.para-head-en {
+  display: block;
+  font-family: var(--font-en);
+  font-size: calc(var(--row-font) * 1.35);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.para-head-ja {
+  display: block;
+  margin-top: 4px;
+  font-size: calc(var(--row-font) * 0.78);
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+/* --- 言い換え（枠の外・見出しより少し小さく） --- */
+
+.para-lines {
+  list-style: none;
+  counter-reset: para-line;
+  padding: 4px var(--cell-pad-x) 4px;
+}
+
+.para-line {
+  position: relative;
+  padding: 10px 0 10px 1.9em;
+  border-top: 1px solid var(--hairline);
+}
+
+.para-line:first-child { border-top: 0; }
+
+.para-line::before {
+  counter-increment: para-line;
+  content: counter(para-line);
+  position: absolute;
+  inset-inline-start: 0;
+  top: 11px;
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.para-line-en {
+  display: block;
+  font-family: var(--font-en);
+  font-size: var(--row-font);
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.para-line-ja {
+  display: block;
+  margin-top: 2px;
+  font-size: calc(var(--row-font) * 0.78);
+  line-height: 1.6;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+.para-line--empty {
+  padding-inline-start: 0;
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+}
+
+.para-line--empty::before { content: none; }
+
+/* --- 足もと（ジャンル名と道具） --- */
+
+.para-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px var(--cell-pad-x);
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.para-genre-tag {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.para-tools {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+}
+
+.para-tools .btn--icon { font-size: 1rem; }
+
+/* --- 伏せる（言い換えだけを隠す。見出しは出したまま） --- */
+
+:root[data-para-mask="on"] .para-card:not(.is-revealed) .para-lines {
+  filter: blur(var(--mask-blur));
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:root[data-para-mask="on"] .para-head::after {
+  content: "タップで言い換えを出す";
+  display: block;
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+:root[data-para-mask="on"] .para-card.is-revealed .para-head::after { content: none; }
+
+/* --- ダイアログの言い換え欄 --- */
+
+.para-line-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.para-line-field + .para-line-field {
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.field-input--sub {
+  min-height: 38px;
+  padding-block: 6px;
+  font-size: 15px;
+  background: var(--surface);
+}
+
+.genre-manage-delete { color: var(--danger); }
+
+/* --- 画面幅ごとの調整 --- */
+
+@media (max-width: 560px) {
+  .para-genre-title { font-size: 1.125rem; padding-block: 10px 8px; }
+  .genre-chips { flex-wrap: nowrap; }        /* 横に流して指でなぞれるように */
+  .header-row--genres { padding-inline-end: 0; }
+}
+
+@media (min-width: 561px) {
+  .view--para { padding-block: 8px 32px; }
+  .para-card { border-color: var(--border); }
+}
+
+@media (min-width: 900px) {
+  .view--para { padding-block: 16px 48px; }
+  .genre-field { flex: 0 1 24rem; }
+}
+
+
+/* =============================================================
+   15. 画面幅ごとの調整
    ============================================================= */
 
 /* --- 狭幅（iPhone 縦）：# 列を畳む --- */
@@ -1441,7 +1839,7 @@ legend.field-label {
 
 
 /* =============================================================
-   14. モーション配慮
+   16. モーション配慮
    ============================================================= */
 
 @media (prefers-reduced-motion: reduce) {
@@ -1466,7 +1864,7 @@ legend.field-label {
 
 
 /* =============================================================
-   15. 印刷
+   17. 印刷
    ------------------------------------------------------------
    隠しはすべて解除し、画面用の装飾は落として
    「日本語 / 英語」の対訳表として読めるようにする。

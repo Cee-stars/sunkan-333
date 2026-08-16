@@ -9,7 +9,11 @@
 | `index.html` | 共通 | DOM 構造・ID・クラス名の定義（変更しない） |
 | `assets/style.css` | A | 全スタイル（iPhone / MacBook 対応、ライト/ダーク） |
 | `assets/data.js` | B | 例文データ `window.SUNKAN_DECKS` |
-| `assets/app.js` | C | 動作すべて（描画・隠す/表示・検索・取り込み・保存） |
+| `assets/app.js` | C | 瞬間英作文の動作すべて（描画・隠す/表示・検索・取り込み・保存） |
+| `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え |
+
+`app.js` と `paraphrase.js` は状態も保存先も共有しない。触れ合うのは `<html data-mode>` だけで、
+`app.js` は `data-mode="para"` の間キー操作を受け取らない（表が画面に無いため）。
 
 ## データ形式（`assets/data.js`）
 
@@ -38,6 +42,12 @@ window.SUNKAN_DECKS = [
 | `data-mask` | `blur` / `block` / `hidden` | 隠し方 |
 | `data-font` | `0`〜`4` | 文字サイズ（2 が標準） |
 | `data-direction` | `ja-en` / `en-ja` | `en-ja` のときは日本語側を隠す |
+| `data-mode` | `drill` / `para` | 開いているモード（瞬間英作文 / パラフレ帳） |
+| `data-para-mask` | `on` / `off` | パラフレ帳で言い換えを伏せているか |
+
+`data-mode` は `<head>` の小さなインラインスクリプトが描画前に付ける。
+あとから付けると、開いた瞬間にもう片方の画面が一瞬見えてしまう。
+`data-font` はどちらのモードにも効く（パラフレの文字も同じ変数で伸び縮みする）。
 
 ### `<li class="row">`
 | クラス / 属性 | 意味 |
@@ -78,6 +88,38 @@ window.SUNKAN_DECKS = [
 - ライト/ダークは `prefers-color-scheme` で自動。CSS 変数を `:root` に定義する。
 - 印刷用に軽く `@media print` を入れてもよい（任意）。
 
+## パラフレ帳
+
+`[data-mode-view="drill"]` / `[data-mode-view="para"]` の付いた要素は、`<html data-mode>` と
+食い違うほうを CSS が丸ごと畳む（JS は属性を替えるだけでよい）。
+
+### データ形式（localStorage の中だけにある。収録データは持たない）
+
+```js
+// sunkan:para:genres
+[ { id: 'g…', name: '会議で使う言い換え' } ]
+
+// sunkan:para:cards
+[
+  {
+    id: 'p…',
+    genreId: 'g…',                      // '' はジャンルなし
+    headEn: 'It is important to keep trying.',   // 見出し（1 文だけ）
+    headJa: 'やり続けることが大切だ。',            // 見出しの意味（空でよい）
+    lines: [                            // 言い換え。最大 4 つ
+      { en: 'Persistence matters.', ja: '粘り強さが物を言う。' }
+    ]
+  }
+]
+```
+
+### 表示の決まり
+
+- 見出しは**枠の中**に、英文を大きく・その下に日本語訳を小さく置く（`.para-head-en` / `.para-head-ja`）。
+- 言い換えは**枠の外**に 4 行まで。見出しより少し小さい英文と、その下に意味（`.para-line-en` / `.para-line-ja`）。
+- ジャンルはいちばん上。入力欄もチップも太字で、他より目立たせる。
+- `.para-card.is-revealed` … `data-para-mask="on"` のとき、この札だけ言い換えが見えている。
+
 ## 保存（localStorage キー）
 
 | キー | 内容 |
@@ -86,6 +128,10 @@ window.SUNKAN_DECKS = [
 | `sunkan:decks` | ユーザーが取り込んだ自作デッキの配列（`data.js` と同じ形） |
 | `sunkan:stars` | `{ [deckId]: string[] }` … ★を付けた項目の id |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
+| `sunkan:mode` | `drill` / `para` … 最後に開いていたモード |
+| `sunkan:para:genres` | パラフレ帳のジャンル `[{id,name}]` |
+| `sunkan:para:cards` | パラフレ本体 `[{id,genreId,headEn,headJa,lines}]` |
+| `sunkan:para:ui` | `{ genreId, mask }` … 選んでいるジャンルと、伏せているか |
 
 `sunkan:added` はデッキ本体を書き換えずに後ろへ足す方式。収録セット（`data.js`）にも
 取り込んだセットにも同じように足せて、元データは無傷のまま保てる。
@@ -97,3 +143,4 @@ window.SUNKAN_DECKS = [
 
 - 外部 CDN・npm・ビルドツールは使わない。素の HTML/CSS/JS のみ。
 - 学習モード、スコア、タイマーなどの「練習モード」は作らない。
+- パラフレ帳に例文は同梱しない（中身は使う人が入れる）。

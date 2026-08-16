@@ -8,21 +8,45 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="瞬間英作文">
-<meta name="description" content="日本語を見て即英作文。スプレッドシート感覚の2列リストで、英語は隠せます。">
+<meta name="description" content="日本語を見て即英作文。スプレッドシート感覚の2列リストで、英語は隠せます。パラフレ帳で言い換えもためられます。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
 <link rel="stylesheet" href="assets/style.css">
 <title>瞬間英作文</title>
+<script>
+// モード（瞬間英作文 / パラフレ帳）は描画より先に決める。
+// あとから付けると、開いた瞬間にもう片方の画面が一瞬見えてしまう。
+(function () {
+  var mode = 'drill';
+  try {
+    if (window.localStorage.getItem('sunkan:mode') === 'para') { mode = 'para'; }
+  } catch (e) { /* プライベートモードなどでは既定のまま */ }
+  document.documentElement.setAttribute('data-mode', mode);
+})();
+</script>
 </head>
 <body>
 
 <a class="skip-link" href="#rows">本文へスキップ</a>
 
 <header class="app-header" id="app-header">
-  <div class="header-row header-row--main">
-    <h1 class="app-title">瞬間英作文</h1>
+  <div class="header-row header-row--modes">
+    <!-- 見出しはタブと同じ言葉になるので、画面には出さず読み上げにだけ残す -->
+    <h1 class="app-title visually-hidden">
+      <span data-mode-view="drill">瞬間英作文</span>
+      <span data-mode-view="para">パラフレ帳</span>
+    </h1>
 
+    <div class="mode-tabs" id="mode-tabs" role="tablist" aria-label="モード">
+      <button type="button" class="mode-tab" id="tab-drill" role="tab"
+        aria-selected="true" aria-controls="view-drill">瞬間英作文</button>
+      <button type="button" class="mode-tab" id="tab-para" role="tab"
+        aria-selected="false" aria-controls="view-para" tabindex="-1">パラフレ帳</button>
+    </div>
+  </div>
+
+  <div class="header-row header-row--main" data-mode-view="drill">
     <div class="deck-picker">
       <label class="visually-hidden" for="deck-select">セット</label>
       <select id="deck-select" class="deck-select"></select>
@@ -33,7 +57,7 @@
     </button>
   </div>
 
-  <div class="header-row header-row--controls">
+  <div class="header-row header-row--controls" data-mode-view="drill">
     <button type="button" id="btn-toggle-all" class="btn btn--primary" aria-pressed="true">
       <span class="btn-label" id="btn-toggle-all-label">英語を表示</span>
     </button>
@@ -51,10 +75,33 @@
     <button type="button" id="btn-settings" class="btn btn--icon" aria-label="設定" aria-haspopup="dialog">⚙</button>
   </div>
 
-  <p class="status-bar" id="status-bar" role="status" aria-live="polite"></p>
+  <!-- ===== パラフレ帳の操作列（ジャンルがいちばん上） ===== -->
+  <div class="header-row header-row--genre" data-mode-view="para">
+    <div class="genre-field">
+      <label class="visually-hidden" for="genre-input">ジャンル</label>
+      <input type="search" id="genre-input" class="genre-input" placeholder="ジャンルを探す・作る"
+        autocomplete="off" enterkeyhint="done">
+      <button type="button" id="btn-genre-add" class="btn btn--primary genre-add">
+        <span aria-hidden="true">＋</span><span class="btn-label">作る</span>
+      </button>
+    </div>
+
+    <button type="button" id="btn-para-mask" class="btn btn--ghost" aria-pressed="false" aria-label="言い換えを隠す">
+      <span aria-hidden="true">👁</span><span class="btn-label" id="btn-para-mask-label">言い換えを隠す</span>
+    </button>
+  </div>
+
+  <div class="header-row header-row--genres" data-mode-view="para">
+    <ul class="genre-chips" id="genre-chips"></ul>
+  </div>
+
+  <p class="status-bar" id="status-bar" data-mode-view="drill" role="status" aria-live="polite"></p>
+  <p class="status-bar" id="para-status" data-mode-view="para" role="status" aria-live="polite"></p>
 </header>
 
 <main class="app-main">
+  <section class="view" id="view-drill" data-mode-view="drill"
+    role="tabpanel" aria-labelledby="tab-drill" tabindex="-1">
   <div class="sheet" id="sheet">
     <div class="sheet-head" aria-hidden="true">
       <span class="sheet-head-cell sheet-head-cell--num">#</span>
@@ -70,11 +117,27 @@
       <span aria-hidden="true">＋</span> 文を追加
     </button>
   </div>
+  </section>
+
+  <!-- ===== パラフレ帳 ===== -->
+  <section class="view view--para" id="view-para" data-mode-view="para"
+    role="tabpanel" aria-labelledby="tab-para" tabindex="-1">
+    <h2 class="para-genre-title" id="para-genre-title">すべて</h2>
+
+    <ol class="para-list" id="para-list"></ol>
+
+    <p class="empty-state" id="para-empty" hidden></p>
+
+    <button type="button" id="btn-para-add" class="add-row" aria-haspopup="dialog">
+      <span aria-hidden="true">＋</span> パラフレを追加
+    </button>
+  </section>
 </main>
 
 <footer class="app-footer">
-  <p class="hint hint--desktop">↑↓ 行を移動／Space・Enter 英語の表示切替／A 全表示・全非表示／/ 検索</p>
-  <p class="hint hint--mobile">行をタップすると英語が出ます</p>
+  <p class="hint hint--desktop" data-mode-view="drill">↑↓ 行を移動／Space・Enter 英語の表示切替／A 全表示・全非表示／/ 検索</p>
+  <p class="hint hint--mobile" data-mode-view="drill">行をタップすると英語が出ます</p>
+  <p class="hint" data-mode-view="para">見出しの英文が元の1文、その下が言い換えです。「言い換えを隠す」を押すと、見出しをタップするまで伏せられます。</p>
 </footer>
 
 <!-- ===== 行テンプレート（JS からクローンして使う） ===== -->
@@ -93,6 +156,34 @@
       <button type="button" class="btn btn--icon row-star" aria-label="チェックを付ける" aria-pressed="false" tabindex="-1">★</button>
       <button type="button" class="btn btn--icon row-delete" aria-label="この文を削除する" tabindex="-1" hidden>🗑</button>
     </span>
+  </li>
+</template>
+
+<!-- ===== パラフレ 1 枚のテンプレート（JS からクローンして使う） ===== -->
+<template id="para-template">
+  <li class="para-card" data-id="">
+    <button type="button" class="para-head" aria-expanded="true">
+      <span class="para-head-en"></span>
+      <small class="para-head-ja"></small>
+    </button>
+
+    <ol class="para-lines"></ol>
+
+    <div class="para-foot">
+      <span class="para-genre-tag"></span>
+      <span class="para-tools">
+        <button type="button" class="btn btn--icon para-speak" aria-label="見出しの英文を読み上げる">🔈</button>
+        <button type="button" class="btn btn--icon para-edit" aria-label="このパラフレを編集する">✎</button>
+        <button type="button" class="btn btn--icon para-delete" aria-label="このパラフレを削除する">🗑</button>
+      </span>
+    </div>
+  </li>
+</template>
+
+<template id="para-line-template">
+  <li class="para-line">
+    <span class="para-line-en"></span>
+    <span class="para-line-ja"></span>
   </li>
 </template>
 
@@ -189,6 +280,89 @@
   </form>
 </dialog>
 
+<!-- ===== パラフレの追加・編集ダイアログ ===== -->
+<dialog id="para-dialog" class="dialog" aria-labelledby="para-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="para-dialog-title" class="dialog-title">パラフレを追加</h2>
+    <p class="dialog-desc">
+      見出しに元の 1 文、その下に言い換えを 4 つまで入れられます。
+      日本語の意味は空のままでもかまいません。
+    </p>
+
+    <label class="field">
+      <span class="field-label">ジャンル</span>
+      <select id="para-genre-select" class="deck-select"></select>
+    </label>
+
+    <fieldset class="field-group">
+      <legend class="field-label">見出し（元の 1 文）</legend>
+      <label class="field">
+        <span class="visually-hidden">見出しの英文</span>
+        <input type="text" id="para-head-en" class="field-input" autocomplete="off"
+          enterkeyhint="next" placeholder="例：It is important to keep trying.">
+      </label>
+      <label class="field">
+        <span class="visually-hidden">見出しの意味</span>
+        <input type="text" id="para-head-ja" class="field-input" autocomplete="off"
+          enterkeyhint="next" placeholder="例：やり続けることが大切だ。">
+      </label>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend class="field-label">言い換え（4 つまで）</legend>
+
+      <div class="para-line-field">
+        <label class="visually-hidden" for="para-line-en-1">言い換え 1 の英文</label>
+        <input type="text" id="para-line-en-1" class="field-input" autocomplete="off" placeholder="1つめの英文">
+        <label class="visually-hidden" for="para-line-ja-1">言い換え 1 の意味</label>
+        <input type="text" id="para-line-ja-1" class="field-input field-input--sub" autocomplete="off" placeholder="1つめの意味">
+      </div>
+
+      <div class="para-line-field">
+        <label class="visually-hidden" for="para-line-en-2">言い換え 2 の英文</label>
+        <input type="text" id="para-line-en-2" class="field-input" autocomplete="off" placeholder="2つめの英文">
+        <label class="visually-hidden" for="para-line-ja-2">言い換え 2 の意味</label>
+        <input type="text" id="para-line-ja-2" class="field-input field-input--sub" autocomplete="off" placeholder="2つめの意味">
+      </div>
+
+      <div class="para-line-field">
+        <label class="visually-hidden" for="para-line-en-3">言い換え 3 の英文</label>
+        <input type="text" id="para-line-en-3" class="field-input" autocomplete="off" placeholder="3つめの英文">
+        <label class="visually-hidden" for="para-line-ja-3">言い換え 3 の意味</label>
+        <input type="text" id="para-line-ja-3" class="field-input field-input--sub" autocomplete="off" placeholder="3つめの意味">
+      </div>
+
+      <div class="para-line-field">
+        <label class="visually-hidden" for="para-line-en-4">言い換え 4 の英文</label>
+        <input type="text" id="para-line-en-4" class="field-input" autocomplete="off" placeholder="4つめの英文">
+        <label class="visually-hidden" for="para-line-ja-4">言い換え 4 の意味</label>
+        <input type="text" id="para-line-ja-4" class="field-input field-input--sub" autocomplete="off" placeholder="4つめの意味">
+      </div>
+    </fieldset>
+
+    <p class="dialog-note" id="para-dialog-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-para-cancel" class="btn btn--ghost">閉じる</button>
+      <button type="button" id="btn-para-save" class="btn btn--primary">保存する</button>
+    </div>
+
+    <hr class="dialog-sep">
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">ジャンル</h3>
+      <p class="dialog-hint">ジャンルはいくつでも作れます。消してもパラフレは残り、「ジャンルなし」に移ります。</p>
+      <div class="new-deck-row">
+        <label class="visually-hidden" for="para-new-genre">新しいジャンルの名前</label>
+        <input type="text" id="para-new-genre" class="field-input" autocomplete="off"
+          enterkeyhint="done" placeholder="例：会議で使う言い換え">
+        <button type="button" id="btn-para-new-genre" class="btn btn--ghost">作る</button>
+      </div>
+      <ul class="deck-manage-list" id="genre-manage-list"></ul>
+    </div>
+  </form>
+</dialog>
+
 <!-- ===== 設定ダイアログ ===== -->
 <dialog id="settings-dialog" class="dialog" aria-labelledby="settings-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -227,6 +401,7 @@
 
 <script src="assets/data.js"></script>
 <script src="assets/app.js"></script>
+<script src="assets/paraphrase.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
