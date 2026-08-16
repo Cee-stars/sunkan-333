@@ -46,7 +46,7 @@
 
   /** 前後の空白と BOM を落とす */
   function trim(v) {
-    return str(v).replace(/^[﻿\s]+|\s+$/g, '');
+    return str(v).replace(/^[\uFEFF\s]+|\s+$/g, '');
   }
 
   function isBool(v) { return v === true || v === false; }
@@ -257,7 +257,7 @@
         lineHasTab = false; lineHasComma = false; lineHasContent = false;
         continue;
       }
-      if (c !== ' ' && c !== '﻿') lineHasContent = true;
+      if (c !== ' ' && c !== '\uFEFF') lineHasContent = true;
     }
     endLine();
 
@@ -331,7 +331,7 @@
       skipped: 0,
       headerDropped: false
     };
-    var src = str(text).replace(/^﻿/, '');
+    var src = str(text).replace(/^\uFEFF/, '');
     if (!trim(src)) return result;
 
     var delim = detectDelimiter(src);
@@ -586,7 +586,7 @@
       var it = items[i];
       var id = trim(it.id);
       if (!id) {
-        id = hashString(it.ja + '' + it.en);
+        id = hashString(it.ja + '\u0001' + it.en);
       }
       if (used[id]) {
         var n = 2;
