@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="瞬間英作文">
+<meta name="description" content="日本語を見て即英作文。スプレッドシート感覚の2列リストで、英語は隠せます。">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="stylesheet" href="assets/style.css">
+<title>瞬間英作文</title>
+</head>
+<body>
+
+<a class="skip-link" href="#rows">本文へスキップ</a>
+
+<header class="app-header" id="app-header">
+  <div class="header-row header-row--main">
+    <h1 class="app-title">瞬間英作文</h1>
+
+    <div class="deck-picker">
+      <label class="visually-hidden" for="deck-select">セット</label>
+      <select id="deck-select" class="deck-select"></select>
+    </div>
+
+    <button type="button" id="btn-data" class="btn btn--ghost" aria-haspopup="dialog">
+      <span aria-hidden="true">＋</span><span class="btn-label">データ</span>
+    </button>
+  </div>
+
+  <div class="header-row header-row--controls">
+    <button type="button" id="btn-toggle-all" class="btn btn--primary" aria-pressed="true">
+      <span class="btn-label" id="btn-toggle-all-label">英語を表示</span>
+    </button>
+
+    <div class="search-wrap">
+      <label class="visually-hidden" for="search">検索</label>
+      <input type="search" id="search" class="search-input" placeholder="日本語・英語で検索" autocomplete="off" enterkeyhint="search">
+      <button type="button" id="btn-search-clear" class="btn btn--icon search-clear" aria-label="検索をクリア" hidden>×</button>
+    </div>
+
+    <button type="button" id="btn-shuffle" class="btn btn--ghost" aria-label="順番をシャッフル">
+      <span aria-hidden="true">⇅</span><span class="btn-label">シャッフル</span>
+    </button>
+
+    <button type="button" id="btn-settings" class="btn btn--icon" aria-label="設定" aria-haspopup="dialog">⚙</button>
+  </div>
+
+  <p class="status-bar" id="status-bar" role="status" aria-live="polite"></p>
+</header>
+
+<main class="app-main">
+  <div class="sheet" id="sheet">
+    <div class="sheet-head" aria-hidden="true">
+      <span class="sheet-head-cell sheet-head-cell--num">#</span>
+      <span class="sheet-head-cell sheet-head-cell--ja">日本語</span>
+      <span class="sheet-head-cell sheet-head-cell--en">英語</span>
+    </div>
+
+    <ol class="rows" id="rows" tabindex="-1"></ol>
+
+    <p class="empty-state" id="empty-state" hidden>該当する文がありません。</p>
+  </div>
+</main>
+
+<footer class="app-footer">
+  <p class="hint hint--desktop">↑↓ 行を移動／Space・Enter 英語の表示切替／A 全表示・全非表示／/ 検索</p>
+  <p class="hint hint--mobile">行をタップすると英語が出ます</p>
+</footer>
+
+<!-- ===== 行テンプレート（JS からクローンして使う） ===== -->
+<template id="row-template">
+  <li class="row" data-id="">
+    <button type="button" class="row-main" aria-expanded="false">
+      <span class="cell cell--num" aria-hidden="true"></span>
+      <span class="cell cell--ja"></span>
+      <span class="cell cell--en">
+        <span class="en-text"></span>
+        <span class="en-mask" aria-hidden="true"></span>
+      </span>
+    </button>
+    <span class="row-tools">
+      <button type="button" class="btn btn--icon row-speak" aria-label="英語を読み上げる" tabindex="-1">🔈</button>
+      <button type="button" class="btn btn--icon row-star" aria-label="チェックを付ける" aria-pressed="false" tabindex="-1">★</button>
+    </span>
+  </li>
+</template>
+
+<!-- ===== データ取り込みダイアログ ===== -->
+<dialog id="data-dialog" class="dialog" aria-labelledby="data-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="data-dialog-title" class="dialog-title">自分のデータを読み込む</h2>
+    <p class="dialog-desc">
+      Google スプレッドシートで「左に日本語・右に英語」の2列を選んでコピーし、そのまま下に貼り付けてください。
+      タブ区切り・カンマ区切りのどちらでも読み込めます。
+    </p>
+
+    <label class="field">
+      <span class="field-label">セット名</span>
+      <input type="text" id="import-name" class="field-input" placeholder="例：中1レベル 100本ノック" autocomplete="off">
+    </label>
+
+    <label class="field">
+      <span class="field-label">貼り付け</span>
+      <textarea id="import-text" class="field-input field-textarea" rows="10"
+        placeholder="私は毎朝コーヒーを飲みます。&#9;I drink coffee every morning.&#10;彼は今どこにいますか。&#9;Where is he now?"></textarea>
+    </label>
+
+    <p class="dialog-note" id="import-preview" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-import-cancel" class="btn btn--ghost">キャンセル</button>
+      <button type="button" id="btn-import-save" class="btn btn--primary">読み込む</button>
+    </div>
+
+    <hr class="dialog-sep">
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">保存済みの自作セット</h3>
+      <ul class="deck-manage-list" id="deck-manage-list"></ul>
+      <button type="button" id="btn-export" class="btn btn--ghost">今のセットをコピー（TSV）</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 設定ダイアログ ===== -->
+<dialog id="settings-dialog" class="dialog" aria-labelledby="settings-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="settings-dialog-title" class="dialog-title">設定</h2>
+
+    <fieldset class="field-group">
+      <legend class="field-label">英語の隠し方</legend>
+      <label class="radio"><input type="radio" name="mask-style" value="blur" checked> ぼかす</label>
+      <label class="radio"><input type="radio" name="mask-style" value="block"> 塗りつぶす</label>
+      <label class="radio"><input type="radio" name="mask-style" value="hidden"> 空白にする</label>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend class="field-label">表示</legend>
+      <label class="check"><input type="checkbox" id="opt-auto-hide"> 次の行を開いたら前の行を隠す</label>
+      <label class="check"><input type="checkbox" id="opt-hide-ja"> 逆向き（日本語のほうを隠す）</label>
+      <label class="check"><input type="checkbox" id="opt-starred-only"> ★を付けた行だけ表示</label>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend class="field-label">文字サイズ</legend>
+      <input type="range" id="opt-font-size" min="0" max="4" step="1" value="2" class="field-range">
+      <output for="opt-font-size" id="opt-font-size-out" class="field-output">標準</output>
+    </fieldset>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-settings-close" class="btn btn--primary">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="assets/data.js"></script>
+<script src="assets/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* オフライン対応なしでも動く */ });
+  });
+}
+</script>
+</body>
+</html>
