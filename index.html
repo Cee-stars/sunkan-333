@@ -135,6 +135,16 @@
     <div class="dialog-secondary">
       <h3 class="dialog-subtitle">このセットに追加した文</h3>
       <ul class="added-list" id="added-list"></ul>
+
+      <h3 class="dialog-subtitle">新しいセットを作る</h3>
+      <p class="dialog-hint">空のセットを作って、そこに1文ずつ足していけます。</p>
+      <div class="new-deck-row">
+        <label class="visually-hidden" for="new-deck-name">新しいセットの名前</label>
+        <input type="text" id="new-deck-name" class="field-input" autocomplete="off"
+          enterkeyhint="done" placeholder="例：仕事で使う言い回し">
+        <button type="button" id="btn-new-deck" class="btn btn--ghost">作る</button>
+      </div>
+
       <button type="button" id="btn-data" class="btn btn--ghost" aria-haspopup="dialog">
         表からまとめて読み込む
       </button>

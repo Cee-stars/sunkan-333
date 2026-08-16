@@ -903,6 +903,29 @@ button, input, select, textarea {
 /* 入力エラーは色でも伝える */
 .dialog-note[data-error="true"] { color: var(--danger); }
 
+/* 新しいセットを作る欄 */
+.dialog-hint {
+  margin-block-start: -4px;
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+}
+
+.new-deck-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.new-deck-row .field-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.new-deck-row .btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+}
+
 /* =============================================================
    10. 空状態・フッター
    ============================================================= */

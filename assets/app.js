@@ -492,6 +492,8 @@
   var elAddSave = $('btn-add-save');
   var elAddClose = $('btn-add-close');
   var elAddedList = $('added-list');
+  var elNewDeckName = $('new-deck-name');
+  var elNewDeck = $('btn-new-deck');
 
   var elDataDialog = $('data-dialog');
   var elImportName = $('import-name');
@@ -959,7 +961,16 @@
     state.visibleCount = visible;
 
     if (elEmptyState) {
-      elEmptyState.hidden = !(state.records.length > 0 && visible === 0);
+      if (state.records.length === 0) {
+        // 作りたてのセットは 1 文も無い。何をすればいいか書いておく
+        elEmptyState.textContent = 'このセットにはまだ文がありません。下の「＋ 文を追加」から足せます。';
+        elEmptyState.hidden = false;
+      } else if (visible === 0) {
+        elEmptyState.textContent = '該当する文がありません。';
+        elEmptyState.hidden = false;
+      } else {
+        elEmptyState.hidden = true;
+      }
     }
     if (elSearchClear) {
       elSearchClear.hidden = !state.query;
@@ -1178,6 +1189,42 @@
     }
   }
 
+  /** 空の自作セットを作って、そのまま開く */
+  function createEmptyDeck(name) {
+    var deck = {
+      id: makeUserDeckId(),
+      name: name || ('自作セット ' + (state.userDecks.length + 1)),
+      description: '',
+      items: []
+    };
+    state.userDecks.push(deck);
+    saveUserDecks();
+    renderDeckSelect();
+    renderDeckManageList();
+    selectDeck(deck.id);
+    return deck;
+  }
+
+  function submitNewDeck() {
+    var name = elNewDeckName ? trim(elNewDeckName.value) : '';
+    if (!name) {
+      setAddStatus('セットの名前を入れてください。', true);
+      if (elNewDeckName) elNewDeckName.focus();
+      return;
+    }
+    for (var i = 0; i < state.userDecks.length; i++) {
+      if (state.userDecks[i].name === name) {
+        setAddStatus('同じ名前のセットがすでにあります。', true);
+        return;
+      }
+    }
+    createEmptyDeck(name);
+    if (elNewDeckName) elNewDeckName.value = '';
+    prepareAddDialog();
+    setAddStatus('「' + name + '」を作りました。さっそく1文目を入れてください。', false);
+    if (elAddJa) elAddJa.focus();
+  }
+
   /** ダイアログを開くたびに、対象セット名と一覧を今の状態に合わせる */
   function prepareAddDialog() {
     if (elAddDeckName) {
@@ -1194,7 +1241,7 @@
   function updateStatusBar() {
     if (!elStatusBar) return;
     if (!allDecks().length) {
-      elStatusBar.textContent = 'セットがありません。「＋データ」から自分の例文を貼り付けて読み込めます。';
+      elStatusBar.textContent = 'セットがありません。「＋追加」から新しいセットを作れます。';
       return;
     }
     if (!state.deck || !state.records.length) {
@@ -1717,6 +1764,12 @@
     if (elAddNote) {
       elAddNote.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); submitAddSentence(); }
+      });
+    }
+    if (elNewDeck) elNewDeck.addEventListener('click', submitNewDeck);
+    if (elNewDeckName) {
+      elNewDeckName.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitNewDeck(); }
       });
     }
     if (elAddedList) {
