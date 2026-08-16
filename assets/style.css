@@ -372,6 +372,7 @@ button, input, select, textarea {
 }
 
 .app-title {
+  flex: 0 0 auto;            /* 縮むと CJK の字がつぶれて重なるので縮ませない */
   font-size: 1.0625rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -593,6 +594,30 @@ button, input, select, textarea {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   user-select: none;
+  /* .cell の overflow-wrap: anywhere を打ち消す。
+     これがないと 2 桁の番号が「1」「0」に割れて行が伸びる。 */
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* メモ（note）
+   答えのヒントそのものなので、伏せている間は出さない。
+   答え合わせのときだけ、日本語の下に小さく添える。 */
+.note {
+  display: none;
+}
+
+.row.is-revealed .note {
+  display: block;
+  margin-block-start: 0.25em;
+  font-size: max(0.6875rem, calc(var(--row-font) * 0.76));
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.note::before {
+  content: "※ ";
 }
 
 .cell--ja {
@@ -760,6 +785,35 @@ button, input, select, textarea {
 
 @media (hover: hover) and (pointer: fine) {
   .row:hover .row-tools { opacity: 1; pointer-events: auto; }
+}
+
+/* 狭い画面では右に逃がす余白が取れないので、重ねずに 2 段目へ落とす。
+   重ねたままだと答えの末尾（"He's my older brother." の brother.）が
+   ボタンの下に隠れて読めなくなる。 */
+@media (max-width: 560px) {
+  .row {
+    display: grid;
+    grid-template-rows: auto auto;
+  }
+
+  .row-tools {
+    position: static;
+    grid-row: 2;
+    display: none;
+    justify-content: flex-end;
+    background: none;
+    padding-inline: 0 max(8px, env(safe-area-inset-right));
+    padding-block-end: 4px;
+  }
+
+  .row.is-revealed .row-tools,
+  .row.is-current .row-tools,
+  .row.is-starred .row-tools,
+  .row:focus-within .row-tools {
+    display: flex;
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 
@@ -1337,6 +1391,13 @@ legend.field-label {
   .dialog { display: none !important; }
 
   .app-main { padding: 0; }
+
+  /* 紙に出すときは伏せる意味がないので、メモも出す */
+  .note {
+    display: block !important;
+    font-size: 8.5pt;
+    color: #555;
+  }
 
   .sheet {
     max-width: none;

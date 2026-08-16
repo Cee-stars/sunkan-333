@@ -633,9 +633,9 @@
       var note = document.createElement('small');
       note.className = 'note';
       note.textContent = record.note;
-      jaEl.appendChild(document.createTextNode(' '));
       jaEl.appendChild(note);
-      li.setAttribute('title', record.note);
+      // title 属性は付けない。行にカーソルを置いただけでツールチップが出て、
+      // 答えを考えている最中にヒントが見えてしまうため。
     }
 
     if (starEl) {
