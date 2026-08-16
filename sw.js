@@ -3,7 +3,9 @@
          更新は裏で取り直して次回起動時に反映する stale-while-revalidate。 */
 'use strict';
 
-var CACHE = 'sunkan-v1';
+// 名前を変えると activate で古いキャッシュを丸ごと捨てられる。
+// 配信方法を変えたときは必ず上げること。
+var CACHE = 'sunkan-v2';
 
 var ASSETS = [
   './',
@@ -43,21 +45,26 @@ self.addEventListener('fetch', function (event) {
   if (req.method !== 'GET') { return; }
   if (new URL(req.url).origin !== self.location.origin) { return; }
 
+  // ネットワーク優先。つながるときは必ず最新を出し、
+  // 落ちたときだけキャッシュに逃がす。
+  //
+  // 以前はキャッシュ優先にしていたが、それだと更新を出しても
+  // 古い一式が返り続けて「何も変わらない」状態になる。
+  // オフライン対応より、更新が確実に届くことを優先する。
   event.respondWith(
-    caches.match(req).then(function (cached) {
-      var network = fetch(req).then(function (res) {
-        if (res && res.status === 200 && res.type === 'basic') {
-          var copy = res.clone();
-          caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
-        }
-        return res;
-      }).catch(function () {
-        // オフライン。ページ遷移なら index.html を返す
+    fetch(req).then(function (res) {
+      if (res && res.status === 200 && res.type === 'basic') {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
+      }
+      return res;
+    }).catch(function () {
+      return caches.match(req).then(function (cached) {
+        if (cached) { return cached; }
+        // オフラインでのページ遷移は index.html に逃がす
         if (req.mode === 'navigate') { return caches.match('./index.html'); }
-        return cached;
+        return Response.error();
       });
-
-      return cached || network;
     })
   );
 });

@@ -219,8 +219,25 @@
 <script src="assets/app.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
+  // 起動時点で既に worker に制御されていたか。
+  // 初回登録の controllerchange で無駄に再読み込みしないための判定。
+  var hadController = !!navigator.serviceWorker.controller;
+  var reloading = false;
+
+  // 新しい worker が主導権を取ったら一度だけ読み直す。
+  // これが無いと、更新後の 1 回目は古い worker が応答してしまう。
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!hadController || reloading) { return; }
+    reloading = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* オフライン対応なしでも動く */ });
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      if (reg && typeof reg.update === 'function') {
+        reg.update();  // 開くたびに更新を確認する
+      }
+    }).catch(function () { /* オフライン対応なしでも動く */ });
   });
 }
 </script>
