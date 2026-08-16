@@ -48,6 +48,11 @@ window.SUNKAN_DECKS = [
 | `hidden` 属性 | 検索・絞り込みで非表示 |
 | `.row-main[aria-expanded]` | `true` / `false` で表示状態を持つ |
 
+### メモ（`note`）
+`items[].note` があるとき、JS が `.cell--ja` の中に `<small class="note">` を足す。
+**答えのヒントそのものなので、`.row.is-revealed` のときだけ表示する**（伏せている間に見えると意味がない）。
+同じ理由で、行に `title` 属性は付けない（ホバーでツールチップが出て答えが割れるため）。
+
 ### その他
 - `#btn-toggle-all[aria-pressed="true"]` … 現在「全部隠れている」状態。ラベルは `#btn-toggle-all-label` の文字列を JS が書き換える（`英語を表示` / `英語を隠す`）。
 - `#empty-state` … 該当 0 件のとき `hidden` を外す。
