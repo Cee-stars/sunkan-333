@@ -1,0 +1,1377 @@
+@charset "utf-8";
+
+/* =============================================================
+   瞬間英作文 — assets/style.css
+   担当: A（全スタイル）
+   方針: 素の CSS のみ。外部フォント・CDN なし。
+        すべての色は CSS 変数を経由する。
+        iPhone（縦・狭幅）と MacBook（広幅）の両方で
+        「日本語 → 英語」の 2 列が横に並び続けることを最優先。
+   目次:
+     01. 変数（ライト / ダーク）
+     02. リセットと下地
+     03. ユーティリティ
+     04. ボタン共通
+     05. ヘッダー
+     06. シート（表本体）
+     07. 行
+     08. 隠す仕組み（blur / block / hidden）
+     09. 行のツール（読み上げ・★）
+     10. 空状態・フッター
+     11. ダイアログ
+     12. フォーム部品
+     13. 画面幅ごとの調整
+     14. モーション配慮
+     15. 印刷
+   ============================================================= */
+
+
+/* =============================================================
+   01. 変数（ライト / ダーク）
+   ============================================================= */
+
+:root {
+  color-scheme: light dark;
+
+  /* --- 面と文字 --- */
+  --bg:              #ffffff;
+  --surface:         #ffffff;
+  --surface-alt:     #fafbfc;   /* 縞模様の薄いほう */
+  --surface-sunken:  #f2f4f7;   /* 入力欄・ヘッダー帯 */
+  --surface-raised:  #ffffff;   /* ダイアログのカード */
+
+  --text:            #14181d;
+  --text-muted:      #576270;
+  --text-faint:      #8d97a3;
+  --text-invert:     #ffffff;
+
+  /* --- 線 --- */
+  --hairline:        #e7e9ee;   /* 行間・列間の細い線 */
+  --border:          #d3d8e0;   /* 部品の輪郭 */
+  --border-strong:   #b7bec9;
+
+  /* --- 主役の色 --- */
+  --accent:          #2b6cb0;
+  --accent-hover:    #235a94;
+  --accent-soft:     #e8f0fa;   /* 現在行の淡い背景 */
+  --accent-contrast: #ffffff;
+  --focus:           #2b6cb0;
+
+  /* --- 状態 --- */
+  --hover:           #f1f4f8;
+  --pressed:         #e6ebf2;
+  --star:            #d99a12;
+  --star-off:        #b9c0c9;
+  --danger:          #b3261e;
+  --danger-soft:     #fdeceb;
+
+  /* --- 覆い（block モードの帯） --- */
+  --mask-block:      #dde2e8;
+  --mask-block-edge: #cdd4dc;
+
+  --backdrop:        rgba(18, 22, 28, 0.42);
+  --shadow-card:     0 18px 48px rgba(16, 22, 32, 0.18), 0 2px 6px rgba(16, 22, 32, 0.08);
+  --shadow-header:   0 1px 0 var(--hairline);
+
+  /* --- 寸法 --- */
+  --max-w:           1100px;
+  --tap:             44px;          /* 指で押せる最小サイズ */
+  --radius-sm:       6px;
+  --radius:          10px;
+  --radius-lg:       16px;
+  --cell-pad-x:      12px;
+  --row-pad-y:       11px;
+  --tools-space:     0px;           /* 行の右に空けておく幅（広幅で上書き） */
+  --sheet-cols:      3.25rem minmax(0, 1fr) minmax(0, 1fr);
+
+  /* --- 文字 --- */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI",
+             "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+             "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  --font-en: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI",
+             "Noto Sans", Arial, sans-serif;
+
+  --row-font:        1.0625rem;     /* data-font="2" 相当（既定） */
+  --row-leading:     1.6;
+  --mask-blur:       0.38em;
+  --dur:             120ms;
+  --ease:            cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* 文字サイズ（<html data-font="0"〜"4"> / 既定は 2） */
+:root[data-font="0"] { --row-font: 0.85rem;   --row-leading: 1.55; }
+:root[data-font="1"] { --row-font: 0.95rem;   --row-leading: 1.58; }
+:root[data-font="2"] { --row-font: 1.0625rem; --row-leading: 1.6;  }
+:root[data-font="3"] { --row-font: 1.25rem;   --row-leading: 1.62; }
+:root[data-font="4"] { --row-font: 1.5rem;    --row-leading: 1.64; }
+
+/* --- ダーク --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:              #111418;
+    --surface:         #14181d;
+    --surface-alt:     #171c22;
+    --surface-sunken:  #1b2027;
+    --surface-raised:  #1a1f26;
+
+    --text:            #e9edf2;
+    --text-muted:      #a0abb7;
+    --text-faint:      #7c8794;
+    --text-invert:     #0d1116;
+
+    --hairline:        #262c34;
+    --border:          #343c46;
+    --border-strong:   #4a545f;
+
+    --accent:          #7fb0f0;
+    --accent-hover:    #9cc3f7;
+    --accent-soft:     #1c2836;
+    --accent-contrast: #0d1116;
+    --focus:           #8cb8f2;
+
+    --hover:           #1c222a;
+    --pressed:         #222a33;
+    --star:            #e8b84b;
+    --star-off:        #616b77;
+    --danger:          #f2a8a3;
+    --danger-soft:     #33201f;
+
+    --mask-block:      #2b323a;
+    --mask-block-edge: #363e47;
+
+    --backdrop:        rgba(0, 0, 0, 0.58);
+    --shadow-card:     0 18px 48px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+}
+
+
+/* =============================================================
+   02. リセットと下地
+   ============================================================= */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.5;
+  overflow-x: hidden;              /* 320px でも横スクロールを出さない */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+h1, h2, h3, p, ul, ol, figure, fieldset {
+  margin: 0;
+  padding: 0;
+}
+
+ul, ol { list-style: none; }
+
+fieldset { border: 0; min-width: 0; }
+
+hr { border: 0; }
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* hidden 属性は display 指定より必ず強く効かせる（.row などが display を持つため） */
+[hidden] { display: none !important; }
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* 既定のフォーカスリングは :focus-visible に任せる */
+:focus:not(:focus-visible) { outline: none; }
+
+
+/* =============================================================
+   03. ユーティリティ
+   ============================================================= */
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 100;
+  padding: 10px 16px;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  transform: translateY(calc(-100% - 16px));
+  transition: transform var(--dur) var(--ease);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(max(0px, env(safe-area-inset-top)));
+}
+
+
+/* =============================================================
+   04. ボタン共通
+   ============================================================= */
+
+.btn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.btn--primary[aria-pressed="false"] {
+  background: transparent;
+  color: var(--accent);
+}
+
+.btn--ghost {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn--icon {
+  padding: 0;
+  width: var(--tap);
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  font-size: 1.0625rem;
+  font-weight: 500;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover  { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-contrast); }
+  .btn--ghost:hover    { background: var(--hover); border-color: var(--border-strong); }
+  .btn--icon:hover     { background: var(--hover); color: var(--text); }
+}
+
+.btn:active { transform: translateY(0.5px); }
+.btn--ghost:active,
+.btn--icon:active { background: var(--pressed); }
+.btn--primary:active { background: var(--accent-hover); }
+
+
+/* =============================================================
+   05. ヘッダー
+   ============================================================= */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+  padding-top: env(safe-area-inset-top);
+  padding-inline: 0;
+  /* iOS でスクロール中にちらつかないよう合成レイヤに載せる */
+  will-change: transform;
+}
+
+@supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
+  .app-header {
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    -webkit-backdrop-filter: saturate(1.6) blur(12px);
+    backdrop-filter: saturate(1.6) blur(12px);
+  }
+}
+
+.header-row {
+  width: 100%;
+  max-width: var(--max-w);
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
+}
+
+.header-row--main {
+  padding-block: 8px 2px;
+}
+
+.header-row--controls {
+  padding-block: 6px 8px;
+  flex-wrap: wrap;
+}
+
+.app-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.deck-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+.deck-select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--surface-sunken);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 14px center, right 9px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--text);
+  font-size: 16px;                 /* iOS のズーム防止 */
+  font-weight: 600;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+/* --- 検索 --- */
+
+.search-wrap {
+  position: relative;
+  flex: 1 1 12rem;
+  min-width: 0;
+  display: flex;
+}
+
+.search-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 40px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 16px;                 /* iOS のズーム防止（16px 未満にしない） */
+  transition: border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+.search-input::placeholder { color: var(--text-faint); }
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.search-input::-webkit-search-decoration,
+.search-input::-webkit-search-cancel-button,
+.search-input::-webkit-search-results-button { -webkit-appearance: none; appearance: none; }
+
+.search-clear {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  font-size: 1.25rem;
+  line-height: 1;
+  border-radius: 50%;
+}
+
+/* --- 状態表示 --- */
+
+.status-bar {
+  width: 100%;
+  max-width: var(--max-w);
+  margin-inline: auto;
+  padding: 0 max(12px, env(safe-area-inset-left)) 7px max(12px, env(safe-area-inset-right));
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.2em;
+}
+
+.status-bar:empty { display: none; }
+
+
+/* =============================================================
+   06. シート（表本体）
+   ============================================================= */
+
+.app-main {
+  flex: 1 1 auto;
+  width: 100%;
+  padding-inline: max(0px, env(safe-area-inset-left)) max(0px, env(safe-area-inset-right));
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.sheet {
+  width: 100%;
+  max-width: var(--max-w);
+  margin-inline: auto;
+  background: var(--surface);
+}
+
+/* 画面上部の吸着はヘッダーに任せる（高さが可変なので二重吸着はさせない） */
+.sheet-head {
+  display: grid;
+  grid-template-columns: var(--sheet-cols);
+  align-items: center;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding-block: 6px;
+  padding-inline-end: var(--tools-space);
+}
+
+.sheet-head-cell {
+  padding-inline: var(--cell-pad-x);
+  min-width: 0;
+}
+
+.sheet-head-cell--num { text-align: right; }
+
+.sheet-head-cell--en {
+  border-inline-start: 1px solid var(--hairline);
+}
+
+
+/* =============================================================
+   07. 行
+   ============================================================= */
+
+.rows { display: block; }
+.rows:focus { outline: none; }
+
+.row {
+  --row-bg: var(--surface);
+  position: relative;
+  display: block;
+  background: var(--row-bg);
+  border-bottom: 1px solid var(--hairline);
+  transition: background-color var(--dur) var(--ease);
+}
+
+/* 縞模様（スプレッドシート感） */
+.row:nth-child(even) { --row-bg: var(--surface-alt); }
+
+@media (hover: hover) and (pointer: fine) {
+  .row:hover { --row-bg: var(--hover); }
+}
+
+/* キーボード操作の現在行：左のアクセントバー＋淡い背景 */
+.row.is-current {
+  --row-bg: var(--accent-soft);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+/* 行全体のボタン */
+.row-main {
+  -webkit-appearance: none;
+  appearance: none;
+  display: grid;
+  grid-template-columns: var(--sheet-cols);
+  align-items: start;
+  width: 100%;
+  min-height: var(--tap);
+  margin: 0;
+  padding: var(--row-pad-y) 0;
+  padding-inline-end: var(--tools-space);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.row-main:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: 0;
+}
+
+.cell {
+  position: relative;
+  min-width: 0;
+  padding-inline: var(--cell-pad-x);
+  font-size: var(--row-font);
+  line-height: var(--row-leading);
+  overflow-wrap: anywhere;         /* 長い英単語でも横に溢れさせない */
+  word-break: normal;
+}
+
+.cell--num {
+  font-size: max(0.6875rem, calc(var(--row-font) * 0.72));
+  line-height: calc(var(--row-leading) * 1.15);
+  color: var(--text-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  user-select: none;
+}
+
+.cell--ja {
+  color: var(--text);
+  font-feature-settings: "palt" 1;
+}
+
+.cell--en {
+  color: var(--text);
+  font-family: var(--font-en);
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.row.is-current .cell--en,
+.row.is-current .sheet-head-cell--en { border-inline-start-color: transparent; }
+
+/* ★ が付いた行の目印 */
+.row.is-starred .cell--num::before {
+  content: "★";
+  position: absolute;
+  inset-inline-start: 0;
+  color: var(--star);
+  font-size: 0.625rem;
+  line-height: inherit;
+}
+
+
+/* =============================================================
+   08. 隠す仕組み（blur / block / hidden）
+   ------------------------------------------------------------
+   ・答え側は .cell--en 内の .en-text（本文）と .en-mask（覆い）。
+   ・data-direction="en-ja" のときは .cell--ja が答え側になる。
+     こちらは中に span がないので、セル自身と ::after を使う。
+   ・どのモードでも「行の高さが変わらない」ことが最重要。
+     filter / 絶対配置の覆い / visibility はいずれも
+     レイアウトを動かさないので、開いても行が伸び縮みしない。
+   ============================================================= */
+
+.en-text {
+  display: inline;
+  transition:
+    filter var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+/* 覆い（block モード用）。既定では透明で場所も取らない。 */
+.en-mask,
+.cell--ja::after {
+  content: "";
+  position: absolute;
+  inset: 0.12em var(--cell-pad-x);
+  display: block;
+  border-radius: 5px;
+  background: var(--mask-block);
+  box-shadow: inset 0 0 0 1px var(--mask-block-edge);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+
+/* 答え側セルの左端の線をまたがないよう、覆いは内側に置く */
+.cell--en .en-mask { inset-inline-start: calc(var(--cell-pad-x) - 2px); }
+
+/* --- ぼかす --- */
+:root[data-mask="blur"] .row:not(.is-revealed) .en-text {
+  filter: blur(var(--mask-blur));
+}
+:root[data-mask="blur"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja {
+  filter: blur(var(--mask-blur));
+}
+
+/* --- 塗りつぶす --- */
+:root[data-mask="block"] .row:not(.is-revealed) .cell--en .en-mask {
+  opacity: 1;
+}
+:root[data-mask="block"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja::after {
+  opacity: 1;
+}
+
+/* --- 空白にする（高さは保つ） --- */
+:root[data-mask="hidden"] .row:not(.is-revealed) .en-text {
+  visibility: hidden;
+}
+:root[data-mask="hidden"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja {
+  visibility: hidden;
+}
+
+/* 空白モードでも「そこに何かある」ことが分かる薄い罫 */
+:root[data-mask="hidden"] .row:not(.is-revealed) .cell--en::after,
+:root[data-mask="hidden"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja::before {
+  content: "";
+  position: absolute;
+  left: var(--cell-pad-x);
+  right: var(--cell-pad-x);
+  bottom: 0.15em;
+  height: 1px;
+  background: var(--hairline);
+  pointer-events: none;
+  visibility: visible;             /* 親が visibility:hidden でも罫は残す */
+}
+
+/* 逆向きのとき、日本語側にも英語側と同じ「開ける」余白感を与える */
+:root[data-direction="en-ja"] .cell--ja { border-inline-start: 0; }
+
+/* 開いた行は本文をはっきり見せる */
+.row.is-revealed .en-text,
+.row.is-revealed .cell--ja {
+  filter: none;
+  visibility: visible;
+}
+
+
+/* =============================================================
+   09. 行のツール（読み上げ・★）
+   ------------------------------------------------------------
+   狭幅では場所を取らず、行の右側に重ねて出す（背景と同色の
+   グラデーションで文字と干渉しないようにする）。
+   広幅では常に右側に場所を確保し、hover / focus で現れる。
+   ============================================================= */
+
+.row-tools {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-inline: 14px 4px;
+  padding-inline-end: max(4px, env(safe-area-inset-right));
+  background: linear-gradient(to right, transparent 0, var(--row-bg) 14px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.row-tools .btn--icon {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 0.9375rem;
+  border-radius: 50%;
+}
+
+/* 見た目は 36px でも、指の当たり判定は 44px 以上を確保する */
+.row-tools .btn--icon::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+}
+.row-tools .btn--icon { position: relative; }
+
+.row-speak { color: var(--text-faint); }
+.row-star  { color: var(--star-off); }
+.row-star[aria-pressed="true"] { color: var(--star); }
+
+/* 出す条件 */
+.row.is-revealed .row-tools,
+.row.is-current .row-tools,
+.row.is-starred .row-tools,
+.row:focus-within .row-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .row:hover .row-tools { opacity: 1; pointer-events: auto; }
+}
+
+
+/* =============================================================
+   10. 空状態・フッター
+   ============================================================= */
+
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.app-footer {
+  padding:
+    10px
+    max(12px, env(safe-area-inset-right))
+    max(10px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.hint {
+  width: 100%;
+  max-width: var(--max-w);
+  margin-inline: auto;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+
+/* =============================================================
+   11. ダイアログ
+   ============================================================= */
+
+.dialog {
+  width: min(560px, calc(100% - 24px));
+  max-width: 560px;
+  max-height: min(86dvh, calc(100dvh - 32px));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;                /* 角の内側でスクロールさせる */
+}
+
+.dialog::backdrop {
+  background: var(--backdrop);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.dialog-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: inherit;
+  padding:
+    20px
+    max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.dialog-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.dialog-subtitle {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.dialog-desc {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.dialog-note {
+  min-height: 1.2em;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+.dialog-note:empty { display: none; }
+
+.dialog-sep {
+  height: 1px;
+  margin: 0;
+  background: var(--hairline);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dialog-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+/* --- 保存済みセットの一覧（中身は JS が作る） --- */
+
+.deck-manage-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.deck-manage-list:empty {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.deck-manage-list:empty::after {
+  content: "まだありません";
+  padding: 14px 12px;
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+}
+
+.deck-manage-list > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 4px 4px 4px 12px;
+  background: var(--surface);
+  font-size: 0.9375rem;
+}
+
+.deck-manage-list > li + li { border-top: 1px solid var(--hairline); }
+.deck-manage-list > li:nth-child(even) { background: var(--surface-alt); }
+
+/* 先頭の要素（デッキ名）を伸ばし、末尾（削除ボタン）は縮ませない */
+.deck-manage-list > li > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-manage-list > li > button,
+.deck-manage-list > li > :last-child:not(:first-child) {
+  flex: 0 0 auto;
+}
+
+.deck-manage-list > li button {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .deck-manage-list > li button:hover {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+  }
+}
+
+/* --- 出現アニメーション --- */
+
+@keyframes sunkan-dialog-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes sunkan-sheet-in {
+  from { opacity: 0; transform: translateY(14%); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes sunkan-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.dialog[open] { animation: sunkan-dialog-in 160ms var(--ease); }
+.dialog[open]::backdrop { animation: sunkan-backdrop-in 160ms var(--ease); }
+
+/* ダイアログが開いている間は裏がスクロールしないように */
+body:has(.dialog[open]) { overflow: hidden; }
+
+
+/* =============================================================
+   12. フォーム部品
+   ============================================================= */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.field-label {
+  display: block;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+legend.field-label {
+  padding-inline: 0;
+  margin-bottom: 2px;
+}
+
+.field-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 16px;                 /* iOS のズーム防止 */
+  line-height: 1.6;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.field-input::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.field-textarea {
+  min-height: 9.5rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Hiragino Sans", "Noto Sans JP", monospace;
+  font-size: 15px;
+  line-height: 1.65;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  tab-size: 4;
+}
+
+/* --- ラジオ / チェック --- */
+
+.radio,
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9375rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur) var(--ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .radio:hover,
+  .check:hover { background: var(--hover); }
+}
+
+.radio input[type="radio"],
+.check input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.radio:has(input:checked),
+.check:has(input:checked) { color: var(--text); font-weight: 600; }
+
+/* --- スライダー --- */
+
+.field-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: var(--tap);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.field-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.field-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.field-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.field-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface-raised);
+}
+
+.field-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent-soft); }
+.field-range:focus-visible::-moz-range-thumb     { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.field-output {
+  align-self: flex-start;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+
+/* =============================================================
+   13. 画面幅ごとの調整
+   ============================================================= */
+
+/* --- 狭幅（iPhone 縦）：# 列を畳む --- */
+@media (max-width: 560px) {
+  :root {
+    --sheet-cols: minmax(0, 1fr) minmax(0, 1fr);
+    --cell-pad-x: 10px;
+    --row-pad-y: 10px;
+  }
+
+  .cell--num,
+  .sheet-head-cell--num { display: none; }
+
+  /* ★ の目印は行の左端に出す */
+  .row.is-starred::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 3px;
+    background: var(--star);
+  }
+
+  .app-title {
+    font-size: 0.9375rem;
+    letter-spacing: 0;
+  }
+
+  .hint--desktop { display: none; }
+}
+
+/* --- ごく狭い端末（iPhone SE 320px など） --- */
+@media (max-width: 480px) {
+  /* ラベルを畳んで記号だけにし、横スクロールを絶対に出さない */
+  .btn--ghost .btn-label { display: none; }
+  .btn--ghost { padding-inline: 10px; }
+
+  .header-row { gap: 6px; }
+  .header-row--controls { gap: 6px; }
+
+  #btn-toggle-all { flex: 0 0 auto; padding-inline: 12px; }
+  .search-wrap { flex: 1 1 8rem; }
+}
+
+@media (max-width: 380px) {
+  :root { --cell-pad-x: 8px; }
+  .header-row--controls { row-gap: 6px; }
+  .search-wrap { flex: 1 1 100%; order: 3; }
+}
+
+/* --- 狭幅のダイアログはボトムシート --- */
+@media (max-width: 560px) {
+  .dialog {
+    width: 100%;
+    max-width: none;
+    max-height: 92dvh;
+    margin: auto auto 0 auto;
+    border-inline: 0;
+    border-bottom: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+
+  .dialog[open] { animation: sunkan-sheet-in 200ms var(--ease); }
+
+  .dialog-inner { padding-top: 16px; }
+
+  /* つまみ（シートらしさ） */
+  .dialog-title::before {
+    content: "";
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 0 auto 14px;
+    border-radius: 2px;
+    background: var(--border);
+  }
+
+  .dialog-actions .btn { flex: 1 1 0; }
+}
+
+/* --- 広幅（MacBook 以上）：余白を広げ、ツールの場所を確保 --- */
+@media (min-width: 561px) {
+  :root {
+    --tools-space: 92px;
+    --cell-pad-x: 16px;
+    --row-pad-y: 13px;
+  }
+
+  .hint--mobile { display: none; }
+
+  .row-tools {
+    background: none;
+    padding-inline: 0 12px;
+  }
+
+  .app-main { padding-block: 8px 24px; }
+
+  .sheet {
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .sheet-head { border-radius: var(--radius) var(--radius) 0 0; }
+
+  .row:last-child { border-bottom: 0; }
+
+  .app-title { font-size: 1.125rem; }
+
+  .header-row--main { padding-block: 10px 4px; }
+  .header-row--controls { padding-block: 6px 10px; }
+
+  .app-footer { padding-block: 14px; }
+}
+
+@media (min-width: 900px) {
+  :root {
+    --row-pad-y: 15px;
+    --cell-pad-x: 20px;
+  }
+
+  .app-main { padding-block: 16px 40px; }
+  .header-row { gap: 12px; }
+  .deck-picker { flex: 0 1 22rem; }
+  .search-wrap { flex: 1 1 18rem; }
+}
+
+
+/* =============================================================
+   14. モーション配慮
+   ============================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 高コントラスト設定では線を強める */
+@media (prefers-contrast: more) {
+  :root {
+    --hairline: var(--border);
+    --text-muted: var(--text);
+  }
+  .cell--en { border-inline-start-color: var(--border-strong); }
+}
+
+
+/* =============================================================
+   15. 印刷
+   ------------------------------------------------------------
+   隠しはすべて解除し、画面用の装飾は落として
+   「日本語 / 英語」の対訳表として読めるようにする。
+   ============================================================= */
+
+@media print {
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-alt: #ffffff;
+    --surface-sunken: #ffffff;
+    --text: #000000;
+    --text-muted: #333333;
+    --text-faint: #555555;
+    --hairline: #bbbbbb;
+    --border: #999999;
+    --tools-space: 0px;
+    --sheet-cols: 2.5rem minmax(0, 1fr) minmax(0, 1fr);
+    --row-font: 10.5pt;
+    --row-leading: 1.45;
+  }
+
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .app-header,
+  .app-footer,
+  .row-tools,
+  .skip-link,
+  .empty-state,
+  dialog,
+  .dialog { display: none !important; }
+
+  .app-main { padding: 0; }
+
+  .sheet {
+    max-width: none;
+    border: 0;
+  }
+
+  .sheet-head {
+    position: static;
+    border-bottom: 1.2pt solid #000;
+    color: #000;
+  }
+
+  .row {
+    background: #fff !important;
+    border-bottom: 0.5pt solid #bbb;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .row-main { padding-block: 4pt; min-height: 0; }
+
+  .cell--num { display: block; }
+
+  /* すべて表示：印刷では隠しを完全に解除する */
+  .en-text,
+  .cell--ja,
+  .cell--en {
+    filter: none !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .en-mask,
+  .cell--ja::after,
+  .cell--en::after,
+  .cell--ja::before { display: none !important; }
+}
