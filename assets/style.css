@@ -477,6 +477,45 @@ button, input, select, textarea {
 .status-bar:empty { display: none; }
 
 
+/* --- 受信箱の帯（別アプリから届いたカードのお知らせ） --- */
+
+.inbox-bar {
+  padding-block: 6px 4px;
+}
+
+/* .header-row が display:flex なので、隠すほうを明示的に勝たせる */
+.inbox-bar[hidden] { display: none; }
+
+.inbox-box {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.inbox-text {
+  flex: 1 1 12em;
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.inbox-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+
+.inbox-actions[hidden] { display: none; }
+
+
 /* =============================================================
    06. シート（表本体）
    ============================================================= */

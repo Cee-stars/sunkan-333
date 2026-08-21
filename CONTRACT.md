@@ -11,10 +11,12 @@
 | `assets/data.js` | B | 例文データ `window.SUNKAN_DECKS` |
 | `assets/app.js` | C | 瞬間英作文の動作すべて（描画・隠す/表示・検索・取り込み・保存） |
 | `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え |
+| `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 
-`app.js` と `paraphrase.js` は状態も保存先も共有しない。触れ合うのは `<html data-mode>` と
-下の `window.SUNKAN_DRILL` だけで、`app.js` は `data-mode="para"` の間キー操作を受け取らない
-（表が画面に無いため）。
+`app.js` と `paraphrase.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
+`<html data-mode>` と下の `window.SUNKAN_DRILL` だけで、`app.js` は `data-mode="para"` の間
+キー操作を受け取らない（表が画面に無いため）。`inbox.js` は自分の帯（`#inbox-bar`）と
+`sunkan:inbox` しか触らず、文を足すのは `SUNKAN_DRILL.addSentences` 越しに限る。
 
 ### `window.SUNKAN_DRILL`（app.js が開けている口。ここ以外から中身を触らせない）
 
@@ -76,6 +78,8 @@ window.SUNKAN_DECKS = [
 - `#btn-toggle-all[aria-pressed="true"]` … 現在「全部隠れている」状態。ラベルは `#btn-toggle-all-label` の文字列を JS が書き換える（`英語を表示` / `英語を隠す`）。
 - `#empty-state` … 該当 0 件のとき `hidden` を外す。
 - `#status-bar` … 「全 120 文 / 表示中 38 文」のような文言を JS が入れる。空文字のこともある。
+- `#inbox-bar` … 別アプリから届いたカードがあるときだけ `hidden` を外す。中の `#inbox-actions` は
+  取り込み結果を出している間だけ畳む（下の「受信箱」を参照）。
 
 ## 隠す仕組み
 
@@ -140,6 +144,42 @@ window.SUNKAN_DECKS = [
 パラフレ 1 枚は `{ja: 意味, en: 英文}` の並びになる（言い換えに意味が無ければ見出しの意味を使う）。
 送り先は `パラフレ帳（ジャンル名）` というセットで、ジャンルごとに分ける。元のパラフレは消さない。
 
+## 受信箱（別アプリから届いたカード）
+
+My Dictionary（別リポジトリの単一 HTML）は、同じ GitHub Pages のドメインにパス違いで置かれる。
+`https://<user>.github.io/dictionary-22/` と `https://<user>.github.io/sunkan-333/` はオリジンが
+同じなので、localStorage がそのまま共有される。そこを 1 本の受け渡し場所として使う。
+
+**送り手は `sunkan:inbox` に足すだけ。取り込みと後始末は `inbox.js` だけが行う。**
+送り手側のデータ形式（`mydict.v1` など）には、こちらからは一切触らない。
+
+```js
+// sunkan:inbox — 取り込み待ちのカード。空になったらキーごと消える
+[
+  {
+    id: 'mydict:e3k9x2a1:1750000000000',  // 送り手が付ける一意な文字列（任意）
+    en: 'The bus was ten minutes late.',   // 必須
+    ja: 'バスが10分遅れた。',                // 必須
+    pattern: 'N was 〜 minutes late.',      // 型。取り込むと note になる（任意）
+    source: 'My Dictionary',               // 送り元。そのままセット名になる（任意）
+    sentAt: 1750000000000                  // 送った時刻（任意。表示には使わない）
+  }
+]
+```
+
+- **`ja` と `en` の両方がそろっていないものは出題できないので捨てる。** 単語だけの項目が
+  そのまま流れてこないよう、送り手側で両方を埋めさせること。
+- `id` が無いときは `source` + `en` + `ja` を鍵に使う。同じ内容を二度送っても
+  `addSentences` が同じ文を弾くので、重複して並ぶことはない。
+- 中身は他アプリが書くので一切信用しない。配列でない・壊れている・長すぎる（400 字超）は落とす。
+- 溜まりっぱなしを防ぐため 500 件で頭を打つ（古いほうから捨てる）。
+- 取り込むと `source` の名前のセット（無ければ作る）に入り、受信箱からは消える。
+
+`#inbox-bar` は届いているときだけ `hidden` が外れ、モードに関係なく出る（`data-mode-view` は
+付けない）。パラフレ帳を開いたまま「取り込む」を押したときは、`#tab-drill` をクリックして
+表のほうへ移る。「あとで」はその時点の中身を覚えて畳むだけで、受信箱には手を付けない
+（新しいカードが届けばまた出る）。
+
 ## 保存（localStorage キー）
 
 | キー | 内容 |
@@ -153,6 +193,7 @@ window.SUNKAN_DECKS = [
 | `sunkan:para:cards` | パラフレ本体 `[{id,genreId,headEn,headJa,lines}]` |
 | `sunkan:para:stars` | ★を付けたパラフレの id `string[]` |
 | `sunkan:para:ui` | `{ genreId, mask, sort, starredOnly }` … 表示の状態（シャッフルは持ち越さない） |
+| `sunkan:inbox` | 別アプリから届いた取り込み待ちのカード（上の「受信箱」を参照）。書くのは送り手、消すのは `inbox.js` |
 
 `sunkan:added` はデッキ本体を書き換えずに後ろへ足す方式。収録セット（`data.js`）にも
 取り込んだセットにも同じように足せて、元データは無傷のまま保てる。

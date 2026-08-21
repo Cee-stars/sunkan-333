@@ -121,6 +121,17 @@
     <button type="button" id="btn-para-data" class="btn btn--icon" aria-label="表の読み込み・書き出し" aria-haspopup="dialog">📋</button>
   </div>
 
+  <!-- ===== 受信箱（同じドメインの別アプリから届いたカード。どちらのモードでも出す） ===== -->
+  <div class="header-row inbox-bar" id="inbox-bar" hidden>
+    <div class="inbox-box">
+      <p class="inbox-text" id="inbox-text" role="status" aria-live="polite"></p>
+      <span class="inbox-actions" id="inbox-actions">
+        <button type="button" id="btn-inbox-take" class="btn btn--primary">取り込む</button>
+        <button type="button" id="btn-inbox-later" class="btn btn--ghost">あとで</button>
+      </span>
+    </div>
+  </div>
+
   <p class="status-bar" id="status-bar" data-mode-view="drill" role="status" aria-live="polite"></p>
   <p class="status-bar" id="para-status" data-mode-view="para" role="status" aria-live="polite"></p>
 </header>
@@ -469,6 +480,7 @@
 <script src="assets/data.js"></script>
 <script src="assets/app.js"></script>
 <script src="assets/paraphrase.js"></script>
+<script src="assets/inbox.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
