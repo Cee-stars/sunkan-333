@@ -18,6 +18,8 @@
 
   var LS_INBOX = 'sunkan:inbox';   // 送り手も読み手もこのキーだけを見る
 
+  var HASH_PARAM = 'inbox'; // localStorage が分かれている端末は URL で受け取る
+
   var MAX_PENDING = 500;    // 取り込まないまま溜まり続けないよう頭を打つ
   var MAX_TEXT = 400;       // 1 文としてありえない長さは弾く
   var FLASH_MS = 5000;      // 取り込み結果を出しておく時間
@@ -126,6 +128,62 @@
       rest.push(raw[i]);
     }
     writeRaw(rest);
+  }
+
+  /* ============================================================
+   * 3.5 URL で届いたぶん
+   *
+   * iOS ではホーム画面に追加したアプリとブラウザで保存領域が分かれる。
+   * 片方から書いた localStorage をもう片方は読めないので、
+   * それだけを頼りにすると「送ったのに何も出てこない」ことになる。
+   * URL に載せて渡す道なら、どちらの箱から開いても必ず届く。
+   * ========================================================== */
+
+  /** base64url を UTF-8 の文字列に戻す */
+  function fromBase64Url(text) {
+    var b64 = String(text).replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var bin = window.atob(b64);
+    var bytes = new Uint8Array(bin.length), i;
+    for (i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  /** URL に載っていたカードの配列。読めなければ空 */
+  function decodePayload(text) {
+    var list;
+    try {
+      list = JSON.parse(fromBase64Url(text));
+    } catch (e) {
+      return [];   // 途中で切れた URL などは黙って捨てる
+    }
+    if (Object.prototype.toString.call(list) !== '[object Array]') return [];
+    var out = [], i;
+    for (i = 0; i < list.length && out.length < MAX_PENDING; i++) {
+      if (sanitize(list[i])) out.push(list[i]);   // 生のまま入れる（id を残すため）
+    }
+    return out;
+  }
+
+  /** 読んだあとの URL は消す。再読み込みで二重に入るのを防ぐ */
+  function clearHash() {
+    try {
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        return;
+      }
+    } catch (e) { /* 古いブラウザでは下に落とす */ }
+    window.location.hash = '';
+  }
+
+  /** #inbox=… で届いたぶんを受信箱へ移す */
+  function drainHash() {
+    var m = String(window.location.hash || '').match(/[#&]inbox=([^&]+)/);
+    if (!m) return;
+    clearHash();
+    var list = decodePayload(m[1]);
+    if (!list.length) return;
+    writeRaw(readRaw().concat(list));
   }
 
   /* ============================================================
@@ -282,11 +340,15 @@
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) refresh();
     });
-    window.addEventListener('pageshow', function () { refresh(); });
+    window.addEventListener('pageshow', function () { drainHash(); refresh(); });
+
+    // 同じページのまま #inbox=… が付いたときも拾う
+    window.addEventListener('hashchange', function () { drainHash(); refresh(); });
   }
 
   function init() {
     if (!elBar) return;   // DOM が想定と違うときは何もしない
+    drainHash();          // URL で届いたぶんを先に受信箱へ入れてから見る
     bindEvents();
     refresh();
   }
