@@ -473,7 +473,10 @@
 
     <fieldset class="field-group">
       <legend class="field-label">同期</legend>
-      <p class="dialog-hint">iPhone と MacBook で、自作セット・足した文・★・パラフレ帳を揃えます。</p>
+      <p class="dialog-hint">
+        iPhone と MacBook で、自作セット・足した文・★・パラフレ帳を揃えます。
+        一度つなげば、あとは何もしなくても自動で揃います。
+      </p>
       <button type="button" id="btn-sync-open" class="btn btn--ghost" aria-haspopup="dialog">
         同期の設定<span class="sync-state" id="sync-state"></span>
       </button>
@@ -497,110 +500,118 @@
   <form method="dialog" class="dialog-inner">
     <h2 id="sync-dialog-title" class="dialog-title">iPhone・MacBook で揃える</h2>
     <p class="dialog-desc">
-      自作セット・足した文・★・パラフレ帳を、端末どうしで揃えます。
+      <strong>一度つなげば、あとは何もしなくても揃います。</strong>
+      自作セット・足した文・★・パラフレ帳が、開いている間ずっと勝手に行き来します。
       収録の 360 文と、隠し方・文字サイズなどの設定はそのままです（端末ごとの好みのため）。
-      <strong>どちらの端末で足したものも消えません。</strong>足りないほうに入るだけです。
+      <strong>どちらの端末で足したものも消えません。</strong>
     </p>
 
-    <h3 class="dialog-subtitle">かんたんに渡す（登録なし）</h3>
-    <p class="dialog-hint">
-      片方の端末でリンクを作り、もう片方で開くだけです。アカウントも設定も要りません。
-      <strong>思い出したときに手で渡す形</strong>で、放っておいて勝手に揃うわけではありません。
-    </p>
+    <p class="dialog-note" id="sync-status" role="status" aria-live="polite"></p>
 
-    <div class="dialog-actions dialog-actions--wrap">
-      <button type="button" id="btn-handoff-link" class="btn btn--primary">リンクを作ってコピー</button>
-      <button type="button" id="btn-handoff-save" class="btn btn--ghost">ファイルに書き出す</button>
-      <button type="button" id="btn-handoff-load" class="btn btn--ghost">ファイルを読み込む</button>
+    <!-- まだつないでいないとき -->
+    <div id="sync-setup" class="sync-block">
+      <h3 class="dialog-subtitle">つなぐ（1 回だけ）</h3>
+      <p class="dialog-hint">
+        置き場として GitHub の「シークレット Gist」（<strong>URL を知っている人だけが見られる場所</strong>）を使います。
+        <strong>完全に非公開というわけではない</strong>点にご注意ください。
+        トークンはこの端末の中だけに保存され、GitHub 以外へは送りません。
+      </p>
+      <ol class="sync-steps">
+        <li>下のボタンで GitHub のトークンを作る（権限は <strong>gist</strong> だけで足ります）</li>
+        <li>できた文字列（<code>ghp_…</code>）をコピーして、下の欄に貼り付ける</li>
+      </ol>
+      <div class="dialog-actions">
+        <a class="btn btn--ghost" id="btn-token-new"
+           href="https://github.com/settings/tokens/new?scopes=gist&amp;description=%E7%9E%AC%E9%96%93%E8%8B%B1%E4%BD%9C%E6%96%87%E3%81%AE%E5%90%8C%E6%9C%9F"
+           target="_blank" rel="noopener noreferrer">GitHub でトークンを作る</a>
+      </div>
+      <p class="dialog-hint">
+        <strong>2 台目も、同じトークンを貼るだけです。</strong>置き場はトークンから自動で見つけるので、
+        Gist ID を控える必要はありません。My Dictionary 用に作ったトークンがあれば、それをそのまま使えます。
+      </p>
     </div>
-    <input type="file" id="handoff-file" accept=".json,application/json" hidden>
-    <p class="dialog-hint">
-      リンクはメモ・メッセージ・AirDrop などで自分に送ってください。
-      文が多くてリンクに収まらないときは、ファイルのほうを使います（AirDrop で送れます）。
-    </p>
 
-    <h3 class="dialog-subtitle">貼り付けて受け取る</h3>
-    <p class="dialog-hint">
-      <strong>ホーム画面から開いたアプリにはアドレス欄が無く、リンクを開けません。</strong>
-      そのときは、もう片方の端末で作ったリンクをここに貼り付けてください。
-      My Dictionary の「リンクをコピー」で作ったものも、そのまま受け取れます。
-    </p>
+    <!-- つないだあと -->
+    <div id="sync-live" class="sync-block" hidden>
+      <h3 class="dialog-subtitle">つながっています</h3>
+      <p class="dialog-hint">
+        直したときと、開いたときと、開いたままのあいだも、自動で揃えています。押すものはありません。
+      </p>
+      <div class="dialog-actions dialog-actions--wrap">
+        <button type="button" id="btn-pair-copy" class="btn btn--ghost">もう片方の端末へ渡すリンクをコピー</button>
+        <button type="button" id="btn-sync-now" class="btn btn--ghost">いま揃える</button>
+      </div>
+      <p class="dialog-hint">
+        もう片方の端末では、そのリンクを開くか、下の欄に貼り付けてください
+        （ホーム画面から開いたアプリにはアドレス欄が無いので、そのときは貼り付けます）。
+        <strong>リンクにはトークンが入っているので、人に渡さないでください。</strong>
+      </p>
+    </div>
 
+    <h3 class="dialog-subtitle">貼り付ける</h3>
     <label class="field">
-      <span class="visually-hidden">リンクの貼り付け</span>
+      <span class="visually-hidden">トークンかリンクの貼り付け</span>
       <textarea id="paste-in" class="field-input field-textarea" rows="3"
-        placeholder="ここにリンクを貼り付け" autocomplete="off" spellcheck="false"></textarea>
+        placeholder="ghp_… （トークン）または リンクを貼り付け" autocomplete="off" spellcheck="false"></textarea>
     </label>
 
     <div class="dialog-actions dialog-actions--wrap">
       <button type="button" id="btn-paste-read" class="btn btn--ghost">クリップボードから貼る</button>
-      <button type="button" id="btn-paste-take" class="btn btn--primary">取り込む</button>
+      <button type="button" id="btn-paste-take" class="btn btn--primary">つなぐ</button>
     </div>
-
-    <p class="dialog-note" id="sync-status" role="status" aria-live="polite"></p>
+    <p class="dialog-hint">
+      GitHub のトークン、つなぐリンク、渡すリンク、My Dictionary からのリンク — どれでも受け取ります。
+    </p>
 
     <hr class="dialog-sep">
 
-    <h3 class="dialog-subtitle">放っておいても揃うようにする（GitHub を使う）</h3>
-    <p class="dialog-hint">
-      こちらは <strong>最初に一度だけ登録が要ります</strong>が、そのあとは開くたびに自動で揃います。
-      GitHub の「シークレット Gist」（<strong>URL を知っている人だけが見られる場所</strong>）に置きます。
-      <strong>完全に非公開というわけではない</strong>点にご注意ください。
-      入れたトークンはこの端末の中だけに保存され、GitHub 以外へは送りません。
-    </p>
+    <details class="dialog-more">
+      <summary>つながずに、いまの中身だけ渡す</summary>
+      <p class="dialog-hint">
+        登録なしで、片方の中身をもう片方へ 1 回だけ渡します。
+        <strong>放っておいて勝手に揃うわけではありません。</strong>
+      </p>
+      <div class="dialog-actions dialog-actions--wrap">
+        <button type="button" id="btn-handoff-link" class="btn btn--ghost">リンクを作ってコピー</button>
+        <button type="button" id="btn-handoff-save" class="btn btn--ghost">ファイルに書き出す</button>
+        <button type="button" id="btn-handoff-load" class="btn btn--ghost">ファイルを読み込む</button>
+      </div>
+      <input type="file" id="handoff-file" accept=".json,application/json" hidden>
+      <p class="dialog-hint">
+        リンクはメモ・メッセージ・AirDrop などで自分に送ってください。
+        文が多くてリンクに収まらないときは、ファイルのほうを使います。
+      </p>
+    </details>
 
-    <label class="field">
-      <span class="field-label">アクセストークン</span>
-      <input type="password" id="sync-token" class="field-input" autocomplete="off"
-        autocapitalize="off" spellcheck="false">
-    </label>
-    <p class="dialog-hint">
-      <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer">GitHub でトークンを作る</a>
-      … Note は何でもよく、権限（scope）は <strong>gist</strong> だけで足ります。
-      My Dictionary 用に作ったトークンがあれば、それをそのまま使えます。
-    </p>
+    <details class="dialog-more">
+      <summary>細かい設定</summary>
+      <label class="field">
+        <span class="field-label">アクセストークン</span>
+        <input type="password" id="sync-token" class="field-input" autocomplete="off"
+          autocapitalize="off" spellcheck="false">
+      </label>
 
-    <label class="field">
-      <span class="field-label">Gist ID</span>
-      <input type="text" id="sync-gist" class="field-input" autocomplete="off"
-        autocapitalize="off" spellcheck="false">
-    </label>
-    <p class="dialog-hint">
-      1 台目：空のまま下の「保存先を新しく作る」を押すと、ここに入ります。<br>
-      2 台目：1 台目のこの値をそのまま貼り付けます。
-      My Dictionary と同じ Gist ID でもかまいません（中では別のファイルに分けて置きます）。
-    </p>
+      <label class="field">
+        <span class="field-label">Gist ID（置き場）</span>
+        <input type="text" id="sync-gist" class="field-input" autocomplete="off"
+          autocapitalize="off" spellcheck="false">
+      </label>
+      <p class="dialog-hint">
+        ふだんは触らなくて構いません。空にして「置き場を作り直す」を押すと、新しい置き場を作ります。
+        My Dictionary と同じ Gist ID でもかまいません（中では別のファイルに分けて置きます）。
+      </p>
+
+      <div class="dialog-actions dialog-actions--wrap">
+        <button type="button" id="btn-sync-create" class="btn btn--ghost">置き場を作り直す</button>
+        <button type="button" id="btn-sync-off" class="btn btn--ghost">同期をやめる</button>
+      </div>
+      <p class="dialog-hint">
+        「同期をやめる」は、この端末からトークンと置き場を消します。覚えた文はそのまま残ります。
+      </p>
+    </details>
 
     <div class="dialog-actions">
-      <button type="button" id="btn-sync-create" class="btn btn--ghost">保存先を新しく作る</button>
-    </div>
-
-    <fieldset class="field-group">
-      <legend class="field-label">自動で同期する</legend>
-      <label class="check"><input type="checkbox" id="opt-sync-auto"> 直したときと、開いたときに自動で揃える</label>
-    </fieldset>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-sync-close" class="btn btn--ghost">閉じる</button>
-      <button type="button" id="btn-sync-now" class="btn btn--primary">いま同期する</button>
-    </div>
-
-    <h3 class="dialog-subtitle">ほかの端末・アプリをつなぐ</h3>
-    <p class="dialog-hint">
-      この設定をまるごとリンクにして渡します。受け取った側は貼り付けるだけで、
-      <strong>そのあとは何もしなくても自動で揃います</strong>（トークンの入力は要りません）。
-      <strong>このリンクにはトークンが入っているので、人に渡さないでください。</strong>
-    </p>
-    <div class="dialog-actions">
-      <button type="button" id="btn-pair-copy" class="btn btn--ghost">つなぐリンクをコピー</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">やめるとき</h3>
-      <p class="dialog-hint">この端末からトークンと Gist ID を消します。覚えた文はそのまま残ります。</p>
-      <button type="button" id="btn-sync-off" class="btn btn--ghost">同期をやめる</button>
+      <button type="button" id="btn-sync-close" class="btn btn--primary">閉じる</button>
     </div>
   </form>
 </dialog>

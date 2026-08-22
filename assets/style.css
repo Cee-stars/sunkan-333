@@ -1103,6 +1103,66 @@ button, input, select, textarea {
   align-items: flex-start;
 }
 
+/* --- 同期ダイアログ：状態で出し分ける塊と、畳んでおく塊 --- */
+
+.sync-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sync-block[hidden] { display: none; }
+
+.sync-steps {
+  margin: 0;
+  padding-inline-start: 1.4em;
+  list-style: decimal;   /* 全体のリセット（ul, ol { list-style: none }）を戻す */
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.sync-steps li + li { margin-block-start: 2px; }
+
+.dialog-more {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.dialog-more > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  list-style-position: inside;
+}
+
+.dialog-more > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+
+.dialog-more[open] > summary {
+  border-block-end: 1px solid var(--hairline);
+  color: var(--text);
+}
+
+/* 開いた中身は、ダイアログ本体と同じ間隔で縦に積む */
+.dialog-more > *:not(summary) { margin-block-start: 12px; }
+
+.dialog-more > summary + * { margin-block-start: 12px; }
+
+.dialog-more[open] {
+  padding-block-end: 12px;
+}
+
+.dialog-more > *:not(summary) {
+  padding-inline: 12px;
+}
+
 /* --- 保存済みセットの一覧（中身は JS が作る） --- */
 
 .deck-manage-list {

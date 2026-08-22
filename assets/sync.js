@@ -29,13 +29,20 @@
   var LS_AUTO = 'sunkan:sync:auto';
   var LS_LAST = 'sunkan:sync:last';
   var LS_TOMBS = 'sunkan:sync:tombs';
+  var LS_FP = 'sunkan:sync:fp';   // 送れたときの指紋。読み込み直しても「まだ送っていない」が分かる
 
   var GIST_FILE = 'sunkan-data.json';   // My Dictionary と同じ Gist に同居できるよう名前を分ける
+  var MYDICT_FILE = 'mydict-data.json'; // 置き場を探すとき、My Dictionary のぶんに相乗りする
   var API = 'https://api.github.com/gists';
 
   var TOMB_MAX_AGE = 90 * 24 * 60 * 60 * 1000;  // 消した記録は 90 日で捨てる
   var WATCH_MS = 3000;    // 変更を見に行く間隔
-  var DEBOUNCE_MS = 2000; // 変更が止まってから送るまで
+  var DEBOUNCE_MS = 1200; // 変更が止まってから送るまで
+  var PULL_MS = 45000;    // 開いたままでも、向こうの変更を取りに行く間隔
+  var RETRY_MS = [15000, 60000, 300000];  // 失敗したときに待つ時間（だんだん延ばす）
+
+  var TOKEN_RE = /^(gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})$/;
+  var GIST_ID_RE = /^[0-9a-f]{20,}$/i;
 
   /* ============================================================
    * 2. localStorage（プライベートモードでは例外が飛ぶ）
@@ -88,12 +95,22 @@
    */
   function writeTombs(list) {
     var cutoff = Date.now() - TOMB_MAX_AGE;
-    var out = [], i, rec;
+    var out = [], index = {}, i, rec, cur;
     for (i = 0; i < list.length; i++) {
       rec = list[i];
       if (!rec || !rec.k) continue;
       if (Math.max(rec.t || 0, rec.a || 0) < cutoff) continue;
-      out.push(rec);
+      cur = index[rec.k];
+      if (cur) {
+        // 同じ鍵は 1 件にまとめ、新しいほうの時刻を採る。
+        // 手元と向こうの記録をつなげて渡してくるので、まとめないと同期のたびに倍に増える。
+        if ((rec.t || 0) > cur.t) cur.t = rec.t || 0;
+        if ((rec.a || 0) > cur.a) cur.a = rec.a || 0;
+        continue;
+      }
+      cur = { k: rec.k, t: rec.t || 0, a: rec.a || 0 };
+      index[rec.k] = cur;
+      out.push(cur);
     }
     if (!out.length) { lsRemove(LS_TOMBS); return out; }
     writeJSON(LS_TOMBS, out);
@@ -516,6 +533,19 @@
       return;
     }
 
+    // トークンをそのまま貼られたら、それだけでつなぐ（置き場は自分で見つける）
+    if (TOKEN_RE.test(raw)) { connect(raw); return; }
+
+    // 置き場だけ入れ替えたいとき（1 台目の Gist ID を貼った場合）
+    if (GIST_ID_RE.test(raw) && token()) {
+      lsSet(LS_GIST, raw);
+      if (elGist) elGist.value = raw;
+      renderState();
+      setStatus('置き場をつなぎました。いま揃えています…', false);
+      sync(false);
+      return;
+    }
+
     var m = raw.match(/[#&]pair=([^&\s]+)/);
     if (m) { takePair(m[1]); return; }
 
@@ -537,7 +567,7 @@
       }
     }
 
-    setStatus('リンクとして読めませんでした。もう片方の端末で作ったリンクを、そのまま貼り付けてください。', true);
+    setStatus('読めませんでした。GitHub のトークン（ghp_… で始まる文字列）か、もう片方の端末で作ったリンクを、そのまま貼り付けてください。', true);
   }
 
   /**
@@ -566,7 +596,6 @@
     lsSet(LS_AUTO, '1');
     if (elToken) elToken.value = trim(conf.t);
     if (elGist) elGist.value = trim(conf.g);
-    if (elAuto) elAuto.checked = true;
     renderState();
     setStatus('つながりました。いま揃えています…', false);
     sync(false);
@@ -632,7 +661,11 @@
       opts.body = body;
     }
     return window.fetch(url, opts).then(function (res) {
-      if (!res.ok) throw new Error(errorText(res.status));
+      if (!res.ok) {
+        var err = new Error(errorText(res.status));
+        err.status = res.status;   // 404（置き場が消えた）だけは自分で作り直したい
+        throw err;
+      }
       return res.json();
     }, function () {
       throw new Error('つながりませんでした（オフラインかもしれません）');
@@ -643,6 +676,42 @@
     var files = {};
     files[GIST_FILE] = { content: JSON.stringify(data, null, 2) };
     return JSON.stringify({ description: '瞬間英作文 の同期データ', public: false, files: files });
+  }
+
+  /**
+   * トークンだけで置き場を見つける。
+   *
+   * 2 台目に Gist ID を打たせないための肝。同じトークンなら同じ置き場に行き着く。
+   * My Dictionary のぶん（mydict-data.json）しか無いときはそこに相乗りする
+   * （PATCH は指定したファイルしか触らないので、互いを壊さない）。
+   */
+  function gistFind(token) {
+    return ghFetch(API + '?per_page=100', 'GET', token).then(function (list) {
+      if (!isArray(list)) return '';
+      var mine = '', shared = '', i, files;
+      for (i = 0; i < list.length; i++) {
+        files = list[i] && list[i].files;
+        if (!files) continue;
+        if (!mine && files[GIST_FILE]) mine = trim(list[i].id);
+        if (!shared && files[MYDICT_FILE]) shared = trim(list[i].id);
+      }
+      return mine || shared;
+    }, function () { return ''; });   // 一覧を読めなくても、作るほうへ進める
+  }
+
+  /** 置き場を用意する（あれば探し、無ければ作る）。ID を返す */
+  function ensureGist(token) {
+    var have = gistId();
+    if (have) return Promise.resolve(have);
+    return gistFind(token).then(function (id) {
+      return id || gistCreate(token);
+    }).then(function (id) {
+      id = trim(id);
+      if (!id) throw new Error('置き場を用意できませんでした');
+      lsSet(LS_GIST, id);
+      if (elGist) elGist.value = id;
+      return id;
+    });
   }
 
   function gistCreate(token) {
@@ -686,12 +755,21 @@
    * 7. 同期そのもの
    * ========================================================== */
 
-  var state = { busy: false, timer: null, fingerprint: '' };
+  var state = { busy: false, timer: null, retry: null, fails: 0, fingerprint: '', lastPull: 0 };
 
   function token() { return trim(lsGet(LS_TOKEN)); }
   function gistId() { return trim(lsGet(LS_GIST)); }
-  function autoOn() { return lsGet(LS_AUTO) === '1'; }
+  /** トークンさえあれば置き場は自分で見つけられる（Gist ID は打たせない） */
+  function connected() { return !!token(); }
+  /**
+   * つないである＝自動で揃える。
+   * 「あとで自分で押す」形は無くした。押し忘れたぶんだけ端末がずれるため。
+   */
+  function autoOn() { return connected(); }
   function ready() { return !!(token() && gistId()); }
+
+  /** まだ送れていない変更があるか（読み込み直しても分かるよう指紋を残してある） */
+  function dirty() { return fingerprint() !== trim(lsGet(LS_FP)); }
 
   /** 画面を作り直す。app.js / paraphrase.js がそれぞれ開けている口 */
   function refreshViews() {
@@ -701,45 +779,113 @@
     if (inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
+  /** 送る中身の見分け。同じなら PATCH しない（置き場の履歴を無駄に増やさない） */
+  function payloadOf(d) {
+    return JSON.stringify([d.decks, d.added, d.stars,
+      d.para.genres, d.para.cards, d.para.stars, d.inbox, d.tombs]);
+  }
+
+  /** 1 往復ぶん。読んで、突き合わせて、変わっていたら書き戻す */
+  function round(id, tk) {
+    return gistGet(id, tk).then(function (theirs) {
+      var merged = merge(snapshot(), theirs);
+      var changed = apply(merged);
+      if (changed) refreshViews();
+      if (payloadOf(theirs) === payloadOf(merged)) return changed;   // 送る必要なし
+      return gistUpdate(id, tk, {
+        app: 'sunkan', v: 1, at: Date.now(),
+        decks: merged.decks, added: merged.added, stars: merged.stars,
+        para: merged.para, inbox: merged.inbox, tombs: merged.tombs
+      }).then(function () { return changed; });
+    });
+  }
+
   function sync(silent) {
-    if (!ready()) {
-      if (!silent) setStatus('トークンと Gist ID を入れてください。', true);
+    if (!connected()) {
+      if (!silent) setStatus('先に「つなぐ」を済ませてください。', true);
       return Promise.resolve(false);
     }
     if (state.busy) return Promise.resolve(false);
     if (window.navigator.onLine === false) {
-      if (!silent) setStatus('オフラインなので同期できません。', true);
+      if (!silent) setStatus('オフラインなので同期できません。つながったら自動でやり直します。', true);
       return Promise.resolve(false);
     }
 
     state.busy = true;
     if (!silent) setStatus('同期しています…', false);
 
-    var id = gistId(), tk = token();
-    return gistGet(id, tk).then(function (theirs) {
-      var merged = merge(snapshot(), theirs);
-      var changed = apply(merged);
-      if (changed) refreshViews();
-      return gistUpdate(id, tk, {
-        app: 'sunkan', v: 1, at: Date.now(),
-        decks: merged.decks, added: merged.added, stars: merged.stars,
-        para: merged.para, inbox: merged.inbox, tombs: merged.tombs
-      }).then(function () { return changed; });
+    var tk = token();
+    return ensureGist(tk).then(function (id) {
+      return round(id, tk).then(null, function (err) {
+        // 置き場ごと消えていた。作り直して 1 回だけやり直す
+        if (!err || err.status !== 404) throw err;
+        lsRemove(LS_GIST);
+        return ensureGist(tk).then(function (again) { return round(again, tk); });
+      });
     }).then(function (changed) {
       lsSet(LS_LAST, String(Date.now()));
       state.fingerprint = fingerprint();
+      lsSet(LS_FP, state.fingerprint);
+      state.lastPull = Date.now();
+      state.fails = 0;
+      if (state.retry) { window.clearTimeout(state.retry); state.retry = null; }
       if (!silent || changed) {
-        setStatus(changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。', false);
+        setStatus(changed ? '揃えました。もう片方の端末のぶんも入りました。' : whenText(), false);
       }
       renderState();
       return true;
     }, function (err) {
       // 失敗しても手元のデータには手を付けていない
+      state.fails++;
       if (!silent) setStatus('同期できませんでした: ' + (err && err.message ? err.message : '通信エラー'), true);
+      scheduleRetry();
       return false;
     }).then(function (ok) {
       state.busy = false;
       return ok;
+    });
+  }
+
+  /** 失敗したら、だんだん間を空けてやり直す（電波が戻れば勝手に揃うように） */
+  function scheduleRetry() {
+    if (!autoOn()) return;
+    if (state.retry) window.clearTimeout(state.retry);
+    var wait = RETRY_MS[Math.min(state.fails - 1, RETRY_MS.length - 1)];
+    state.retry = window.setTimeout(function () {
+      state.retry = null;
+      sync(true);
+    }, wait);
+  }
+
+  /* --- つなぐ（トークンを 1 つ受け取るだけ） --- */
+
+  /**
+   * トークンを受け取って、置き場まで用意して、そのまま揃える。
+   * 2 台目も同じトークンを貼るだけでよい（置き場は gistFind が見つける）。
+   */
+  function connect(raw) {
+    var tk = trim(raw);
+    if (!tk) {
+      setStatus('トークンを貼り付けてください。', true);
+      return Promise.resolve(false);
+    }
+    lsSet(LS_TOKEN, tk);
+    lsSet(LS_AUTO, '1');   // 古い版がこの端末を読んだときのため
+    if (elToken) elToken.value = tk;
+    setStatus('つないでいます…', false);
+    return ensureGist(tk).then(function () {
+      renderState();
+      return sync(false);
+    }).then(function (ok) {
+      if (ok) {
+        setStatus('つながりました。これからは開いている間ずっと自動で揃います。', false);
+        renderState();
+      }
+      return ok;
+    }, function (err) {
+      setStatus('つなげませんでした: ' + (err && err.message ? err.message : '通信エラー'), true);
+      renderState();
+      return false;
     });
   }
 
@@ -758,7 +904,7 @@
   }
 
   function scheduleAuto() {
-    if (!autoOn() || !ready()) return;
+    if (!autoOn()) return;
     if (state.timer) window.clearTimeout(state.timer);
     state.timer = window.setTimeout(function () {
       state.timer = null;
@@ -766,12 +912,26 @@
     }, DEBOUNCE_MS);
   }
 
+  /**
+   * 3 秒ごと。手元が動いていれば送り、落ち着いていれば向こうを取りに行く。
+   * 開いたまま放っておいても、もう片方で足したぶんが出てくるようにするため。
+   */
   function watch() {
-    if (document.hidden || !autoOn() || !ready() || state.busy) return;
+    if (document.hidden || !autoOn() || state.busy) return;
     var now = fingerprint();
-    if (now === state.fingerprint) return;
-    state.fingerprint = now;
-    scheduleAuto();
+    if (now !== state.fingerprint) {
+      state.fingerprint = now;
+      scheduleAuto();
+      return;
+    }
+    if (!state.timer && Date.now() - state.lastPull >= PULL_MS) sync(true);
+  }
+
+  /** 閉じる・裏に回るときに、送り残しを片付ける */
+  function flush() {
+    if (!autoOn() || state.busy || !dirty()) return;
+    if (state.timer) { window.clearTimeout(state.timer); state.timer = null; }
+    sync(true);
   }
 
   /* ============================================================
@@ -783,8 +943,9 @@
   var elStateLabel = $('sync-state');
   var elToken = $('sync-token');
   var elGist = $('sync-gist');
-  var elAuto = $('opt-sync-auto');
   var elStatus = $('sync-status');
+  var elSetup = $('sync-setup');
+  var elLive = $('sync-live');
   var elSettingsDialog = $('settings-dialog');
 
   function setStatus(msg, bad) {
@@ -795,22 +956,23 @@
 
   function whenText() {
     var last = parseInt(lsGet(LS_LAST), 10);
-    if (!last) return 'まだ同期していません';
+    if (!last) return connected() ? 'つながっています。' : 'まだつないでいません。';
     var d = new Date(last), p = function (n) { return (n < 10 ? '0' : '') + n; };
     return '最後の同期 ' + d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) +
       ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
   function renderState() {
-    if (elStateLabel) {
-      elStateLabel.textContent = !ready() ? '未設定' : (autoOn() ? '自動' : '手動');
-    }
+    var on = connected();
+    if (elStateLabel) elStateLabel.textContent = on ? '自動' : '未設定';
+    if (elSetup) elSetup.hidden = on;
+    if (elLive) elLive.hidden = !on;
   }
 
   function openSync() {
     if (elToken) elToken.value = token();
     if (elGist) elGist.value = gistId();
-    if (elAuto) elAuto.checked = autoOn();
+    renderState();
     setStatus(whenText(), false);
     if (elSettingsDialog && elSettingsDialog.open) elSettingsDialog.close();
     if (elDialog && !elDialog.open) elDialog.showModal();
@@ -931,40 +1093,30 @@
     var create = $('btn-sync-create');
     if (create) create.addEventListener('click', function () {
       saveFields();
-      if (!token()) { setStatus('先にトークンを入れてください。', true); return; }
-      if (gistId()) { setStatus('すでに Gist ID が入っています。作り直すなら空にしてください。', true); return; }
-      setStatus('保存先を作っています…', false);
+      if (!token()) { setStatus('先にトークンを貼り付けてください。', true); return; }
+      if (gistId() && !window.confirm('新しい置き場を作ります。いまの置き場にあるぶんは読みに行かなくなりますが、\nこの端末の中身はそのまま残り、新しい置き場に入ります。よろしいですか？')) return;
+      setStatus('置き場を作っています…', false);
       gistCreate(token()).then(function (id) {
-        if (!id) throw new Error('保存先を作れませんでした');
+        if (!id) throw new Error('置き場を作れませんでした');
         lsSet(LS_GIST, id);
-        if (elGist) elGist.value = id;
-        lsSet(LS_LAST, String(Date.now()));
-        // ここで自動を入れておかないと、作っただけで何も送られない
         lsSet(LS_AUTO, '1');
-        if (elAuto) elAuto.checked = true;
+        if (elGist) elGist.value = id;
         renderState();
-        state.fingerprint = fingerprint();
-        setStatus('用意ができました。あとは「つなぐリンクをコピー」して、もう片方のアプリに貼り付けてください。', false);
-      }, function (err) {
+        return sync(false);
+      }).then(null, function (err) {
         setStatus('作れませんでした: ' + (err && err.message ? err.message : '通信エラー'), true);
       });
-    });
-
-    if (elAuto) elAuto.addEventListener('change', function () {
-      lsSet(LS_AUTO, elAuto.checked ? '1' : '0');
-      renderState();
-      if (elAuto.checked) sync(true);
     });
 
     var pair = $('btn-pair-copy');
     if (pair) pair.addEventListener('click', function () {
       saveFields();
-      if (!ready()) { setStatus('先にこの端末の設定を済ませてください。', true); return; }
+      if (!ready()) { setStatus('先にこの端末をつないでください。', true); return; }
       var url = pairLink();
       var api = window.SUNKAN_DRILL;
       var done = function (ok) {
         setStatus(ok
-          ? 'つなぐリンクをコピーしました。もう片方のアプリの、この画面の「貼り付けて受け取る」に貼ってください。'
+          ? 'コピーしました。もう片方の端末でこのリンクを開くか、同じ画面の「貼り付ける」に貼ってください。'
           : 'コピーできませんでした: ' + url, !ok);
       };
       if (api && typeof api.copyText === 'function') api.copyText(url, done);
@@ -976,10 +1128,11 @@
       if (!window.confirm('同期をやめます。この端末からトークンと Gist ID を消しますが、\n覚えた文はそのまま残ります。よろしいですか？')) return;
       lsRemove(LS_TOKEN);
       lsRemove(LS_GIST);
+      lsRemove(LS_FP);
       lsSet(LS_AUTO, '0');
+      if (state.retry) { window.clearTimeout(state.retry); state.retry = null; }
       if (elToken) elToken.value = '';
       if (elGist) elGist.value = '';
-      if (elAuto) elAuto.checked = false;
       renderState();
       setStatus('同期をやめました。', false);
     });
@@ -989,10 +1142,26 @@
     window.addEventListener('hashchange', drainHandoffHash);
     window.addEventListener('pageshow', drainHandoffHash);
 
-    // 開いたとき・戻ってきたときに拾う
+    // 戻ってきたら取りに行き、裏に回るときは送り残しを片付ける
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden && autoOn() && ready()) sync(true);
+      if (document.hidden) flush();
+      else if (autoOn()) sync(true);
     });
+    window.addEventListener('pagehide', flush);
+
+    // 電波が戻ったらやり直す（オフラインのあいだの変更を置き去りにしない）
+    window.addEventListener('online', function () {
+      if (autoOn()) sync(true);
+    });
+
+    // 同じ端末の別のタブで直したぶんも拾う
+    window.addEventListener('storage', function (e) {
+      if (!e || !e.key || e.key.indexOf('sunkan:') !== 0) return;
+      if (e.key.indexOf('sunkan:sync:') === 0) return;
+      refreshViews();
+      if (autoOn()) scheduleAuto();
+    });
+
     window.setInterval(watch, WATCH_MS);
   }
 
@@ -1017,8 +1186,9 @@
     renderState();
     drainHandoffHash();   // リンクで届いたぶんを取り込む
     state.fingerprint = fingerprint();
-    if (autoOn() && ready()) {
-      window.setTimeout(function () { sync(true); }, 1200);
+    if (autoOn()) {
+      // 前回送れなかったぶんがあれば、それも含めてここで片付く
+      window.setTimeout(function () { sync(true); }, 800);
     }
   }
 
