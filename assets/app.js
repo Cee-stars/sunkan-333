@@ -19,6 +19,10 @@
   var DIRECTIONS = ['ja-en', 'en-ja'];
   var FONT_LABELS = ['最小', '小', '標準', '大', '最大'];
 
+  // 配信のたびに上げる。設定ダイアログに出して、
+  // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
+  var APP_VERSION = 'build 5 (2026-08-16)';
+
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
 
@@ -510,6 +514,7 @@
   var elOptHideJa = $('opt-hide-ja');
   var elOptStarredOnly = $('opt-starred-only');
   var elOptAutoSpeak = $('opt-auto-speak');
+  var elAppVersion = $('app-version');
   var elOptFontSize = $('opt-font-size');
   var elOptFontOut = $('opt-font-size-out');
 
@@ -1473,14 +1478,26 @@
   function saveImportedDeck() {
     var text = elImportText ? elImportText.value : '';
     var parsed = parseImportText(text);
+    var typedName = trim(elImportName ? elImportName.value : '');
+
     if (!parsed.items.length) {
+      // 名前だけ入れて「読み込む」を押した＝空のセットを作りたい、と受け取る。
+      // ここで何も作らずに終わると、名前を付けたのに何も起きない行き止まりになる。
+      if (typedName) {
+        createEmptyDeck(typedName);
+        if (elImportName) elImportName.value = '';
+        if (elImportPreview) elImportPreview.textContent = '';
+        closeDialog(elDataDialog);
+        return;
+      }
       if (elImportPreview) {
         elImportPreview.textContent =
-          '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。';
+          '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。'
+          + ' 空のセットを作りたいときは、上の「セット名」に名前を入れて「読み込む」を押してください。';
       }
       return;
     }
-    var name = trim(elImportName ? elImportName.value : '');
+    var name = typedName;
     if (!name) name = defaultDeckName();
 
     var deck = {
@@ -1939,6 +1956,8 @@
 
   function init() {
     if (!elRows || !elRowTemplate) return; // DOM が想定と違うときは何もしない
+
+    if (elAppVersion) elAppVersion.textContent = APP_VERSION;
 
     initSpeech();
     loadStars();
