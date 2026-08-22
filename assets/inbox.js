@@ -122,6 +122,13 @@
     for (i = 0; i < taken.length; i++) done[taken[i].key] = true;
 
     var raw = readRaw(), rest = [];
+    // 取り込んだ分は同期でも戻ってこないよう、消したことを覚えてもらう
+    var sync = window.SUNKAN_SYNC;
+    if (sync && typeof sync.recordDelete === 'function' && typeof sync.inboxKey === 'function') {
+      for (i = 0; i < raw.length; i++) {
+        if (done[keyOf(raw[i])]) sync.recordDelete(sync.inboxKey(raw[i]));
+      }
+    }
     for (i = 0; i < raw.length; i++) {
       if (done[keyOf(raw[i])]) continue;
       if (!sanitize(raw[i])) continue;

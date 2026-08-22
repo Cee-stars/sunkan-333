@@ -22,6 +22,7 @@
   var LS_PARA_GENRES = 'sunkan:para:genres';
   var LS_PARA_CARDS = 'sunkan:para:cards';
   var LS_PARA_STARS = 'sunkan:para:stars';
+  var LS_INBOX = 'sunkan:inbox';   // 受信箱も揃える（別の入れ物で受けた分が届くように）
 
   var LS_TOKEN = 'sunkan:sync:token';
   var LS_GIST = 'sunkan:sync:gistId';
@@ -143,8 +144,16 @@
     return !!rec && rec.t > rec.a;
   }
 
-  // 鍵の作り方。app.js / paraphrase.js もこれと同じ形で渡す
+  // 鍵の作り方。app.js / paraphrase.js / inbox.js もこれと同じ形で渡す
   function addedKey(deckId, ja, en) { return 'added:' + deckId + '\n' + ja + '\n' + en; }
+
+  /** 受信箱の 1 件を見分ける鍵。id が無ければ中身から作る（inbox.js と同じ形） */
+  function inboxKey(card) {
+    if (!isObject(card)) return '';
+    var id = trim(card.id);
+    if (id) return 'inbox:id\n' + id;
+    return 'inbox:c\n' + trim(card.source) + '\n' + trim(card.en) + '\n' + trim(card.ja);
+  }
 
   /* ============================================================
    * 4. いまの中身を取り出す / 書き戻す
@@ -163,6 +172,7 @@
         cards: isArray(readJSON(LS_PARA_CARDS, [])) ? readJSON(LS_PARA_CARDS, []) : [],
         stars: isArray(readJSON(LS_PARA_STARS, [])) ? readJSON(LS_PARA_STARS, []) : []
       },
+      inbox: isArray(readJSON(LS_INBOX, [])) ? readJSON(LS_INBOX, []) : [],
       tombs: readTombs()
     };
   }
@@ -180,6 +190,7 @@
         cards: isArray(para.cards) ? para.cards : [],
         stars: isArray(para.stars) ? para.stars : []
       },
+      inbox: isArray(d.inbox) ? d.inbox : [],
       tombs: isArray(d.tombs) ? d.tombs : []
     };
   }
@@ -201,6 +212,7 @@
     put(LS_PARA_GENRES, merged.para.genres, []);
     put(LS_PARA_CARDS, merged.para.cards, []);
     put(LS_PARA_STARS, merged.para.stars, []);
+    put(LS_INBOX, merged.inbox, []);
     writeTombs(merged.tombs);
     return changed;
   }
@@ -295,6 +307,19 @@
     return out;
   }
 
+  /** 取り込み待ちのカード。取り込み済み（消した記録あり）のものは戻さない */
+  function mergeInbox(mine, theirs, tombs) {
+    var out = [], seen = {}, both = mine.concat(theirs), i, key;
+    for (i = 0; i < both.length; i++) {
+      key = inboxKey(both[i]);
+      if (!key || seen[key]) continue;
+      if (isDeleted(tombs, key)) continue;
+      seen[key] = true;
+      out.push(both[i]);
+    }
+    return out;
+  }
+
   function merge(mine, theirs) {
     var tombs = writeTombs(mine.tombs.concat(theirs.tombs));
     var map = tombMap(tombs);
@@ -329,6 +354,7 @@
         cards: cards,
         stars: mergeStrings(mine.para.stars, theirs.para.stars, function (id) { return !!cardIds[id]; })
       },
+      inbox: mergeInbox(mine.inbox, theirs.inbox, map),
       tombs: tombs
     };
   }
@@ -422,7 +448,17 @@
 
   /** URL に載って届いたぶんを取り込む */
   function drainHandoffHash() {
-    var m = String(window.location.hash || '').match(/[#&]data=([^&]+)/);
+    var hash = String(window.location.hash || '');
+
+    var pair = hash.match(/[#&]pair=([^&]+)/);
+    if (pair) {
+      clearHash();
+      takePair(pair[1]);
+      if (elDialog && !elDialog.open) elDialog.showModal();
+      return;
+    }
+
+    var m = hash.match(/[#&]data=([^&]+)/);
     if (!m) return;
     var payload = m[1];
     clearHash();   // 読み込み直しで二重に入らないよう先に消す
@@ -480,7 +516,10 @@
       return;
     }
 
-    var m = raw.match(/[#&]data=([^&\s]+)/);
+    var m = raw.match(/[#&]pair=([^&\s]+)/);
+    if (m) { takePair(m[1]); return; }
+
+    m = raw.match(/[#&]data=([^&\s]+)/);
     if (m) { takeDataPayload(m[1]); return; }
 
     m = raw.match(/[#&]inbox=([^&\s]+)/);
@@ -499,6 +538,38 @@
     }
 
     setStatus('リンクとして読めませんでした。もう片方の端末で作ったリンクを、そのまま貼り付けてください。', true);
+  }
+
+  /**
+   * この端末の同期設定（トークンと置き場）を、そのままリンクに載せる。
+   * ホーム画面のアプリにはアドレス欄が無く、貼り付けしか道が無い。
+   * これを 1 回貼ってもらえば、あとはその端末も自動で揃う。
+   *
+   * リンクにはトークンが入っているので、人に渡すものではない。
+   */
+  function pairLink() {
+    var conf = { t: token(), g: gistId() };
+    var payload = toBase64Url(new TextEncoder().encode(JSON.stringify(conf)));
+    return window.location.href.split('#')[0] + '#pair=' + payload;
+  }
+
+  function takePair(payload) {
+    var conf = null;
+    try { conf = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))); }
+    catch (e) { conf = null; }
+    if (!isObject(conf) || !trim(conf.t) || !trim(conf.g)) {
+      setStatus('つなぐリンクとして読めませんでした。', true);
+      return;
+    }
+    lsSet(LS_TOKEN, trim(conf.t));
+    lsSet(LS_GIST, trim(conf.g));
+    lsSet(LS_AUTO, '1');
+    if (elToken) elToken.value = trim(conf.t);
+    if (elGist) elGist.value = trim(conf.g);
+    if (elAuto) elAuto.checked = true;
+    renderState();
+    setStatus('つながりました。いま揃えています…', false);
+    sync(false);
   }
 
   function report(changed) {
@@ -624,9 +695,10 @@
 
   /** 画面を作り直す。app.js / paraphrase.js がそれぞれ開けている口 */
   function refreshViews() {
-    var drill = window.SUNKAN_DRILL, para = window.SUNKAN_PARA;
+    var drill = window.SUNKAN_DRILL, para = window.SUNKAN_PARA, inbox = window.SUNKAN_INBOX;
     if (drill && typeof drill.reload === 'function') drill.reload();
     if (para && typeof para.reload === 'function') para.reload();
+    if (inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
   function sync(silent) {
@@ -651,7 +723,7 @@
       return gistUpdate(id, tk, {
         app: 'sunkan', v: 1, at: Date.now(),
         decks: merged.decks, added: merged.added, stars: merged.stars,
-        para: merged.para, tombs: merged.tombs
+        para: merged.para, inbox: merged.inbox, tombs: merged.tombs
       }).then(function () { return changed; });
     }).then(function (changed) {
       lsSet(LS_LAST, String(Date.now()));
@@ -674,7 +746,8 @@
   /* --- 変更を見張る（app.js の保存に手を入れずに済ませる） --- */
 
   function fingerprint() {
-    return [LS_DECKS, LS_ADDED, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS, LS_TOMBS]
+    return [LS_DECKS, LS_ADDED, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
+            LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }
 
@@ -866,8 +939,12 @@
         lsSet(LS_GIST, id);
         if (elGist) elGist.value = id;
         lsSet(LS_LAST, String(Date.now()));
+        // ここで自動を入れておかないと、作っただけで何も送られない
+        lsSet(LS_AUTO, '1');
+        if (elAuto) elAuto.checked = true;
         renderState();
-        setStatus('保存先を作りました。この Gist ID をもう 1 台に貼り付けてください。', false);
+        state.fingerprint = fingerprint();
+        setStatus('用意ができました。あとは「つなぐリンクをコピー」して、もう片方のアプリに貼り付けてください。', false);
       }, function (err) {
         setStatus('作れませんでした: ' + (err && err.message ? err.message : '通信エラー'), true);
       });
@@ -877,6 +954,21 @@
       lsSet(LS_AUTO, elAuto.checked ? '1' : '0');
       renderState();
       if (elAuto.checked) sync(true);
+    });
+
+    var pair = $('btn-pair-copy');
+    if (pair) pair.addEventListener('click', function () {
+      saveFields();
+      if (!ready()) { setStatus('先にこの端末の設定を済ませてください。', true); return; }
+      var url = pairLink();
+      var api = window.SUNKAN_DRILL;
+      var done = function (ok) {
+        setStatus(ok
+          ? 'つなぐリンクをコピーしました。もう片方のアプリの、この画面の「貼り付けて受け取る」に貼ってください。'
+          : 'コピーできませんでした: ' + url, !ok);
+      };
+      if (api && typeof api.copyText === 'function') api.copyText(url, done);
+      else done(false);
     });
 
     var off = $('btn-sync-off');
@@ -911,6 +1003,8 @@
   window.SUNKAN_SYNC = {
     /** app.js / paraphrase.js が消したときに呼ぶ（同期で戻ってこないように） */
     recordDelete: recordDelete,
+    /** 受信箱の 1 件の鍵。inbox.js と作り方をそろえるためここで配る */
+    inboxKey: inboxKey,
     /** 同じものを足し直したときに呼ぶ（消した記録を忘れる） */
     clearDelete: clearDelete,
     /** 足した 1 文の鍵。呼ぶ側と作り方をそろえるためここで配る */
