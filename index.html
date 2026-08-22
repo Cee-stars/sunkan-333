@@ -519,6 +519,24 @@
       文が多くてリンクに収まらないときは、ファイルのほうを使います（AirDrop で送れます）。
     </p>
 
+    <h3 class="dialog-subtitle">貼り付けて受け取る</h3>
+    <p class="dialog-hint">
+      <strong>ホーム画面から開いたアプリにはアドレス欄が無く、リンクを開けません。</strong>
+      そのときは、もう片方の端末で作ったリンクをここに貼り付けてください。
+      My Dictionary の「リンクをコピー」で作ったものも、そのまま受け取れます。
+    </p>
+
+    <label class="field">
+      <span class="visually-hidden">リンクの貼り付け</span>
+      <textarea id="paste-in" class="field-input field-textarea" rows="3"
+        placeholder="ここにリンクを貼り付け" autocomplete="off" spellcheck="false"></textarea>
+    </label>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-paste-read" class="btn btn--ghost">クリップボードから貼る</button>
+      <button type="button" id="btn-paste-take" class="btn btn--primary">取り込む</button>
+    </div>
+
     <p class="dialog-note" id="sync-status" role="status" aria-live="polite"></p>
 
     <hr class="dialog-sep">

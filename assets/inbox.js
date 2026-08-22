@@ -346,6 +346,33 @@
     window.addEventListener('hashchange', function () { drainHash(); refresh(); });
   }
 
+  /**
+   * 外から受信箱へ足す（sync.js が「貼り付けて受け取る」で使う）。
+   * ホーム画面から開いたアプリにはアドレス欄が無く、リンクを開かせられない。
+   * その端末へ届ける唯一の道が貼り付けなので、ここを開けてある。
+   * 足せた件数を返す。
+   */
+  function addFromOutside(list) {
+    if (Object.prototype.toString.call(list) !== '[object Array]') return 0;
+    var raw = readRaw(), added = 0, i;
+    for (i = 0; i < list.length; i++) {
+      if (!sanitize(list[i])) continue;   // 出題できないものは受け取らない
+      raw.push(list[i]);
+      added++;
+    }
+    if (!added) return 0;
+    writeRaw(raw);
+    state.dismissed = '';   // 「あとで」で畳んでいても、新しく届いたので出す
+    clearFlash();
+    refresh();
+    return added;
+  }
+
+  window.SUNKAN_INBOX = {
+    add: addFromOutside,
+    refresh: refresh
+  };
+
   function init() {
     if (!elBar) return;   // DOM が想定と違うときは何もしない
     drainHash();          // URL で届いたぶんを先に受信箱へ入れてから見る

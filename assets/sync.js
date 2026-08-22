@@ -465,6 +465,81 @@
     return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
   }
 
+  /**
+   * 貼り付けられた文字列から受け取る。
+   *
+   * ホーム画面から開いたアプリにはアドレス欄が無く、リンクを開かせられない。
+   * その端末にデータを届ける道がこれしか無いので、受け口を広くとってある：
+   * 渡すリンク（#data=）、My Dictionary からのリンク（#inbox=）、
+   * 生のひとかたまり、書き出しファイルの中身、のどれでも受け取る。
+   */
+  function takeFromText(text) {
+    var raw = trim(text);
+    if (!raw) {
+      setStatus('リンクを貼り付けてください。', true);
+      return;
+    }
+
+    var m = raw.match(/[#&]data=([^&\s]+)/);
+    if (m) { takeDataPayload(m[1]); return; }
+
+    m = raw.match(/[#&]inbox=([^&\s]+)/);
+    if (m) { takeInboxPayload(m[1]); return; }
+
+    if (/^[zp]\./.test(raw)) { takeDataPayload(raw); return; }
+
+    if (raw.charAt(0) === '{' || raw.charAt(0) === '[') {
+      var parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      if (isArray(parsed)) { takeInboxList(parsed); return; }
+      if (isObject(parsed) && parsed.app === 'sunkan') {
+        report(takeIn(clean(parsed)));
+        return;
+      }
+    }
+
+    setStatus('リンクとして読めませんでした。もう片方の端末で作ったリンクを、そのまま貼り付けてください。', true);
+  }
+
+  function report(changed) {
+    setStatus(changed
+      ? 'もう片方の端末のぶんを取り込みました。'
+      : '取り込みました（新しいものはありませんでした）。', false);
+  }
+
+  function takeDataPayload(payload) {
+    setStatus('取り込んでいます…', false);
+    unpackPayload(payload).then(function (theirs) {
+      report(takeIn(theirs));
+    }, function (err) {
+      setStatus('取り込めませんでした: ' + (err && err.message ? err.message : '中身を読めませんでした'), true);
+    });
+  }
+
+  /** My Dictionary から渡されたカード。受信箱に入れて、帯から取り込んでもらう */
+  function takeInboxPayload(payload) {
+    var list;
+    try { list = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))); }
+    catch (e) {
+      setStatus('取り込めませんでした（中身を読めませんでした）。', true);
+      return;
+    }
+    takeInboxList(list);
+  }
+
+  function takeInboxList(list) {
+    var api = window.SUNKAN_INBOX;
+    if (!api || typeof api.add !== 'function') {
+      setStatus('受信箱が読み込めていないので受け取れませんでした。', true);
+      return;
+    }
+    var n = api.add(list);
+    setStatus(n
+      ? n + ' 件届きました。上の「取り込む」を押すとセットに入ります。'
+      : '受け取れるカードがありませんでした（英文と日本語の両方が要ります）。', !n);
+    if (n) closeSync();
+  }
+
   /* ============================================================
    * 6. GitHub
    * ========================================================== */
@@ -739,8 +814,37 @@
     }
   }
 
+  function bindPaste() {
+    var box = $('paste-in');
+    var take = $('btn-paste-take');
+    var read = $('btn-paste-read');
+
+    if (take && box) take.addEventListener('click', function () {
+      takeFromText(box.value);
+      box.value = '';
+    });
+
+    if (read && box) read.addEventListener('click', function () {
+      var cb = window.navigator.clipboard;
+      if (!cb || typeof cb.readText !== 'function') {
+        setStatus('この端末では自動で貼れません。上の欄に手で貼り付けてください。', true);
+        box.focus();
+        return;
+      }
+      cb.readText().then(function (text) {
+        box.value = text;
+        takeFromText(text);
+        box.value = '';
+      }, function () {
+        setStatus('クリップボードを読めませんでした。上の欄に手で貼り付けてください。', true);
+        box.focus();
+      });
+    });
+  }
+
   function bindEvents() {
     bindHandoff();
+    bindPaste();
     if (elOpen) elOpen.addEventListener('click', openSync);
     if (elToken) elToken.addEventListener('change', saveFields);
     if (elGist) elGist.addEventListener('change', saveFields);
