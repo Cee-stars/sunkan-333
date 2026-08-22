@@ -334,6 +334,138 @@
   }
 
   /* ============================================================
+   * 5.5 トークンなしで渡す（リンク / ファイル）
+   *
+   * サーバーを持たない以上、アカウントなしで裏から勝手に揃える方法は無い。
+   * 代わりに「片方で作ったものを、もう片方で開く」形にする。
+   * 中身は同じ突き合わせに通すので、どちらのぶんも消えない。
+   * ========================================================== */
+
+  var HANDOFF_URL_MAX = 30000;   // これ以上長いリンクは開けない端末がある
+
+  function toBase64Url(bytes) {
+    var bin = '', i;
+    for (i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return window.btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function fromBase64Url(text) {
+    var b64 = String(text).replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var bin = window.atob(b64), bytes = new Uint8Array(bin.length), i;
+    for (i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  /** ブラウザに入っている圧縮を使う。無ければそのまま（リンクが長くなるだけ） */
+  function deflate(bytes) {
+    if (!window.CompressionStream) return Promise.resolve(null);
+    try {
+      var stream = new window.Blob([bytes]).stream()
+        .pipeThrough(new window.CompressionStream('deflate-raw'));
+      return new window.Response(stream).arrayBuffer()
+        .then(function (buf) { return new Uint8Array(buf); }, function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+
+  function inflate(bytes) {
+    if (!window.DecompressionStream) return Promise.reject(new Error('この端末では開けません'));
+    var stream = new window.Blob([bytes]).stream()
+      .pipeThrough(new window.DecompressionStream('deflate-raw'));
+    return new window.Response(stream).arrayBuffer().then(function (buf) {
+      return new Uint8Array(buf);
+    });
+  }
+
+  /** いまの中身を、リンクに載せられる文字列にする。z. は圧縮あり、p. は生 */
+  function packPayload() {
+    var bytes = new TextEncoder().encode(JSON.stringify(snapshot()));
+    return deflate(bytes).then(function (small) {
+      return (small && small.length < bytes.length)
+        ? 'z.' + toBase64Url(small)
+        : 'p.' + toBase64Url(bytes);
+    });
+  }
+
+  function unpackPayload(text) {
+    var body = String(text);
+    var packed = body.indexOf('z.') === 0;
+    if (packed || body.indexOf('p.') === 0) body = body.slice(2);
+    var bytes;
+    try { bytes = fromBase64Url(body); }
+    catch (e) { return Promise.reject(new Error('中身を読めませんでした')); }
+
+    return (packed ? inflate(bytes) : Promise.resolve(bytes)).then(function (raw) {
+      var parsed;
+      try { parsed = JSON.parse(new TextDecoder().decode(raw)); }
+      catch (e) { throw new Error('中身を読めませんでした'); }
+      if (!isObject(parsed) || parsed.app !== 'sunkan') throw new Error('瞬間英作文のデータではないようです');
+      return clean(parsed);
+    });
+  }
+
+  /** 受け取ったものを手元と突き合わせて入れる。足したぶんの数を返す */
+  function takeIn(theirs) {
+    var before = snapshot();
+    var merged = merge(before, theirs);
+    var changed = apply(merged);
+    if (changed) refreshViews();
+    return changed;
+  }
+
+  function handoffLink() {
+    return packPayload().then(function (payload) {
+      var base = window.location.href.split('#')[0];
+      return base + '#data=' + payload;
+    });
+  }
+
+  /** URL に載って届いたぶんを取り込む */
+  function drainHandoffHash() {
+    var m = String(window.location.hash || '').match(/[#&]data=([^&]+)/);
+    if (!m) return;
+    var payload = m[1];
+    clearHash();   // 読み込み直しで二重に入らないよう先に消す
+    unpackPayload(payload).then(function (theirs) {
+      var changed = takeIn(theirs);
+      setStatus(changed ? 'もう片方の端末のぶんを取り込みました。' : '取り込みました（新しいものはありませんでした）。', false);
+      if (elDialog && !elDialog.open) elDialog.showModal();
+    }, function (err) {
+      setStatus('取り込めませんでした: ' + (err && err.message ? err.message : '中身を読めませんでした'), true);
+      if (elDialog && !elDialog.open) elDialog.showModal();
+    });
+  }
+
+  /** 読んだあとの URL は消す。再読み込みで二重に入るのを防ぐ */
+  function clearHash() {
+    try {
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        return;
+      }
+    } catch (e) { /* 古いブラウザでは下に落とす */ }
+    window.location.hash = '';
+  }
+
+  function downloadFile(name, text) {
+    var url = window.URL.createObjectURL(new window.Blob([text], { type: 'application/json' }));
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    window.setTimeout(function () {
+      window.URL.revokeObjectURL(url);
+      if (a.parentNode) a.parentNode.removeChild(a);
+    }, 1000);
+  }
+
+  function stamp() {
+    var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
+  }
+
+  /* ============================================================
    * 6. GitHub
    * ========================================================== */
 
@@ -546,7 +678,69 @@
     renderState();
   }
 
+  function bindHandoff() {
+    var link = $('btn-handoff-link');
+    var save = $('btn-handoff-save');
+    var load = $('btn-handoff-load');
+    var file = $('handoff-file');
+
+    if (link) link.addEventListener('click', function () {
+      setStatus('リンクを作っています…', false);
+      handoffLink().then(function (url) {
+        if (url.length > HANDOFF_URL_MAX) {
+          setStatus('中身が多くてリンクにできませんでした。「ファイルに書き出す」を使ってください。', true);
+          return;
+        }
+        var api = window.SUNKAN_DRILL;
+        if (api && typeof api.copyText === 'function') {
+          api.copyText(url, function (ok) {
+            setStatus(ok
+              ? 'リンクをコピーしました。メモや AirDrop で自分に送って、もう片方の端末で開いてください。'
+              : 'コピーできませんでした。この欄のリンクを選んでコピーしてください: ' + url, !ok);
+          });
+        } else {
+          setStatus('このリンクをもう片方の端末で開いてください: ' + url, false);
+        }
+      }, function () {
+        setStatus('リンクを作れませんでした。', true);
+      });
+    });
+
+    if (save) save.addEventListener('click', function () {
+      try {
+        downloadFile('sunkan-' + stamp() + '.json', JSON.stringify(snapshot(), null, 2));
+        setStatus('書き出しました。AirDrop などでもう片方の端末へ送り、そちらで「ファイルを読み込む」を押してください。', false);
+      } catch (e) {
+        setStatus('書き出せませんでした。', true);
+      }
+    });
+
+    if (load && file) {
+      load.addEventListener('click', function () { file.click(); });
+      file.addEventListener('change', function () {
+        var f = file.files && file.files[0];
+        file.value = '';
+        if (!f) return;
+        var reader = new window.FileReader();
+        reader.onload = function () {
+          var parsed;
+          try { parsed = JSON.parse(reader.result); }
+          catch (e) { setStatus('このファイルは読めませんでした。', true); return; }
+          if (!isObject(parsed) || parsed.app !== 'sunkan') {
+            setStatus('瞬間英作文の書き出しファイルではないようです。', true);
+            return;
+          }
+          var changed = takeIn(clean(parsed));
+          setStatus(changed ? 'もう片方の端末のぶんを取り込みました。' : '取り込みました（新しいものはありませんでした）。', false);
+        };
+        reader.onerror = function () { setStatus('このファイルは読めませんでした。', true); };
+        reader.readAsText(f, 'utf-8');
+      });
+    }
+  }
+
   function bindEvents() {
+    bindHandoff();
     if (elOpen) elOpen.addEventListener('click', openSync);
     if (elToken) elToken.addEventListener('change', saveFields);
     if (elGist) elGist.addEventListener('change', saveFields);
@@ -594,6 +788,11 @@
       setStatus('同期をやめました。', false);
     });
 
+    // すでにこのアプリを開いたままリンクを叩くと、ページは読み込み直されず
+    // ハッシュだけが変わる。起動時だけ見ていると、そのとき何も起きない。
+    window.addEventListener('hashchange', drainHandoffHash);
+    window.addEventListener('pageshow', drainHandoffHash);
+
     // 開いたとき・戻ってきたときに拾う
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden && autoOn() && ready()) sync(true);
@@ -618,6 +817,7 @@
     if (!elDialog) return;   // DOM が想定と違うときは何もしない
     bindEvents();
     renderState();
+    drainHandoffHash();   // リンクで届いたぶんを取り込む
     state.fingerprint = fingerprint();
     if (autoOn() && ready()) {
       window.setTimeout(function () { sync(true); }, 1200);

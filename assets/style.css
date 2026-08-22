@@ -2030,3 +2030,19 @@ legend.field-label {
   .cell--en::after,
   .cell--ja::before { display: none !important; }
 }
+
+
+/* =============================================================
+   14. ボタンが 3 つ並ぶ操作列（狭幅では 2 段に折り返す）
+   狭幅の `.dialog-actions .btn { flex: 1 1 0 }` より後ろに置く。
+   同じ強さなので、順番でこちらを勝たせている。
+   ============================================================= */
+
+.dialog-actions--wrap {
+  justify-content: stretch;
+}
+
+.dialog-actions--wrap .btn {
+  flex: 1 1 auto;
+  min-width: 10em;
+}

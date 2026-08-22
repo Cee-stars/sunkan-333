@@ -495,13 +495,40 @@
 <!-- ===== 同期の設定ダイアログ ===== -->
 <dialog id="sync-dialog" class="dialog" aria-labelledby="sync-dialog-title">
   <form method="dialog" class="dialog-inner">
-    <h2 id="sync-dialog-title" class="dialog-title">iPhone・MacBook と同期する</h2>
+    <h2 id="sync-dialog-title" class="dialog-title">iPhone・MacBook で揃える</h2>
     <p class="dialog-desc">
-      自作セット・足した文・★・パラフレ帳を、GitHub の「シークレット Gist」
-      （<strong>URL を知っている人だけが見られる場所</strong>）に置いて、端末どうしで揃えます。
+      自作セット・足した文・★・パラフレ帳を、端末どうしで揃えます。
+      収録の 360 文と、隠し方・文字サイズなどの設定はそのままです（端末ごとの好みのため）。
+      <strong>どちらの端末で足したものも消えません。</strong>足りないほうに入るだけです。
+    </p>
+
+    <h3 class="dialog-subtitle">かんたんに渡す（登録なし）</h3>
+    <p class="dialog-hint">
+      片方の端末でリンクを作り、もう片方で開くだけです。アカウントも設定も要りません。
+      <strong>思い出したときに手で渡す形</strong>で、放っておいて勝手に揃うわけではありません。
+    </p>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-handoff-link" class="btn btn--primary">リンクを作ってコピー</button>
+      <button type="button" id="btn-handoff-save" class="btn btn--ghost">ファイルに書き出す</button>
+      <button type="button" id="btn-handoff-load" class="btn btn--ghost">ファイルを読み込む</button>
+    </div>
+    <input type="file" id="handoff-file" accept=".json,application/json" hidden>
+    <p class="dialog-hint">
+      リンクはメモ・メッセージ・AirDrop などで自分に送ってください。
+      文が多くてリンクに収まらないときは、ファイルのほうを使います（AirDrop で送れます）。
+    </p>
+
+    <p class="dialog-note" id="sync-status" role="status" aria-live="polite"></p>
+
+    <hr class="dialog-sep">
+
+    <h3 class="dialog-subtitle">放っておいても揃うようにする（GitHub を使う）</h3>
+    <p class="dialog-hint">
+      こちらは <strong>最初に一度だけ登録が要ります</strong>が、そのあとは開くたびに自動で揃います。
+      GitHub の「シークレット Gist」（<strong>URL を知っている人だけが見られる場所</strong>）に置きます。
       <strong>完全に非公開というわけではない</strong>点にご注意ください。
       入れたトークンはこの端末の中だけに保存され、GitHub 以外へは送りません。
-      収録の 360 文と、隠し方・文字サイズなどの設定は同期しません（端末ごとの好みのため）。
     </p>
 
     <label class="field">
@@ -534,8 +561,6 @@
       <legend class="field-label">自動で同期する</legend>
       <label class="check"><input type="checkbox" id="opt-sync-auto"> 直したときと、開いたときに自動で揃える</label>
     </fieldset>
-
-    <p class="dialog-note" id="sync-status" role="status" aria-live="polite"></p>
 
     <div class="dialog-actions">
       <button type="button" id="btn-sync-close" class="btn btn--ghost">閉じる</button>
