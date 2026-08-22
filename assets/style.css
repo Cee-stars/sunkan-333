@@ -516,6 +516,24 @@ button, input, select, textarea {
 .inbox-actions[hidden] { display: none; }
 
 
+/* --- 同期の状態（設定ダイアログのボタンの中） --- */
+
+.sync-state {
+  margin-inline-start: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.sync-state:empty { display: none; }
+
+.dialog-note.is-error { color: var(--danger); }
+
+
 /* =============================================================
    06. シート（表本体）
    ============================================================= */

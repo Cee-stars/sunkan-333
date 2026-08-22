@@ -319,6 +319,14 @@
     return g ? g.name : 'ジャンルなし';
   }
 
+  /* 同期に「消した」を伝える。sync.js が読み込まれていなければ何もしない。
+     ここを通しておかないと、消したパラフレが同期でまた戻ってくる。
+     足し直すときは必ず新しい id が付くので、消した記録と当たることはない。 */
+  function noteDelete(key) {
+    var s = window.SUNKAN_SYNC;
+    if (s && typeof s.recordDelete === 'function') s.recordDelete(key);
+  }
+
   /** 名前からジャンルを作る。同じ名前があればそれを返す */
   function addGenre(name) {
     name = trim(name);
@@ -350,6 +358,7 @@
 
     state.genres.splice(idx, 1);
     saveGenres();
+    noteDelete('genre:' + id);
 
     if (count) {
       for (i = 0; i < state.cards.length; i++) {
@@ -1193,6 +1202,7 @@
 
     state.cards.splice(idx, 1);
     saveCards();
+    noteDelete('card:' + id);
     renderGenreChips();
     renderGenreManageList();
     renderCards();
@@ -1504,6 +1514,33 @@
 
     bindEvents();
   }
+
+  /**
+   * localStorage を読み直して作り直す（同期で中身が入れ替わったとき用）。
+   * 見ていたジャンルは、まだ在ればそのまま。並べ替えやシャッフルには手を付けない。
+   */
+  function reloadFromStorage() {
+    state.genres = sanitizeGenres(readJSON(LS_GENRES));
+    state.cards = sanitizeCards(readJSON(LS_CARDS));
+    state.stars = sanitizeStars(readJSON(LS_STARS));
+
+    if (state.genreId !== ALL && state.genreId !== NONE && !findGenre(state.genreId)) {
+      state.genreId = ALL;   // 見ていたジャンルが消えていたら「すべて」へ戻す
+    }
+    setShuffle(false, true); // 枚数が変わったので、ばらした順番は捨てる
+
+    renderGenreChips();
+    renderGenreTitle();
+    renderGenreSelect();
+    renderGenreManageList();
+    renderCards();
+    syncGenreAddButton();
+  }
+
+  window.SUNKAN_PARA = {
+    /** 同期が中身を入れ替えたあとに呼ぶ */
+    reload: reloadFromStorage
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

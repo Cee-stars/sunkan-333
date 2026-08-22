@@ -21,7 +21,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 7 (2026-08-22)';
+  var APP_VERSION = 'build 8 (2026-08-22)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -608,6 +608,21 @@
     return state.added[deckId] || [];
   }
 
+  /* 同期に「消した」「足し直した」を伝える。sync.js が読み込まれていなければ何もしない。
+     ここを通しておかないと、消したものが同期でまた戻ってくる。 */
+  function noteDelete(key) {
+    var s = window.SUNKAN_SYNC;
+    if (s && typeof s.recordDelete === 'function') s.recordDelete(key);
+  }
+  function noteAdd(key) {
+    var s = window.SUNKAN_SYNC;
+    if (s && typeof s.clearDelete === 'function') s.clearDelete(key);
+  }
+  function addedSyncKey(deckId, ja, en) {
+    var s = window.SUNKAN_SYNC;
+    return (s && typeof s.addedKey === 'function') ? s.addedKey(deckId, ja, en) : '';
+  }
+
   /** 1 文足す。同じ内容が既にあれば false を返す */
   function addSentence(deckId, ja, en, note) {
     if (!deckId || !ja || !en) return false;
@@ -617,6 +632,7 @@
     }
     list.push({ ja: ja, en: en, note: note || '' });
     saveAdded();
+    noteAdd(addedSyncKey(deckId, ja, en));   // 前に消していても、足し直したなら生かす
     return true;
   }
 
@@ -629,6 +645,7 @@
         list.splice(i, 1);
         if (!list.length) delete state.added[deckId];
         saveAdded();
+        noteDelete(addedSyncKey(deckId, ja, en));
         return true;
       }
     }
@@ -1579,6 +1596,7 @@
 
     state.userDecks.splice(idx, 1);
     saveUserDecks();
+    noteDelete('deck:' + deckId);
 
     // ★のデータも一緒に片付ける
     if (state.stars[deckId]) {
@@ -1932,9 +1950,30 @@
     return out;
   }
 
+  /**
+   * localStorage を読み直して画面を作り直す（同期で中身が入れ替わったとき用）。
+   * 開いているセットは、まだ在れば開いたままにする。
+   */
+  function reloadFromStorage() {
+    loadStars();
+    loadAdded();
+    state.userDecks = loadUserDecks();
+
+    renderDeckSelect();
+    renderDeckManageList();
+    renderAddedList();
+
+    var keep = state.deck ? state.deck.id : state.settings.deckId;
+    selectDeck(keep, { persist: false });
+    syncToggleAllButton();
+    updateStatusBar();
+  }
+
   window.SUNKAN_DRILL = {
     addSentences: addSentencesToNamedDeck,
     splitTable: splitTable,
+    /** 同期が中身を入れ替えたあとに呼ぶ */
+    reload: reloadFromStorage,
     /** クリップボードへ。非同期なので結果は done(ok) で返す */
     copyText: function (text, done) {
       done = done || function () {};

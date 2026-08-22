@@ -29,6 +29,7 @@ jobs:
           node --check assets/data.js
           node --check assets/paraphrase.js
           node --check assets/inbox.js
+          node --check assets/sync.js
           node --check sw.js
 
       - uses: actions/configure-pages@v5

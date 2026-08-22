@@ -12,11 +12,14 @@
 | `assets/app.js` | C | 瞬間英作文の動作すべて（描画・隠す/表示・検索・取り込み・保存） |
 | `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
+| `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
 
 `app.js` と `paraphrase.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
 `<html data-mode>` と下の `window.SUNKAN_DRILL` だけで、`app.js` は `data-mode="para"` の間
 キー操作を受け取らない（表が画面に無いため）。`inbox.js` は自分の帯（`#inbox-bar`）と
 `sunkan:inbox` しか触らず、文を足すのは `SUNKAN_DRILL.addSentences` 越しに限る。
+`sync.js` は保存データを直に読み書きするが、**書いたあとは必ず `reload()` を呼んで画面を追いつかせる**
+（自分では DOM を作らない）。
 
 ### `window.SUNKAN_DRILL`（app.js が開けている口。ここ以外から中身を触らせない）
 
@@ -25,6 +28,27 @@
 | `addSentences(deckName, items)` | 名前でセットを探し（無ければ作って開き）、`{ja,en,note}` を足す。戻り値は `{added, skipped, deckId, deckName}`。足し方は「＋追加」と同じ（`sunkan:added` 行き）なので元データは無傷 |
 | `splitTable(text)` | 貼り付けテキストを行×列に割る（TSV / CSV 自動判定）。戻り値は `{rows, delimiter}` |
 | `copyText(text, done)` | クリップボードへ。非同期なので結果は `done(ok)` で返す |
+| `reload()` | localStorage を読み直して表を作り直す。同期が中身を入れ替えたあとに呼ぶ。開いていたセットは、まだ在ればそのまま |
+
+### `window.SUNKAN_PARA`（paraphrase.js が開けている口）
+
+| 関数 | 内容 |
+| --- | --- |
+| `reload()` | localStorage を読み直してパラフレ帳を作り直す。見ていたジャンルが消えていたら「すべて」へ戻す |
+
+### `window.SUNKAN_SYNC`（sync.js が開けている口）
+
+消したものが同期で戻ってこないよう、**削除は必ずここへ知らせる**。sync.js が読み込まれて
+いなければ何もしないので、呼ぶ側は毎回 `typeof` で確かめてから呼ぶ。
+
+| 関数 | 内容 |
+| --- | --- |
+| `recordDelete(key)` | 消したことを覚える |
+| `clearDelete(key)` | 同じものを足し直したことを覚える（記録は消さず、足し直した時刻を入れる） |
+| `addedKey(deckId, ja, en)` | 足した 1 文の鍵。作り方を 1 か所にそろえるためここで配る |
+
+鍵の形は `deck:<deckId>` / `card:<cardId>` / `genre:<genreId>` /
+`added:<deckId>\n<ja>\n<en>` の 4 つ。
 
 ## データ形式（`assets/data.js`）
 
@@ -191,6 +215,46 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
 表のほうへ移る。「あとで」はその時点の中身を覚えて畳むだけで、受信箱には手を付けない
 （新しいカードが届けばまた出る）。
 
+## 同期（GitHub のシークレット Gist）
+
+サーバーは持たない。GitHub の Gist を 1 枚の置き場として使う。ファイル名は `sunkan-data.json`
+（My Dictionary の `mydict-data.json` と同じ Gist に同居できるよう分けてある。PATCH は
+指定したファイルしか触らないので、互いを壊さない）。
+
+```js
+{
+  app: 'sunkan', v: 1, at: 1750000000000,
+  decks: [ /* sunkan:decks と同じ形 */ ],
+  added: { /* sunkan:added と同じ形 */ },
+  stars: { /* sunkan:stars と同じ形 */ },
+  para:  { genres: [...], cards: [...], stars: [...] },
+  tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
+}
+```
+
+**同期しないもの**: `sunkan:settings`（隠し方・文字サイズなどは端末ごとの好み）、
+`sunkan:mode`、`sunkan:para:ui`、`sunkan:inbox`、収録例文（`data.js` にあるので送る意味がない）。
+
+### 突き合わせ方
+
+**足したものは両方から拾う**（どちらの端末の追加も消さない）。時刻で丸ごと勝ち負けを付けると、
+片方がしばらくオフラインだったときにその間の追加が消えるため。
+同じ id / 同じ (ja, en) は 1 つにまとめ、手元のほうを残す。
+
+**消したものだけ記録を頼りに落とす。** `tombs` の 1 件は `t`（消した時刻）と `a`（足し直した時刻）を
+持ち、`t > a` のときだけ落とす。`a` を残すのが肝で、消した記録は向こうの端末にも渡っているため、
+足し直したときに記録ごと消すと、次の同期でまた向こうの記録が勝ってしまう。記録は 90 日で捨てる。
+
+### 失敗したとき
+
+**手元のデータには一切手を付けない。** 向こうが読めない（壊れている・1MB 超で途中で切られている）
+ときは、空と解釈せず**同期そのものを止める**。空扱いすると、相手の端末にしか無いものを
+こちらのデータで塗りつぶしてしまう。
+
+`#sync-dialog` は設定ダイアログの中の `#btn-sync-open` から開く（設定は先に閉じる）。
+自動同期は、保存を横取りせずに 3 秒ごとの見張りで気付き、2 秒待ってから送る。
+裏に回っているタブでは見張らず、表に戻った時点で同期する。
+
 ## 保存（localStorage キー）
 
 | キー | 内容 |
@@ -205,6 +269,11 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
 | `sunkan:para:stars` | ★を付けたパラフレの id `string[]` |
 | `sunkan:para:ui` | `{ genreId, mask, sort, starredOnly }` … 表示の状態（シャッフルは持ち越さない） |
 | `sunkan:inbox` | 別アプリから届いた取り込み待ちのカード（上の「受信箱」を参照）。書くのは送り手、消すのは `inbox.js` |
+| `sunkan:sync:token` | GitHub のアクセストークン。**この端末の中だけ**。GitHub 以外へは送らない |
+| `sunkan:sync:gistId` | 置き場の Gist ID |
+| `sunkan:sync:auto` | `'1'` / `'0'` … 自動で同期するか |
+| `sunkan:sync:last` | 最後に同期した時刻 |
+| `sunkan:sync:tombs` | 消した / 足し直した記録 `[{k,t,a}]`（上の「同期」を参照） |
 
 `sunkan:added` はデッキ本体を書き換えずに後ろへ足す方式。収録セット（`data.js`）にも
 取り込んだセットにも同じように足せて、元データは無傷のまま保てる。
