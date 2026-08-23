@@ -639,8 +639,9 @@
     return window.fetch(url, opts).then(function (res) {
       if (!res.ok) throw new Error(errorText(res.status));
       return res.json();
-    }, function () {
-      throw new Error('つながりませんでした（オフラインかもしれません）');
+    }, function (e) {
+      // ここで「オフラインかも」と決めつけると本当の理由が消える。そのまま出す。
+      throw new Error('GitHub に届きませんでした（' + ((e && e.message) || '理由不明') + '）');
     });
   }
 
@@ -711,6 +712,56 @@
     files[INBOX_FILE] = { content: JSON.stringify({ app: 'sunkan-inbox', v: 1, cards: cards }, null, 2) };
     return ghFetch(API + '/' + encodeURIComponent(gistId), 'PATCH', token, JSON.stringify({ files: files }))
       .then(function () {}, function () {});   // ここが失敗しても取り込みは済んでいる
+  }
+
+  /**
+   * どこで止まっているのかを 1 つずつ確かめる。
+   * 「つながりません」だけでは、電波・トークン・保存先のどれが悪いのか分からない。
+   */
+  function diagnose() {
+    var tk = token(), id = gistId(), lines = [];
+
+    function head() {
+      return { 'Authorization': 'token ' + tk, 'Accept': 'application/vnd.github+json' };
+    }
+    function why(e) { return (e && e.message) ? e.message : '理由不明'; }
+
+    setStatus('調べています…', false);
+
+    // 貼り付けで改行や空白が混じると fetch が値を作れずに落ちる。よくある原因なので先に見る
+    if (tk && /[^\x21-\x7e]/.test(tk)) {
+      lines.push('⚠ トークンに使えない文字（空白や改行）が混じっています。貼り付け直してください。');
+    }
+
+    return window.fetch(API.replace('/gists', '/'), { cache: 'no-store' }).then(
+      function (r) { lines.push('① GitHub に届く … ' + (r.ok ? 'はい' : 'いいえ（' + r.status + '）')); },
+      function (e) { lines.push('① GitHub に届く … いいえ（' + why(e) + '）'); }
+    ).then(function () {
+      if (!tk) { lines.push('② トークン … 未入力'); return; }
+      return window.fetch(API, { headers: head() }).then(
+        function (r) {
+          lines.push('② トークン … ' + (r.ok ? '通りました'
+            : r.status === 401 ? '通りません（無効か期限切れ）'
+            : r.status === 403 ? '通りません（権限に gist が無いか、回数制限）'
+            : '通りません（' + r.status + '）'));
+        },
+        function (e) { lines.push('② トークン … 試せません（' + why(e) + '）'); }
+      );
+    }).then(function () {
+      if (!tk || !id) { lines.push('③ 保存先 … 未設定'); return; }
+      return window.fetch(API + '/' + encodeURIComponent(id), { headers: head() }).then(
+        function (r) {
+          lines.push('③ 保存先 … ' + (r.ok ? '読めました'
+            : r.status === 404 ? '見つかりません（Gist ID を確かめてください）'
+            : '読めません（' + r.status + '）'));
+        },
+        function (e) { lines.push('③ 保存先 … 試せません（' + why(e) + '）'); }
+      );
+    }).then(function () {
+      lines.push('この端末 … ' + (window.navigator.onLine === false ? 'オフライン' : 'オンライン')
+        + ' / トークン ' + tk.length + ' 文字 / Gist ID ' + id.length + ' 文字');
+      setStatus(lines.join('\n'), false);
+    });
   }
 
   /* ============================================================
@@ -999,6 +1050,9 @@
 
     var now = $('btn-sync-now');
     if (now) now.addEventListener('click', function () { saveFields(); sync(false); });
+
+    var check = $('btn-sync-check');
+    if (check) check.addEventListener('click', function () { saveFields(); diagnose(); });
 
     var create = $('btn-sync-create');
     if (create) create.addEventListener('click', function () {
