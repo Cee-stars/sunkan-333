@@ -31,6 +31,10 @@
   var LS_TOMBS = 'sunkan:sync:tombs';
 
   var GIST_FILE = 'sunkan-data.json';   // My Dictionary と同じ Gist に同居できるよう名前を分ける
+  /* My Dictionary が送ったカードの置き場。本体とは別ファイルにして、
+     互いの書き込みを踏まないようにしてある。向こうは足すだけ、
+     取り込み済みを間引くのはこちらだけ。 */
+  var INBOX_FILE = 'sunkan-inbox.json';
   var API = 'https://api.github.com/gists';
 
   var TOMB_MAX_AGE = 90 * 24 * 60 * 60 * 1000;  // 消した記録は 90 日で捨てる
@@ -653,8 +657,13 @@
 
   function gistGet(gistId, token) {
     return ghFetch(API + '/' + encodeURIComponent(gistId), 'GET', token).then(function (json) {
+      var handed = readGistInbox(json);   // My Dictionary が置いていったカード
       var f = json && json.files && json.files[GIST_FILE];
-      if (!f) return clean(null);   // まだこのアプリのぶんが無い Gist（＝作りたて）
+      if (!f) {
+        var empty = clean(null);
+        empty.inbox = handed;
+        return empty;   // まだこのアプリのぶんが無い Gist（＝作りたて）
+      }
 
       // 1MB を超えると content は途中で切られる。切れたまま読むと「向こうは空」と
       // 誤解して相手を消してしまうので、全文を取り直す。
@@ -673,13 +682,34 @@
         var parsed;
         try { parsed = JSON.parse(text); }
         catch (e) { throw new Error('同期データが読めません（上書きせずに止めました）'); }
-        return clean(parsed);
+        var out = clean(parsed);
+        out.inbox = out.inbox.concat(handed);   // 置いていかれたカードも受信箱へ
+        out.handed = handed.length;
+        return out;
       });
     });
   }
 
   function gistUpdate(gistId, token, data) {
     return ghFetch(API + '/' + encodeURIComponent(gistId), 'PATCH', token, gistBody(data));
+  }
+
+  /** My Dictionary が置いていったカードを読む。無ければ空 */
+  function readGistInbox(json) {
+    var f = json && json.files && json.files[INBOX_FILE];
+    if (!f || !f.content) return [];
+    var parsed;
+    try { parsed = JSON.parse(f.content); } catch (e) { return []; }
+    return (isObject(parsed) && isArray(parsed.cards)) ? parsed.cards : [];
+  }
+
+  /** 取り込み済みを間引いて書き戻す。中身が変わらないなら触らない */
+  function writeGistInbox(gistId, token, cards, before) {
+    if (cards.length === before) return Promise.resolve();
+    var files = {};
+    files[INBOX_FILE] = { content: JSON.stringify({ app: 'sunkan-inbox', v: 1, cards: cards }, null, 2) };
+    return ghFetch(API + '/' + encodeURIComponent(gistId), 'PATCH', token, JSON.stringify({ files: files }))
+      .then(function () {}, function () {});   // ここが失敗しても取り込みは済んでいる
   }
 
   /* ============================================================
@@ -717,13 +747,29 @@
 
     var id = gistId(), tk = token();
     return gistGet(id, tk).then(function (theirs) {
+      var handedCount = theirs.handed || 0;
       var merged = merge(snapshot(), theirs);
       var changed = apply(merged);
       if (changed) refreshViews();
-      return gistUpdate(id, tk, {
-        app: 'sunkan', v: 1, at: Date.now(),
-        decks: merged.decks, added: merged.added, stars: merged.stars,
-        para: merged.para, inbox: merged.inbox, tombs: merged.tombs
+
+      // 受け渡しファイルは、まだ取り込んでいないぶんだけ残す
+      var keepKeys = {};
+      merged.inbox.forEach(function (c) { keepKeys[inboxKey(c)] = true; });
+      var restHanded = [];
+      if (handedCount) {
+        theirs.inbox.slice(theirs.inbox.length - handedCount).forEach(function (c) {
+          if (keepKeys[inboxKey(c)]) restHanded.push(c);
+        });
+      }
+      var pruneHanded = handedCount
+        ? writeGistInbox(id, tk, restHanded, handedCount)
+        : Promise.resolve();
+      return pruneHanded.then(function () {
+        return gistUpdate(id, tk, {
+          app: 'sunkan', v: 1, at: Date.now(),
+          decks: merged.decks, added: merged.added, stars: merged.stars,
+          para: merged.para, inbox: merged.inbox, tombs: merged.tombs
+        });
       }).then(function () { return changed; });
     }).then(function (changed) {
       lsSet(LS_LAST, String(Date.now()));
