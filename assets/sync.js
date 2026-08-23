@@ -638,7 +638,10 @@
         for (var i = 0; i < body.errors.length && i < 3; i++) {
           var e = body.errors[i];
           if (!isObject(e)) continue;
-          detail.push(trim(e.field || e.resource) + ' ' + trim(e.code || e.message));
+          // message がいちばん役に立つ。code だけ出して落とすと何も分からない
+          var part = trim(e.field || e.resource) + ' ' + trim(e.code);
+          if (trim(e.message)) part += '「' + trim(e.message) + '」';
+          detail.push(trim(part));
         }
       }
     }
@@ -684,9 +687,17 @@
     });
   }
 
+  var FILE_MAX = 900 * 1024;   // Gist の 1 ファイルの上限（1MB）に少し余裕を持たせる
+
   function gistFiles(data) {
+    var text = JSON.stringify(data, null, 2);
+    if (!trim(text)) throw new Error('送る中身が空でした');
+    if (text.length > FILE_MAX) {
+      throw new Error('中身が大きすぎます（' + Math.round(text.length / 1024) + 'KB）。'
+        + 'Gist に置ける上限を超えています');
+    }
     var files = {};
-    files[GIST_FILE] = { content: JSON.stringify(data, null, 2) };
+    files[GIST_FILE] = { content: text };
     return files;
   }
 
@@ -743,7 +754,9 @@
    * description を毎回送ると、Gist を共有している My Dictionary 側の名前まで書き換えてしまう。
    */
   function gistUpdate(gistId, token, data) {
-    var body = JSON.stringify({ files: gistFiles(data) });
+    var body;
+    try { body = JSON.stringify({ files: gistFiles(data) }); }
+    catch (e) { return Promise.reject(e); }
     return ghFetch(API + '/' + encodeURIComponent(gistId), 'PATCH', token, body);
   }
 
