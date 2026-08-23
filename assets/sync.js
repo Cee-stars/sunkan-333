@@ -910,7 +910,7 @@
    * 7. 同期そのもの
    * ========================================================== */
 
-  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '', repairNote: '' };
+  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '', repairNote: '', handedNote: '' };
 
   /** 同期中かどうか。居座っているだけなら空けてやる */
   function isBusy() {
@@ -954,6 +954,9 @@
     var id = gistId(), tk = token();
     return gistGet(id, tk).then(function (theirs) {
       var handedCount = theirs.handed || 0;
+      state.handedNote = handedCount
+        ? 'My Dictionary から ' + handedCount + ' 件受け取りました。'
+        : '';
       var merged = merge(snapshot(), theirs);
       var changed = apply(merged);
       if (changed) refreshViews();
@@ -978,6 +981,7 @@
       lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
       var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
+      if (state.handedNote) { msg += '\n' + state.handedNote; state.handedNote = ''; }
       if (state.repairNote) { msg += '\n' + state.repairNote; state.repairNote = ''; }
       if (!silent || changed) setStatus(msg, false);
       renderState();
@@ -996,50 +1000,67 @@
     });
   }
 
+  var REPAIR_KEEP_INBOX = 50;   // 切り詰めるときも、新しいカードはこれだけ残す
+
   /**
-   * 送る。大きすぎて弾かれたら、捨てても覚えた文が失われない所から順に落として送り直す。
+   * 送る。大きすぎて弾かれたら、失って困らない所から順に落として送り直す。
    * ここで諦めると同期そのものが行き止まりになり、直す手立てが無くなる。
    *
-   * 受信箱と消した記録は、無くなっても覚えた文は残る（消した記録を捨てると、
-   * 消したものが他の端末から戻ってくることはある）。セットや足した文には触らない。
+   * 落とす順は「消した記録 → 古いカード → カード全部」。
+   * **取り込み待ちのカードは利用者がまだ見ていないもの**なので、消した記録より後に回す。
+   * セットと足した文には最後まで触らない。
    */
-  function pushWithRepair(id, token, merged) {
-    var repaired = null;
+  var REPAIR_STEPS = [
+    { note: '' },
+    { note: '大きすぎたので、削除の記録を整理して送りました。' },
+    { note: '大きすぎたので、削除の記録と古い取り込み待ちを整理して送りました。' },
+    { note: '大きすぎたので、削除の記録と取り込み待ちを整理して送りました。' }
+  ];
 
-    function payload(drop) {
+  function pushWithRepair(id, token, merged) {
+    var used = 0;
+
+    function inboxFor(step) {
+      if (step <= 1) return merged.inbox;
+      if (step === 2) {
+        return merged.inbox.length > REPAIR_KEEP_INBOX
+          ? merged.inbox.slice(merged.inbox.length - REPAIR_KEEP_INBOX)
+          : merged.inbox;
+      }
+      return [];
+    }
+
+    function payload(step) {
       return {
         app: 'sunkan', v: 1, at: Date.now(),
         decks: merged.decks, added: merged.added, stars: merged.stars, para: merged.para,
-        inbox: drop >= 1 ? [] : merged.inbox,
-        tombs: drop >= 2 ? [] : merged.tombs
+        inbox: inboxFor(step),
+        tombs: step >= 1 ? [] : merged.tombs
       };
     }
 
     function tooBig(e) { return !!(e && e.message && e.message.indexOf('大きすぎます') >= 0); }
 
-    function attempt(drop) {
-      return gistUpdate(id, token, payload(drop)).then(function (r) {
-        if (drop >= 1) {
+    function attempt(step) {
+      return gistUpdate(id, token, payload(step)).then(function (r) {
+        used = step;
+        if (step >= 1) {
           // 送れた形に手元も合わせる。次の同期でまた膨らませないため
-          repaired = drop;
-          lsRemove(LS_INBOX);
-          if (drop >= 2) lsRemove(LS_TOMBS);
+          lsRemove(LS_TOMBS);
+          var keep = inboxFor(step);
+          if (keep.length) writeJSON(LS_INBOX, keep); else lsRemove(LS_INBOX);
           var box = window.SUNKAN_INBOX;
           if (box && typeof box.refresh === 'function') box.refresh();
         }
         return r;
       }, function (e) {
-        if (!tooBig(e) || drop >= 2) throw e;
-        return attempt(drop + 1);
+        if (!tooBig(e) || step >= REPAIR_STEPS.length - 1) throw e;
+        return attempt(step + 1);
       });
     }
 
     return attempt(0).then(function (r) {
-      if (repaired) {
-        state.repairNote = repaired >= 2
-          ? '大きすぎたので、取り込み待ちと削除の記録を整理して送りました。'
-          : '大きすぎたので、取り込み待ちを整理して送りました。';
-      }
+      if (used) state.repairNote = REPAIR_STEPS[used].note;
       return r;
     });
   }
