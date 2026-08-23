@@ -1229,7 +1229,11 @@
     var total = sizeOf(snap);
     var text = last ? '最後の同期 ' + stamp(last) : 'まだ同期していません';
     text += ' ・ ' + snap.decks.length + ' セット ・ 同期データ ' + kb(total);
-    if (pairCode()) text += '\n照合コード ' + pairCode() + '（ほかのアプリと同じなら同じ保存先です）';
+    if (ready()) {
+      // 保存先そのものを見せる。畳んだ印だけだと、トークンが違うのか
+      // 保存先が違うのか区別が付かず、直しようがない
+      text += '\n保存先 …' + gistId().slice(-6) + ' ／ 照合コード ' + pairCode();
+    }
     // 上限に近づいたら、どこが重いのかもその場で見せる
     if (total > FILE_MAX / 2) text += '\n内訳: ' + breakdown(snap);
     if (err) {
