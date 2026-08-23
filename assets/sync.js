@@ -620,11 +620,27 @@
    * 6. GitHub
    * ========================================================== */
 
-  function errorText(status) {
-    if (status === 401) return 'トークンが違うようです';
-    if (status === 404) return 'Gist ID が見つかりません';
-    if (status === 403) return 'GitHub 側で回数制限に掛かりました（少し待ってください）';
-    return '通信できませんでした（' + status + '）';
+  /** GitHub が返した理由も添える。番号だけでは何を直せばよいか分からない */
+  function errorText(status, body) {
+    var base =
+      status === 401 ? 'トークンが違うようです' :
+      status === 404 ? 'Gist ID が見つかりません' :
+      status === 403 ? '断られました（権限に gist が無いか、回数制限）' :
+      status === 422 ? '送った中身を GitHub が受け付けませんでした' :
+      '通信できませんでした（' + status + '）';
+
+    var detail = [];
+    if (isObject(body)) {
+      if (trim(body.message)) detail.push(trim(body.message));
+      if (isArray(body.errors)) {
+        for (var i = 0; i < body.errors.length && i < 3; i++) {
+          var e = body.errors[i];
+          if (!isObject(e)) continue;
+          detail.push(trim(e.field || e.resource) + ' ' + trim(e.code || e.message));
+        }
+      }
+    }
+    return detail.length ? base + '：' + detail.join(' / ') : base + '（' + status + '）';
   }
 
   function ghFetch(url, method, token, body) {
@@ -637,22 +653,30 @@
       opts.body = body;
     }
     return window.fetch(url, opts).then(function (res) {
-      if (!res.ok) throw new Error(errorText(res.status));
-      return res.json();
+      if (res.ok) return res.json();
+      // GitHub は理由を本文で返す。捨てずに読む
+      return res.json().then(function (body) { throw new Error(errorText(res.status, body)); },
+                             function () { throw new Error(errorText(res.status, null)); });
     }, function (e) {
       // ここで「オフラインかも」と決めつけると本当の理由が消える。そのまま出す。
       throw new Error('GitHub に届きませんでした（' + ((e && e.message) || '理由不明') + '）');
     });
   }
 
-  function gistBody(data) {
+  function gistFiles(data) {
     var files = {};
     files[GIST_FILE] = { content: JSON.stringify(data, null, 2) };
-    return JSON.stringify({ description: '瞬間英作文 の同期データ', public: false, files: files });
+    return files;
   }
 
   function gistCreate(token) {
-    return ghFetch(API, 'POST', token, gistBody(snapshot())).then(function (json) {
+    // description と public は「作るとき」だけ使える項目
+    var body = JSON.stringify({
+      description: '瞬間英作文 の同期データ',
+      public: false,
+      files: gistFiles(snapshot())
+    });
+    return ghFetch(API, 'POST', token, body).then(function (json) {
       return trim(json && json.id);
     });
   }
@@ -692,8 +716,14 @@
     });
   }
 
+  /**
+   * 更新は files だけ送る。
+   * public は作成専用の項目で、更新に混ぜると GitHub が 422 で弾く（これで同期が止まっていた）。
+   * description を毎回送ると、Gist を共有している My Dictionary 側の名前まで書き換えてしまう。
+   */
   function gistUpdate(gistId, token, data) {
-    return ghFetch(API + '/' + encodeURIComponent(gistId), 'PATCH', token, gistBody(data));
+    var body = JSON.stringify({ files: gistFiles(data) });
+    return ghFetch(API + '/' + encodeURIComponent(gistId), 'PATCH', token, body);
   }
 
   /** My Dictionary が置いていったカードを読む。無ければ空 */
