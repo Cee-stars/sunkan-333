@@ -924,6 +924,43 @@
   function autoOn() { return lsGet(LS_AUTO) === '1'; }
   function ready() { return !!(token() && gistId()); }
 
+  /** セットごとの「足した文」の数 */
+  function countAdded(added) {
+    var out = {}, id;
+    for (id in added) {
+      if (Object.prototype.hasOwnProperty.call(added, id) && isArray(added[id])) {
+        out[id] = added[id].length;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 同期で文が増えたら知らせる。
+   * 別のアプリや別の端末が先に受信箱を取り込むと、こちらには帯が出ない。
+   * それでも文は同期で入ってくるので、黙っていると「送ったのに届いていない」に見える。
+   */
+  function announceArrivals(before, merged) {
+    var after = countAdded(merged.added), id, gained = 0, best = null;
+    for (id in after) {
+      if (!Object.prototype.hasOwnProperty.call(after, id)) continue;
+      var n = after[id] - (before[id] || 0);
+      if (n <= 0) continue;
+      gained += n;
+      if (!best || n > best.n) best = { id: id, n: n };
+    }
+    if (!gained || !best) return;
+
+    var name = best.id;
+    for (var i = 0; i < merged.decks.length; i++) {
+      if (trim(merged.decks[i].id) === best.id) { name = trim(merged.decks[i].name) || best.id; break; }
+    }
+    var box = window.SUNKAN_INBOX;
+    if (box && typeof box.notify === 'function') {
+      box.notify('「' + name + '」に ' + gained + ' 文入りました。上のセット選択から開けます。');
+    }
+  }
+
   /** 画面を作り直す。app.js / paraphrase.js がそれぞれ開けている口 */
   function refreshViews() {
     var drill = window.SUNKAN_DRILL, para = window.SUNKAN_PARA, inbox = window.SUNKAN_INBOX;
@@ -954,12 +991,14 @@
     var id = gistId(), tk = token();
     return gistGet(id, tk).then(function (theirs) {
       var handedCount = theirs.handed || 0;
+      var before = countAdded(snapshot().added);
       state.handedNote = handedCount
         ? 'My Dictionary から ' + handedCount + ' 件受け取りました。'
         : '';
       var merged = merge(snapshot(), theirs);
       var changed = apply(merged);
       if (changed) refreshViews();
+      if (changed) announceArrivals(before, merged);
 
       // 受け渡しファイルは、まだ取り込んでいないぶんだけ残す
       var keepKeys = {};

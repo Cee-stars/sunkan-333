@@ -23,6 +23,7 @@
   var MAX_PENDING = 500;    // 取り込まないまま溜まり続けないよう頭を打つ
   var MAX_TEXT = 400;       // 1 文としてありえない長さは弾く
   var FLASH_MS = 5000;      // 取り込み結果を出しておく時間
+  var NOTICE_MS = 12000;    // 同期で増えた知らせは、気付けるよう長めに出す
   var DEFAULT_SOURCE = 'My Dictionary';
 
   /* ============================================================
@@ -227,8 +228,8 @@
   }
 
   /** 取り込み結果などを帯に出す。そのあとは通常の表示に戻す */
-  function flash(msg) {
-    if (!elBar || !elText) return;
+  function flash(msg, ms) {
+    if (!elBar || !elText || !msg) return;
     clearFlash();
     elText.textContent = msg;
     elBar.hidden = false;
@@ -236,7 +237,7 @@
     state.flashTimer = window.setTimeout(function () {
       state.flashTimer = null;
       refresh();
-    }, FLASH_MS);
+    }, ms || FLASH_MS);
   }
 
   function pendingLabel(pending) {
@@ -377,7 +378,13 @@
 
   window.SUNKAN_INBOX = {
     add: addFromOutside,
-    refresh: refresh
+    refresh: refresh,
+    /**
+     * 帯に一言出す（同期で文が増えたことを知らせる用）。
+     * 別の端末や別のアプリが先に「取り込む」を押すと、こちらの帯は出ない。
+     * それでも文は同期で入ってくるので、黙っていると「届いていない」ように見える。
+     */
+    notify: function (text) { flash(trim(text), NOTICE_MS); }
   };
 
   function init() {
