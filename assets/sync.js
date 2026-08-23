@@ -910,7 +910,7 @@
    * 7. 同期そのもの
    * ========================================================== */
 
-  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '' };
+  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '', repairNote: '' };
 
   /** 同期中かどうか。居座っているだけなら空けてやる */
   function isBusy() {
@@ -971,19 +971,15 @@
         ? writeGistInbox(id, tk, restHanded, handedCount)
         : Promise.resolve();
       return pruneHanded.then(function () {
-        return gistUpdate(id, tk, {
-          app: 'sunkan', v: 1, at: Date.now(),
-          decks: merged.decks, added: merged.added, stars: merged.stars,
-          para: merged.para, inbox: merged.inbox, tombs: merged.tombs
-        });
+        return pushWithRepair(id, tk, merged);
       }).then(function () { return changed; });
     }).then(function (changed) {
       lsSet(LS_LAST, String(Date.now()));
       lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
-      if (!silent || changed) {
-        setStatus(changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。', false);
-      }
+      var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
+      if (state.repairNote) { msg += '\n' + state.repairNote; state.repairNote = ''; }
+      if (!silent || changed) setStatus(msg, false);
       renderState();
       return true;
     }, function (err) {
@@ -997,6 +993,54 @@
     }).then(function (ok) {
       state.busy = false;
       return ok;
+    });
+  }
+
+  /**
+   * 送る。大きすぎて弾かれたら、捨てても覚えた文が失われない所から順に落として送り直す。
+   * ここで諦めると同期そのものが行き止まりになり、直す手立てが無くなる。
+   *
+   * 受信箱と消した記録は、無くなっても覚えた文は残る（消した記録を捨てると、
+   * 消したものが他の端末から戻ってくることはある）。セットや足した文には触らない。
+   */
+  function pushWithRepair(id, token, merged) {
+    var repaired = null;
+
+    function payload(drop) {
+      return {
+        app: 'sunkan', v: 1, at: Date.now(),
+        decks: merged.decks, added: merged.added, stars: merged.stars, para: merged.para,
+        inbox: drop >= 1 ? [] : merged.inbox,
+        tombs: drop >= 2 ? [] : merged.tombs
+      };
+    }
+
+    function tooBig(e) { return !!(e && e.message && e.message.indexOf('大きすぎます') >= 0); }
+
+    function attempt(drop) {
+      return gistUpdate(id, token, payload(drop)).then(function (r) {
+        if (drop >= 1) {
+          // 送れた形に手元も合わせる。次の同期でまた膨らませないため
+          repaired = drop;
+          lsRemove(LS_INBOX);
+          if (drop >= 2) lsRemove(LS_TOMBS);
+          var box = window.SUNKAN_INBOX;
+          if (box && typeof box.refresh === 'function') box.refresh();
+        }
+        return r;
+      }, function (e) {
+        if (!tooBig(e) || drop >= 2) throw e;
+        return attempt(drop + 1);
+      });
+    }
+
+    return attempt(0).then(function (r) {
+      if (repaired) {
+        state.repairNote = repaired >= 2
+          ? '大きすぎたので、取り込み待ちと削除の記録を整理して送りました。'
+          : '大きすぎたので、取り込み待ちを整理して送りました。';
+      }
+      return r;
     });
   }
 
