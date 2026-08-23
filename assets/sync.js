@@ -28,6 +28,7 @@
   var LS_GIST = 'sunkan:sync:gistId';
   var LS_AUTO = 'sunkan:sync:auto';
   var LS_LAST = 'sunkan:sync:last';
+  var LS_ERR = 'sunkan:sync:error';   // 最後に失敗した理由。黙って止まらないよう残す
   var LS_TOMBS = 'sunkan:sync:tombs';
 
   var GIST_FILE = 'sunkan-data.json';   // My Dictionary と同じ Gist に同居できるよう名前を分ける
@@ -773,6 +774,7 @@
       }).then(function () { return changed; });
     }).then(function (changed) {
       lsSet(LS_LAST, String(Date.now()));
+      lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
       if (!silent || changed) {
         setStatus(changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。', false);
@@ -780,8 +782,12 @@
       renderState();
       return true;
     }, function (err) {
-      // 失敗しても手元のデータには手を付けていない
-      if (!silent) setStatus('同期できませんでした: ' + (err && err.message ? err.message : '通信エラー'), true);
+      // 失敗しても手元のデータには手を付けていない。
+      // 自動同期は黙って走るので、理由を残しておかないと止まったことに気付けない。
+      var why = (err && err.message) ? err.message : '通信エラー';
+      lsSet(LS_ERR, why + '\n' + Date.now());
+      renderState();
+      if (!silent) setStatus('同期できませんでした: ' + why, true);
       return false;
     }).then(function (ok) {
       state.busy = false;
@@ -839,25 +845,45 @@
     elStatus.classList.toggle('is-error', !!bad);
   }
 
-  function whenText() {
-    var last = parseInt(lsGet(LS_LAST), 10);
-    if (!last) return 'まだ同期していません';
-    var d = new Date(last), p = function (n) { return (n < 10 ? '0' : '') + n; };
-    return '最後の同期 ' + d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) +
+  function stamp(ms) {
+    var d = new Date(ms), p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) +
       ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  function renderState() {
-    if (elStateLabel) {
-      elStateLabel.textContent = !ready() ? '未設定' : (autoOn() ? '自動' : '手動');
+  /** 最後に失敗した理由。{ why, at } か null */
+  function lastError() {
+    var raw = lsGet(LS_ERR);
+    if (!raw) return null;
+    var cut = raw.lastIndexOf('\n');
+    if (cut < 0) return { why: raw, at: 0 };
+    return { why: raw.slice(0, cut), at: parseInt(raw.slice(cut + 1), 10) || 0 };
+  }
+
+  function whenText() {
+    var last = parseInt(lsGet(LS_LAST), 10);
+    var err = lastError();
+    var text = last ? '最後の同期 ' + stamp(last) : 'まだ同期していません';
+    text += ' ・ この端末 ' + snapshot().decks.length + ' セット';
+    if (err) {
+      text += '\n⚠ ' + (err.at ? stamp(err.at) + ' に' : '') + '同期できませんでした: ' + err.why;
     }
+    return text;
+  }
+
+  function renderState() {
+    if (!elStateLabel) return;
+    if (!ready()) { elStateLabel.textContent = '未設定'; elStateLabel.classList.remove('is-error'); return; }
+    var err = lastError();
+    elStateLabel.textContent = err ? '⚠ エラー' : (autoOn() ? '自動' : '手動');
+    elStateLabel.classList.toggle('is-error', !!err);
   }
 
   function openSync() {
     if (elToken) elToken.value = token();
     if (elGist) elGist.value = gistId();
     if (elAuto) elAuto.checked = autoOn();
-    setStatus(whenText(), false);
+    setStatus(whenText(), !!lastError());
     if (elSettingsDialog && elSettingsDialog.open) elSettingsDialog.close();
     if (elDialog && !elDialog.open) elDialog.showModal();
   }
@@ -1022,6 +1048,7 @@
       if (!window.confirm('同期をやめます。この端末からトークンと Gist ID を消しますが、\n覚えた文はそのまま残ります。よろしいですか？')) return;
       lsRemove(LS_TOKEN);
       lsRemove(LS_GIST);
+      lsRemove(LS_ERR);
       lsSet(LS_AUTO, '0');
       if (elToken) elToken.value = '';
       if (elGist) elGist.value = '';

@@ -531,7 +531,16 @@ button, input, select, textarea {
 
 .sync-state:empty { display: none; }
 
+.sync-state.is-error {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .dialog-note.is-error { color: var(--danger); }
+
+.dialog-note { white-space: pre-line; }
 
 
 /* =============================================================
