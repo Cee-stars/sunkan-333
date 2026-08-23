@@ -748,14 +748,30 @@
         function (e) { lines.push('② トークン … 試せません（' + why(e) + '）'); }
       );
     }).then(function () {
-      if (!tk || !id) { lines.push('③ 保存先 … 未設定'); return; }
+      if (!tk || !id) { lines.push('③ 保存先 … 未設定'); return null; }
       return window.fetch(API + '/' + encodeURIComponent(id), { headers: head() }).then(
         function (r) {
           lines.push('③ 保存先 … ' + (r.ok ? '読めました'
             : r.status === 404 ? '見つかりません（Gist ID を確かめてください）'
             : '読めません（' + r.status + '）'));
+          return r.ok ? r.json() : null;
         },
-        function (e) { lines.push('③ 保存先 … 試せません（' + why(e) + '）'); }
+        function (e) { lines.push('③ 保存先 … 試せません（' + why(e) + '）'); return null; }
+      );
+    }).then(function (json) {
+      // 読めても書けないことがある（書き込みだけ別の許可・別の通信になるため）。
+      // 中身を変えない書き込みを 1 回だけ試す。
+      if (!json) { lines.push('④ 書き込み … 試せません'); return; }
+      var body = JSON.stringify({ description: str(json.description) });
+      var h = head();
+      h['Content-Type'] = 'application/json';
+      return window.fetch(API + '/' + encodeURIComponent(id), { method: 'PATCH', headers: h, body: body }).then(
+        function (r) {
+          lines.push('④ 書き込み … ' + (r.ok ? 'できました'
+            : r.status === 403 ? 'できません（権限に gist が無いかもしれません）'
+            : 'できません（' + r.status + '）'));
+        },
+        function (e) { lines.push('④ 書き込み … できません（' + why(e) + '）'); }
       );
     }).then(function () {
       lines.push('この端末 … ' + (window.navigator.onLine === false ? 'オフライン' : 'オンライン')
