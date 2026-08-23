@@ -39,6 +39,8 @@
   var API = 'https://api.github.com/gists';
 
   var TOMB_MAX_AGE = 90 * 24 * 60 * 60 * 1000;  // 消した記録は 90 日で捨てる
+  var REQ_TIMEOUT_MS = 20000;  // 返事が来ないまま固まらせない
+  var BUSY_MAX_MS = 60000;     // 「同期中」が居座ったら諦めて次を受け付ける
   var WATCH_MS = 3000;    // 変更を見に行く間隔
   var DEBOUNCE_MS = 2000; // 変更が止まってから送るまで
 
@@ -643,6 +645,25 @@
     return detail.length ? base + '：' + detail.join(' / ') : base + '（' + status + '）';
   }
 
+  /** 返事が来ないと約束が永久に決まらず、次の同期が素通りしてしまう */
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var timer = window.setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        reject(new Error('返事がありませんでした（電波が弱いかもしれません）'));
+      }, ms);
+      promise.then(function (v) {
+        if (settled) return;
+        settled = true; window.clearTimeout(timer); resolve(v);
+      }, function (e) {
+        if (settled) return;
+        settled = true; window.clearTimeout(timer); reject(e);
+      });
+    });
+  }
+
   function ghFetch(url, method, token, body) {
     var opts = {
       method: method,
@@ -652,7 +673,7 @@
       opts.headers['Content-Type'] = 'application/json';
       opts.body = body;
     }
-    return window.fetch(url, opts).then(function (res) {
+    return withTimeout(window.fetch(url, opts), REQ_TIMEOUT_MS).then(function (res) {
       if (res.ok) return res.json();
       // GitHub は理由を本文で返す。捨てずに読む
       return res.json().then(function (body) { throw new Error(errorText(res.status, body)); },
@@ -814,7 +835,14 @@
    * 7. 同期そのもの
    * ========================================================== */
 
-  var state = { busy: false, timer: null, fingerprint: '' };
+  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '' };
+
+  /** 同期中かどうか。居座っているだけなら空けてやる */
+  function isBusy() {
+    if (!state.busy) return false;
+    if (Date.now() - state.busyAt > BUSY_MAX_MS) { state.busy = false; return false; }
+    return true;
+  }
 
   function token() { return trim(lsGet(LS_TOKEN)); }
   function gistId() { return trim(lsGet(LS_GIST)); }
@@ -834,13 +862,18 @@
       if (!silent) setStatus('トークンと Gist ID を入れてください。', true);
       return Promise.resolve(false);
     }
-    if (state.busy) return Promise.resolve(false);
+    if (isBusy()) {
+      // 黙って何もしないと「押しても反応しない」ように見える
+      if (!silent) setStatus('いま同期しています。少し待ってからもう一度押してください。', false);
+      return Promise.resolve(false);
+    }
     if (window.navigator.onLine === false) {
       if (!silent) setStatus('オフラインなので同期できません。', true);
       return Promise.resolve(false);
     }
 
     state.busy = true;
+    state.busyAt = Date.now();
     if (!silent) setStatus('同期しています…', false);
 
     var id = gistId(), tk = token();
