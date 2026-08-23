@@ -23,7 +23,7 @@
   var MAX_PENDING = 500;    // 取り込まないまま溜まり続けないよう頭を打つ
   var MAX_TEXT = 400;       // 1 文としてありえない長さは弾く
   var FLASH_MS = 5000;      // 取り込み結果を出しておく時間
-  var NOTICE_MS = 12000;    // 同期で増えた知らせは、気付けるよう長めに出す
+  var NOTICE_MS = 8000;     // 同期で増えた知らせ。長すぎると帯を塞ぐので程々に
   var DEFAULT_SOURCE = 'My Dictionary';
 
   /* ============================================================
@@ -252,10 +252,21 @@
   /** 受信箱を見て帯を出し入れする */
   function refresh() {
     if (!elBar || !elText) return;
-    if (state.flashTimer) return;   // 結果を出している間は上書きしない
 
+    // 「空になった」ことだけは flash 中でも必ず見ておく。
+    // ここを飛ばすと「あとで」の指紋が古いまま残り、同じ札が二度と出なくなる。
     var pending = readPending();
-    if (!pending.length) { state.dismissed = ''; hide(); return; }
+    if (!pending.length) {
+      state.dismissed = '';
+      // 出題できない札（日本語か英文が欠けている等）だけが残ると、
+      // 取り込みにも進めず永久に片付かない。ここで捨てる。
+      if (readRaw().length) writeRaw([]);
+      if (state.flashTimer) return;
+      hide();
+      return;
+    }
+
+    if (state.flashTimer) return;   // 結果を出している間は上書きしない
 
     var sig = signature(pending);
     if (sig === state.dismissed) { hide(); return; }
@@ -346,7 +357,10 @@
 
     // 送ってから戻ってきたとき（同じタブ・ホーム画面のアプリ間）に拾う
     document.addEventListener('visibilitychange', function () {
-      if (!document.hidden) refresh();
+      if (document.hidden) return;
+      // 裏に回るとタイマーが絞られる。戻った瞬間は必ず今の状態を映す
+      clearFlash();
+      refresh();
     });
     window.addEventListener('pageshow', function () { drainHash(); refresh(); });
 
@@ -384,7 +398,13 @@
      * 別の端末や別のアプリが先に「取り込む」を押すと、こちらの帯は出ない。
      * それでも文は同期で入ってくるので、黙っていると「届いていない」ように見える。
      */
-    notify: function (text) { flash(trim(text), NOTICE_MS); }
+    notify: function (text) {
+      // 取り込み待ちがあるときは、そちらのほうが大事。
+      // 帯を奪うと「取り込む」が押せなくなる
+      if (readPending().length) return false;
+      flash(trim(text), NOTICE_MS);
+      return true;
+    }
   };
 
   function init() {

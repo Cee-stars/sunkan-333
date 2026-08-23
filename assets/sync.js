@@ -40,6 +40,7 @@
 
   var TOMB_MAX_AGE = 90 * 24 * 60 * 60 * 1000;  // 消した記録は 90 日で捨てる
   var MAX_INBOX = 500;    // 受信箱は取り込めば減る。際限なく持たない
+  var HANDOFF_KEEP_MS = 7 * 24 * 60 * 60 * 1000;  // 受け渡し箱は 7 日置いておく
   var MAX_TOMBS = 3000;   // 消した記録も溜め続けない（古いものから捨てる）
   var REQ_TIMEOUT_MS = 20000;  // 返事が来ないまま固まらせない
   var BUSY_MAX_MS = 60000;     // 「同期中」が居座ったら諦めて次を受け付ける
@@ -333,6 +334,28 @@
     return out.length > MAX_INBOX ? out.slice(out.length - MAX_INBOX) : out;
   }
 
+  /**
+   * もうセットに入っている文は、取り込み待ちから外す。
+   * 別の入れ物のアプリが先に取り込むと、文だけが同期で入ってくる。
+   * カードを残したままだと「届いています」と「入りました」を二重に知らせてしまう。
+   */
+  function dropAlreadyHave(cards, added) {
+    var have = {}, id, i;
+    for (id in added) {
+      if (!Object.prototype.hasOwnProperty.call(added, id) || !isArray(added[id])) continue;
+      for (i = 0; i < added[id].length; i++) {
+        have[trim(added[id][i].ja) + '\n' + trim(added[id][i].en)] = true;
+      }
+    }
+    var out = [];
+    for (i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      if (isObject(c) && have[trim(c.ja) + '\n' + trim(c.en)]) continue;
+      out.push(c);
+    }
+    return out;
+  }
+
   function merge(mine, theirs) {
     var tombs = writeTombs(mine.tombs.concat(theirs.tombs));
     var map = tombMap(tombs);
@@ -358,16 +381,22 @@
     var cardIds = {};
     for (i = 0; i < cards.length; i++) cardIds[trim(cards[i].id)] = true;
 
+    var addedOut = mergeAdded(mine.added, theirs.added, map, liveMap);
+
     return {
       decks: decks,
-      added: mergeAdded(mine.added, theirs.added, map, liveMap),
+      added: addedOut,
       stars: mergeStars(mine.stars, theirs.stars, map),
       para: {
         genres: genres,
         cards: cards,
         stars: mergeStrings(mine.para.stars, theirs.para.stars, function (id) { return !!cardIds[id]; })
       },
-      inbox: mergeInbox(mine.inbox, theirs.inbox, map),
+      // 受信箱だけは自分の記録で判断する。
+      // 合併した記録を使うと、別の入れ物のアプリが取り込んだというだけで
+      // こちらの受信箱からカードが消え、帯が二度と出なくなる。
+      // 取り込み済みの文は addSentences が同じ (ja,en) を弾くので二重にはならない。
+      inbox: dropAlreadyHave(mergeInbox(mine.inbox, theirs.inbox, tombMap(mine.tombs)), addedOut),
       tombs: tombs
     };
   }
@@ -1000,13 +1029,16 @@
       if (changed) refreshViews();
       if (changed) announceArrivals(before, merged);
 
-      // 受け渡しファイルは、まだ取り込んでいないぶんだけ残す
-      var keepKeys = {};
-      merged.inbox.forEach(function (c) { keepKeys[inboxKey(c)] = true; });
+      // 受け渡しファイルの間引き。
+      // 「取り込み済みか」では判断できない — いくつの入れ物がぶら下がっているかを
+      // 誰も知らないので、1 つが取り込んだだけで消すと他には永久に届かない。
+      // 代わりに日数で切る。それまでは何度でも拾える。
+      var cutoff = Date.now() - HANDOFF_KEEP_MS;
       var restHanded = [];
       if (handedCount) {
         theirs.inbox.slice(theirs.inbox.length - handedCount).forEach(function (c) {
-          if (keepKeys[inboxKey(c)]) restHanded.push(c);
+          var at = (isObject(c) && parseInt(c.sentAt, 10)) || 0;
+          if (!at || at >= cutoff) restHanded.push(c);   // 時刻が無いものは残す
         });
       }
       var pruneHanded = handedCount
@@ -1040,6 +1072,7 @@
   }
 
   var REPAIR_KEEP_INBOX = 50;   // 切り詰めるときも、新しいカードはこれだけ残す
+  var REPAIR_KEEP_TOMBS = 500;  // 記録を全部捨てると、消したものが他の端末から戻る
 
   /**
    * 送る。大きすぎて弾かれたら、失って困らない所から順に落として送り直す。
@@ -1069,12 +1102,20 @@
       return [];
     }
 
+    function tombsFor(step) {
+      if (step < 1) return merged.tombs;
+      // 全部捨てると、消したものが他の端末から戻ってくる。新しいぶんは残す
+      var list = merged.tombs.slice();
+      list.sort(function (a, b) { return Math.max(b.t || 0, b.a || 0) - Math.max(a.t || 0, a.a || 0); });
+      return list.slice(0, REPAIR_KEEP_TOMBS);
+    }
+
     function payload(step) {
       return {
         app: 'sunkan', v: 1, at: Date.now(),
         decks: merged.decks, added: merged.added, stars: merged.stars, para: merged.para,
         inbox: inboxFor(step),
-        tombs: step >= 1 ? [] : merged.tombs
+        tombs: tombsFor(step)
       };
     }
 
@@ -1085,7 +1126,7 @@
         used = step;
         if (step >= 1) {
           // 送れた形に手元も合わせる。次の同期でまた膨らませないため
-          lsRemove(LS_TOMBS);
+          writeTombs(tombsFor(step));
           var keep = inboxFor(step);
           if (keep.length) writeJSON(LS_INBOX, keep); else lsRemove(LS_INBOX);
           var box = window.SUNKAN_INBOX;
@@ -1169,6 +1210,18 @@
     return { why: raw.slice(0, cut), at: parseInt(raw.slice(cut + 1), 10) || 0 };
   }
 
+  /**
+   * 同じ保存先を見ているかを、アプリ同士で見比べるための短い印。
+   * 32 文字の Gist ID を目で照合するのは無理があるので、4 文字に畳む。
+   * トークンも混ぜるので、片方だけ違っていても印が変わる。中身は復元できない。
+   */
+  function pairCode() {
+    if (!ready()) return '';
+    var h = 5381, src = token() + '\n' + gistId(), i;
+    for (i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36).toUpperCase().slice(-4);
+  }
+
   function whenText() {
     var last = parseInt(lsGet(LS_LAST), 10);
     var err = lastError();
@@ -1176,6 +1229,7 @@
     var total = sizeOf(snap);
     var text = last ? '最後の同期 ' + stamp(last) : 'まだ同期していません';
     text += ' ・ ' + snap.decks.length + ' セット ・ 同期データ ' + kb(total);
+    if (pairCode()) text += '\n照合コード ' + pairCode() + '（ほかのアプリと同じなら同じ保存先です）';
     // 上限に近づいたら、どこが重いのかもその場で見せる
     if (total > FILE_MAX / 2) text += '\n内訳: ' + breakdown(snap);
     if (err) {

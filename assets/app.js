@@ -21,7 +21,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 22 (2026-08-23)';
+  var APP_VERSION = 'build 23 (2026-08-23)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
