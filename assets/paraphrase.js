@@ -625,10 +625,22 @@
   function renderCards() {
     if (!elList || !elCardTemplate || !elLineTemplate) return;
 
+    // 並べ替え・検索・同期のどれで作り直しても、めくってあった札は開いたままにする。
+    // 閉じてしまうと、読んでいる最中に答えが消える。
+    var open = {}, i;
+    var shown = elList.querySelectorAll('.para-card.is-revealed');
+    for (i = 0; i < shown.length; i++) open[shown[i].getAttribute('data-id')] = true;
+
     var list = visibleCards();
     var frag = document.createDocumentFragment();
-    for (var i = 0; i < list.length; i++) {
-      frag.appendChild(createCardElement(list[i]));
+    for (i = 0; i < list.length; i++) {
+      var el = createCardElement(list[i]);
+      if (state.mask && open[list[i].id]) {
+        el.classList.add('is-revealed');
+        var head = el.querySelector('.para-head');
+        if (head) head.setAttribute('aria-expanded', 'true');
+      }
+      frag.appendChild(el);
     }
     clearChildren(elList);
     elList.appendChild(frag);
@@ -1520,6 +1532,11 @@
    * 見ていたジャンルは、まだ在ればそのまま。並べ替えやシャッフルには手を付けない。
    */
   function reloadFromStorage() {
+    // 同期は裏で走る。作り直すと、めくっていた札が読んでいる最中に閉じてしまう。
+    // 開いていた札と見ている位置を覚えておいて戻す。
+    var wasShuffled = !!state.shuffleOrder;
+    var scrollY = window.pageYOffset;
+
     state.genres = sanitizeGenres(readJSON(LS_GENRES));
     state.cards = sanitizeCards(readJSON(LS_CARDS));
     state.stars = sanitizeStars(readJSON(LS_STARS));
@@ -1527,7 +1544,7 @@
     if (state.genreId !== ALL && state.genreId !== NONE && !findGenre(state.genreId)) {
       state.genreId = ALL;   // 見ていたジャンルが消えていたら「すべて」へ戻す
     }
-    setShuffle(false, true); // 枚数が変わったので、ばらした順番は捨てる
+    if (!wasShuffled) setShuffle(false, true);
 
     renderGenreChips();
     renderGenreTitle();
@@ -1535,6 +1552,8 @@
     renderGenreManageList();
     renderCards();
     syncGenreAddButton();
+
+    window.scrollTo(0, scrollY);   // 読んでいた位置に戻す（開いた札は renderCards が保つ）
   }
 
   window.SUNKAN_PARA = {

@@ -210,25 +210,30 @@
   }
 
   /** 書き戻す。中身が変わったかどうかを返す（変わったときだけ画面を作り直す） */
+  /**
+   * 書き戻す。どこが変わったかを分けて返す。
+   * ひとまとめにすると、受信箱が動いただけで表まで作り直してしまい、
+   * 読んでいる行が勝手に閉じる。
+   */
   function apply(merged) {
-    var changed = false;
+    var hit = { drill: false, para: false, inbox: false };
 
-    function put(key, value, empty) {
+    function put(key, value, empty, group) {
       var next = JSON.stringify(value);
       if ((lsGet(key) || JSON.stringify(empty)) === next) return;
       if (next === JSON.stringify(empty)) lsRemove(key); else lsSet(key, next);
-      changed = true;
+      hit[group] = true;
     }
 
-    put(LS_DECKS, merged.decks, []);
-    put(LS_ADDED, merged.added, {});
-    put(LS_STARS, merged.stars, {});
-    put(LS_PARA_GENRES, merged.para.genres, []);
-    put(LS_PARA_CARDS, merged.para.cards, []);
-    put(LS_PARA_STARS, merged.para.stars, []);
-    put(LS_INBOX, merged.inbox, []);
+    put(LS_DECKS, merged.decks, [], 'drill');
+    put(LS_ADDED, merged.added, {}, 'drill');
+    put(LS_STARS, merged.stars, {}, 'drill');
+    put(LS_PARA_GENRES, merged.para.genres, [], 'para');
+    put(LS_PARA_CARDS, merged.para.cards, [], 'para');
+    put(LS_PARA_STARS, merged.para.stars, [], 'para');
+    put(LS_INBOX, merged.inbox, [], 'inbox');
     writeTombs(merged.tombs);
-    return changed;
+    return hit;
   }
 
   /* ============================================================
@@ -476,9 +481,9 @@
   function takeIn(theirs) {
     var before = snapshot();
     var merged = merge(before, theirs);
-    var changed = apply(merged);
-    if (changed) refreshViews();
-    return changed;
+    var hit = apply(merged);
+    refreshViews(hit);
+    return hit.drill || hit.para || hit.inbox;
   }
 
   function handoffLink() {
@@ -991,11 +996,12 @@
   }
 
   /** 画面を作り直す。app.js / paraphrase.js がそれぞれ開けている口 */
-  function refreshViews() {
+  /** 変わった所だけ作り直す。触らなくていい画面はそのままにしておく */
+  function refreshViews(hit) {
     var drill = window.SUNKAN_DRILL, para = window.SUNKAN_PARA, inbox = window.SUNKAN_INBOX;
-    if (drill && typeof drill.reload === 'function') drill.reload();
-    if (para && typeof para.reload === 'function') para.reload();
-    if (inbox && typeof inbox.refresh === 'function') inbox.refresh();
+    if (hit.drill && drill && typeof drill.reload === 'function') drill.reload();
+    if (hit.para && para && typeof para.reload === 'function') para.reload();
+    if (hit.inbox && inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
   function sync(silent) {
@@ -1025,9 +1031,10 @@
         ? 'My Dictionary から ' + handedCount + ' 件受け取りました。'
         : '';
       var merged = merge(snapshot(), theirs);
-      var changed = apply(merged);
-      if (changed) refreshViews();
-      if (changed) announceArrivals(before, merged);
+      var hit = apply(merged);
+      var changed = hit.drill || hit.para || hit.inbox;
+      refreshViews(hit);
+      if (hit.drill) announceArrivals(before, merged);
 
       // 受け渡しファイルの間引き。
       // 「取り込み済みか」では判断できない — いくつの入れ物がぶら下がっているかを

@@ -21,7 +21,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 24 (2026-08-23)';
+  var APP_VERSION = 'build 25 (2026-08-23)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -1955,6 +1955,16 @@
    * 開いているセットは、まだ在れば開いたままにする。
    */
   function reloadFromStorage() {
+    // 同期は裏で走る。表を作り直すと、開いていた行の答えが読んでいる最中に
+    // 消えてしまうので、いま開いている行・見ている行・並べ方を覚えておいて戻す。
+    var open = {}, i, rec;
+    for (i = 0; i < state.records.length; i++) {
+      if (state.records[i].revealed) open[state.records[i].id] = true;
+    }
+    var wasCurrent = state.currentId;
+    var wasShuffled = state.shuffled;
+    var scrollY = window.pageYOffset;
+
     loadStars();
     loadAdded();
     state.userDecks = loadUserDecks();
@@ -1965,8 +1975,22 @@
 
     var keep = state.deck ? state.deck.id : state.settings.deckId;
     selectDeck(keep, { persist: false });
+
+    var lastOpen = null;
+    for (i = 0; i < state.records.length; i++) {
+      rec = state.records[i];
+      if (!open[rec.id]) continue;
+      setRevealed(rec, true);
+      lastOpen = rec;
+    }
+    // 覚え直さないと「次の行を開いたら前の行を隠す」が効かなくなる
+    state.lastRevealed = lastOpen;
+    if (wasCurrent && state.byId[wasCurrent]) setCurrent(state.byId[wasCurrent], false);
+    if (wasShuffled && state.records.length) toggleShuffle();
+
     syncToggleAllButton();
     updateStatusBar();
+    window.scrollTo(0, scrollY);   // 読んでいた位置に戻す
   }
 
   window.SUNKAN_DRILL = {
