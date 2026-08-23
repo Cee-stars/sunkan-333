@@ -39,6 +39,8 @@
   var API = 'https://api.github.com/gists';
 
   var TOMB_MAX_AGE = 90 * 24 * 60 * 60 * 1000;  // 消した記録は 90 日で捨てる
+  var MAX_INBOX = 500;    // 受信箱は取り込めば減る。際限なく持たない
+  var MAX_TOMBS = 3000;   // 消した記録も溜め続けない（古いものから捨てる）
   var REQ_TIMEOUT_MS = 20000;  // 返事が来ないまま固まらせない
   var BUSY_MAX_MS = 60000;     // 「同期中」が居座ったら諦めて次を受け付ける
   var WATCH_MS = 3000;    // 変更を見に行く間隔
@@ -101,6 +103,10 @@
       if (!rec || !rec.k) continue;
       if (Math.max(rec.t || 0, rec.a || 0) < cutoff) continue;
       out.push(rec);
+    }
+    if (out.length > MAX_TOMBS) {
+      out.sort(function (a, b) { return Math.max(b.t || 0, b.a || 0) - Math.max(a.t || 0, a.a || 0); });
+      out = out.slice(0, MAX_TOMBS);
     }
     if (!out.length) { lsRemove(LS_TOMBS); return out; }
     writeJSON(LS_TOMBS, out);
@@ -324,7 +330,7 @@
       seen[key] = true;
       out.push(both[i]);
     }
-    return out;
+    return out.length > MAX_INBOX ? out.slice(out.length - MAX_INBOX) : out;
   }
 
   function merge(mine, theirs) {
@@ -689,12 +695,68 @@
 
   var FILE_MAX = 900 * 1024;   // Gist の 1 ファイルの上限（1MB）に少し余裕を持たせる
 
+  function kb(n) { return Math.round(n / 1024) + 'KB'; }
+
+  function sizeOf(v) {
+    try { return JSON.stringify(v).length; } catch (e) { return 0; }
+  }
+
+  /** いちばん重いセット / いちばん重い「足した文」の置き場を名指しする */
+  function heaviest(key, data) {
+    var best = null, i, n, name;
+    if (key === 'decks') {
+      for (i = 0; i < data.decks.length; i++) {
+        n = sizeOf(data.decks[i]);
+        name = trim(data.decks[i] && data.decks[i].name) || '名前なし';
+        if (!best || n > best.n) best = { name: name, n: n };
+      }
+    } else if (key === 'added' || key === 'stars') {
+      for (var id in data[key]) {
+        if (!Object.prototype.hasOwnProperty.call(data[key], id)) continue;
+        n = sizeOf(data[key][id]);
+        name = deckNameById(data, id);
+        if (!best || n > best.n) best = { name: name, n: n };
+      }
+    } else if (key === 'para') {
+      return null;
+    }
+    return (best && best.n > 1024) ? best : null;
+  }
+
+  function deckNameById(data, id) {
+    for (var i = 0; i < data.decks.length; i++) {
+      if (trim(data.decks[i].id) === id) return trim(data.decks[i].name) || id;
+    }
+    return id;   // 収録セットなど、こちらに実体が無いもの
+  }
+
+  /** どこが膨らんでいるのかを名指しする。合計だけ言われても手の打ちようがない */
+  function breakdown(data) {
+    var parts = [], k;
+    for (k in data) {
+      if (Object.prototype.hasOwnProperty.call(data, k)) parts.push({ k: k, n: sizeOf(data[k]) });
+    }
+    parts.sort(function (a, b) { return b.n - a.n; });
+
+    var out = [], i, top;
+    for (i = 0; i < parts.length && i < 4; i++) {
+      if (parts[i].n < 1024) break;
+      var line = parts[i].k + ' ' + kb(parts[i].n);
+      if (i === 0) {
+        top = heaviest(parts[i].k, data);
+        if (top) line += '（うち「' + top.name + '」が ' + kb(top.n) + '）';
+      }
+      out.push(line);
+    }
+    return out.join(' / ');
+  }
+
   function gistFiles(data) {
     var text = JSON.stringify(data, null, 2);
     if (!trim(text)) throw new Error('送る中身が空でした');
     if (text.length > FILE_MAX) {
-      throw new Error('中身が大きすぎます（' + Math.round(text.length / 1024) + 'KB）。'
-        + 'Gist に置ける上限を超えています');
+      throw new Error('中身が大きすぎます（' + kb(text.length) + '）。Gist の上限は 1MB です。'
+        + '内訳: ' + breakdown(data));
     }
     var files = {};
     files[GIST_FILE] = { content: text };
@@ -1006,8 +1068,12 @@
   function whenText() {
     var last = parseInt(lsGet(LS_LAST), 10);
     var err = lastError();
+    var snap = snapshot();
+    var total = sizeOf(snap);
     var text = last ? '最後の同期 ' + stamp(last) : 'まだ同期していません';
-    text += ' ・ この端末 ' + snapshot().decks.length + ' セット';
+    text += ' ・ ' + snap.decks.length + ' セット ・ 同期データ ' + kb(total);
+    // 上限に近づいたら、どこが重いのかもその場で見せる
+    if (total > FILE_MAX / 2) text += '\n内訳: ' + breakdown(snap);
     if (err) {
       text += '\n⚠ ' + (err.at ? stamp(err.at) + ' に' : '') + '同期できませんでした: ' + err.why;
     }

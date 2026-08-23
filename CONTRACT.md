@@ -269,6 +269,10 @@ My Dictionary が送ったカードは、同じ Gist の **`sunkan-inbox.json`**
 取り込んだ分は `inbox.js` が `SUNKAN_SYNC.recordDelete(SUNKAN_SYNC.inboxKey(card))` で
 消した記録に入れるので、同期で戻ってこない。
 
+Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超えていれば往復せずに止め、
+**どこが膨らんでいるのか（どのセットか）まで名指しする**。合計だけ言われても消しようがない。
+受信箱と消した記録は際限なく増えうるので、件数の上限も入れてある。
+
 **同期しないもの**: `sunkan:settings`（隠し方・文字サイズなどは端末ごとの好み）、
 `sunkan:mode`、`sunkan:para:ui`、収録例文（`data.js` にあるので送る意味がない）。
 
