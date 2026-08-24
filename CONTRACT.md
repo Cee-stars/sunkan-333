@@ -13,6 +13,7 @@
 | `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 | `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
+| `assets/speech.js` | G | 読み上げ（Web Speech API の端末ごとの癖をここに閉じ込める） |
 
 `app.js` と `paraphrase.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
 `<html data-mode>` と下の `window.SUNKAN_DRILL` だけで、`app.js` は `data-mode="para"` の間
@@ -41,6 +42,35 @@
 | --- | --- |
 | `reload()` | localStorage を読み直してパラフレ帳を作り直す。見ていたジャンルが消えていたら「すべて」へ戻す |
 
+### `window.SUNKAN_SPEECH`（speech.js が開けている口）
+
+読み上げは端末ごとの癖が強い。**`speechSynthesis` を直に触るのはこのファイルだけ**にして、
+`app.js` と `paraphrase.js` は下の口からしか使わない（同じ不具合を 2 か所で踏まないため）。
+
+| 関数 | 内容 |
+| --- | --- |
+| `supported()` | この端末で読み上げが使えるか |
+| `speak(text, opts)` | 英語を読み上げる。前の発話は止めて、**最後に頼まれた 1 つだけ**鳴らす |
+| `cancel()` | 鳴っているものを止める |
+| `speaking()` | 鳴っている / 鳴らす予定があるか |
+| `ready()` | 声が届いているか（届く前でも `lang` 指定で喋れるので、待たせない） |
+| `voiceName()` | 使っている声の名前 |
+| `onProblem(fn)` | 失敗した理由を受け取る。戻り値を呼ぶと外れる |
+
+閉じ込めてある癖は次の 4 つ。どれも「押したのに鳴らない」の原因になる。
+
+- 声は遅れて届く（iOS/Safari は初回 `getVoices()` が空）。`voiceschanged` は
+  **代入ではなく `addEventListener`** で拾う（代入は他所に上書きされる）。
+- iOS は**タップから同期で呼ばれた `speak()`** でないと鳴らない。あいだに `setTimeout` を
+  挟まない。最初のタップで無音の発話を 1 回流して音を解錠しておく。
+- **`cancel()` の直後の `speak()` は落ちる**。鳴っている最中なら空くのを見てから流す。
+  始まらなかったときのやり直しでは `cancel()` を挟まない（同じ穴に落ちる）。
+- 長い文は途中で止まる／勝手に paused になる。文を切って順に流し、**鳴っている間だけ**
+  様子を見て `resume()` する（鳴り終わったらタイマーは自分で止まる。回しっぱなしにしない）。
+
+**黙って失敗しない。** 使えない端末では 🔈 を出さず、設定にも理由を書く。
+使えるはずなのに鳴らなかったときは `onProblem` の理由をステータスに出す。
+
 ### `window.SUNKAN_SYNC`（sync.js が開けている口）
 
 消したものが同期で戻ってこないよう、**削除は必ずここへ知らせる**。sync.js が読み込まれて
@@ -51,11 +81,14 @@
 | `recordDelete(key)` | 消したことを覚える |
 | `clearDelete(key)` | 同じものを足し直したことを覚える（記録は消さず、足し直した時刻を入れる） |
 | `addedKey(deckId, ja, en)` | 足した 1 文の鍵。作り方を 1 か所にそろえるためここで配る |
+| `editKey(deckId, itemId)` | 収録の文への上書き 1 件の鍵。「元に戻す」を記録するのに使う |
 
 鍵の形は `deck:<deckId>` / `card:<cardId>` / `genre:<genreId>` /
-`added:<deckId>\n<ja>\n<en>` / `star:<deckId>:<itemId>` / `parastar:<cardId>` の 6 つ。
+`added:<deckId>\n<ja>\n<en>` / `star:<deckId>:<itemId>` / `parastar:<cardId>` /
+`edit:<deckId>:<itemId>` の 7 つ。
 
 **★の付け外しもここを通す。** 突き合わせが足し算だけだと、外した★が相手側から復活する。
+**「元に戻す」も同じ。** 上書きを捨てただけでは、相手側の上書きが次の同期で戻ってくる。
 
 ## データ形式（`assets/data.js`）
 
@@ -264,11 +297,15 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
   app: 'sunkan', v: 1, at: 1750000000000,
   decks: [ /* sunkan:decks と同じ形 */ ],
   added: { /* sunkan:added と同じ形 */ },
+  edits: { /* sunkan:edits と同じ形 */ },
   stars: { /* sunkan:stars と同じ形 */ },
   para:  { genres: [...], cards: [...], stars: [...] },
   tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
 }
 ```
+
+送る中身は `clean()` が返した形から作る。**送る側で項目を並べ直さない**
+（並べ直すと、新しく増えた種類を書き足し忘れて、その分だけ黙って送られなくなる）。
 
 My Dictionary が送ったカードは、同じ Gist の **`sunkan-inbox.json`**（本体の `sunkan-data.json`
 とは別ファイル）に置かれる。向こうは足すだけ、取り込み済みを間引くのはこちらだけ。
@@ -325,6 +362,7 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 | `sunkan:decks` | ユーザーが取り込んだ自作デッキの配列（`data.js` と同じ形） |
 | `sunkan:stars` | `{ [deckId]: string[] }` … ★を付けた項目の id |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
+| `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
 | `sunkan:mode` | `drill` / `para` … 最後に開いていたモード |
 | `sunkan:para:genres` | パラフレ帳のジャンル `[{id,name}]` |
 | `sunkan:para:cards` | パラフレ本体 `[{id,genreId,headEn,headJa,lines}]` |
@@ -340,6 +378,15 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 `sunkan:added` はデッキ本体を書き換えずに後ろへ足す方式。収録セット（`data.js`）にも
 取り込んだセットにも同じように足せて、元データは無傷のまま保てる。
 足した行には `.row.is-added` が付き、行内の `.row-delete` で1件ずつ消せる。
+
+`sunkan:edits` も同じ考え方で、**元データ（`data.js` / 取り込んだ表）は書き換えない**。
+表を組み立てるときに上から当てるだけなので、「元に戻す」でいつでも収録の文へ戻せる。
+当てても **`id` は元の文から作ったまま**にする。id は★・並び順・同期の記録の拠り所なので、
+文を直しただけで id が動くと、★が外れたように見える。
+
+アプリ内で足した文（`sunkan:added`）だけは上書き表を使わず、本体を直接直す。
+こちらは `(ja, en)` が同一性そのものなので、直すと id ごと変わる。
+**変えた側の責任で、古い鍵を消した記録に入れ、新しい鍵を生かし直し、★を付け替える。**
 
 `settings.autoSpeak` … 英語を表示したときに自動で読み上げるか。逆向き（`en-ja`）のときは読み上げない。
 

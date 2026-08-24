@@ -839,6 +839,7 @@ button, input, select, textarea {
 .row-tools .btn--icon { position: relative; }
 
 .row-speak { color: var(--text-faint); }
+.row-edit  { color: var(--text-faint); }
 .row-star  { color: var(--star-off); }
 .row-star[aria-pressed="true"] { color: var(--star); }
 

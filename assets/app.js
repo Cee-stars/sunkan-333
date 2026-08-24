@@ -14,6 +14,9 @@
   var LS_DECKS = 'sunkan:decks';
   var LS_STARS = 'sunkan:stars';
   var LS_ADDED = 'sunkan:added';   // アプリ内で 1 文ずつ足した分（デッキ id ごと）
+  // 収録・取り込みの文への上書き。元データ（data.js / sunkan:decks）は書き換えず、
+  // 表を組み立てるときに当てる。sunkan:added が「後ろへ足す」のと同じ考え方。
+  var LS_EDITS = 'sunkan:edits';
 
   var MASK_STYLES = ['blur', 'block', 'hidden'];
   var DIRECTIONS = ['ja-en', 'en-ja'];
@@ -21,10 +24,11 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 26 (2026-08-23)';
+  var APP_VERSION = 'build 27 (2026-08-24)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
+  var FLASH_MS = 4000;         // 知らせを status に出しておく時間（ミリ秒）
 
   var DEFAULT_SETTINGS = {
     maskStyle: 'blur',
@@ -67,6 +71,18 @@
 
   function inList(v, list, fallback) {
     return list.indexOf(v) >= 0 ? v : fallback;
+  }
+
+  function hasOwn(obj, key) {
+    return Object.prototype.hasOwnProperty.call(obj, key);
+  }
+
+  /** キーが 1 つでもあるか（空になった上書き表を捨てる判定に使う） */
+  function hasKeys(obj) {
+    for (var k in obj) {
+      if (hasOwn(obj, k)) return true;
+    }
+    return false;
   }
 
   /** 安定した短いハッシュ（項目 id の生成に使う） */
@@ -241,6 +257,29 @@
         items.push({ ja: ja, en: en, note: trim(it.note) });
       }
       if (items.length) out[key] = items;
+    }
+    return out;
+  }
+
+  /** { deckId: { itemId: {ja,en,note} } } の形に整える。壊れた項目は落とす */
+  function sanitizeEdits(raw) {
+    var out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (var key in raw) {
+      if (!hasOwn(raw, key)) continue;
+      var table = raw[key];
+      if (!table || typeof table !== 'object' || Array.isArray(table)) continue;
+      var kept = {};
+      for (var itemId in table) {
+        if (!hasOwn(table, itemId)) continue;
+        var it = table[itemId];
+        if (!it || typeof it !== 'object') continue;
+        var ja = trim(it.ja), en = trim(it.en);
+        // 片方だけの上書きは出題できない。元の文をそのまま見せるほうが安全
+        if (!ja || !en) continue;
+        kept[itemId] = { ja: ja, en: en, note: trim(it.note) };
+      }
+      if (hasKeys(kept)) out[key] = kept;
     }
     return out;
   }
@@ -443,11 +482,14 @@
     query: '',
     stars: {},        // { deckId: [itemId...] }
     added: {},        // { deckId: [{ja,en,note}...] } アプリ内で足した文
+    edits: {},        // { deckId: { itemId: {ja,en,note} } } 収録の文への上書き
     settings: sanitizeSettings(readJSON(LS_SETTINGS)),
     currentId: null,
     lastRevealed: null,
     visibleCount: 0,
     speechOK: false,
+    speakingId: null,   // いま読み上げている行の id（行を閉じたら止めるため）
+    flashTimer: null,   // status に出した知らせを消すタイマー
     lastFocus: null
   };
 
@@ -499,6 +541,16 @@
   var elNewDeckName = $('new-deck-name');
   var elNewDeck = $('btn-new-deck');
 
+  var elEditDialog = $('edit-dialog');
+  var elEditJa = $('edit-ja');
+  var elEditEn = $('edit-en');
+  var elEditNote = $('edit-note');
+  var elEditOrigin = $('edit-origin');
+  var elEditStatus = $('edit-status');
+  var elEditSave = $('btn-edit-save');
+  var elEditRevert = $('btn-edit-revert');
+  var elEditClose = $('btn-edit-close');
+
   var elDataDialog = $('data-dialog');
   var elImportName = $('import-name');
   var elImportText = $('import-text');
@@ -514,6 +566,7 @@
   var elOptHideJa = $('opt-hide-ja');
   var elOptStarredOnly = $('opt-starred-only');
   var elOptAutoSpeak = $('opt-auto-speak');
+  var elOptAutoSpeakNote = $('opt-auto-speak-note');
   var elAppVersion = $('app-version');
   var elOptFontSize = $('opt-font-size');
   var elOptFontOut = $('opt-font-size-out');
@@ -622,6 +675,10 @@
     var s = window.SUNKAN_SYNC;
     return (s && typeof s.addedKey === 'function') ? s.addedKey(deckId, ja, en) : '';
   }
+  function editSyncKey(deckId, itemId) {
+    var s = window.SUNKAN_SYNC;
+    return (s && typeof s.editKey === 'function') ? s.editKey(deckId, itemId) : '';
+  }
 
   /** 1 文足す。同じ内容が既にあれば false を返す */
   function addSentence(deckId, ja, en, note) {
@@ -650,6 +707,63 @@
       }
     }
     return false;
+  }
+
+  /**
+   * 足した文の中身を書き換える。
+   * この 1 文の同一性は (ja, en) で決まっている（★の id も同期の記録もそこから作る）ので、
+   * 本文を直すと鍵ごと変わる。古い鍵を消したことにして、新しい鍵を生かし直す。
+   */
+  function updateAddedSentence(deckId, oldJa, oldEn, ja, en, note) {
+    var list = state.added[deckId];
+    if (!list) return false;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].ja !== oldJa || list[i].en !== oldEn) continue;
+      list[i] = { ja: ja, en: en, note: note || '' };
+      saveAdded();
+      if (oldJa !== ja || oldEn !== en) {
+        noteDelete(addedSyncKey(deckId, oldJa, oldEn));  // 古い文が同期で戻ってこないように
+        noteAdd(addedSyncKey(deckId, ja, en));
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /* --- 収録・取り込みの文への上書き ---------------------------- */
+
+  function loadEdits() {
+    state.edits = sanitizeEdits(readJSON(LS_EDITS));
+  }
+
+  function saveEdits() {
+    writeJSON(LS_EDITS, state.edits);
+  }
+
+  function editsFor(deckId) {
+    if (!deckId) return {};
+    return state.edits[deckId] || {};
+  }
+
+  /** 1 文ぶんの上書きを覚える。元データ（data.js / 取り込んだ表）には触らない */
+  function setEdit(deckId, itemId, ja, en, note) {
+    if (!deckId || !itemId) return false;
+    var table = state.edits[deckId] || (state.edits[deckId] = {});
+    table[itemId] = { ja: ja, en: en, note: note || '' };
+    saveEdits();
+    noteAdd(editSyncKey(deckId, itemId));   // 前に元へ戻していても、直したならこちらを生かす
+    return true;
+  }
+
+  /** 上書きを捨てて収録の文へ戻す。取り消しなので、記録に残さないと同期で復活する */
+  function clearEdit(deckId, itemId) {
+    var table = state.edits[deckId];
+    if (!table || !table[itemId]) return false;
+    delete table[itemId];
+    if (!hasKeys(table)) delete state.edits[deckId];
+    saveEdits();
+    noteDelete(editSyncKey(deckId, itemId));
+    return true;
   }
 
   function loadStars() {
@@ -691,6 +805,7 @@
     var used = {};
     var base = (deck && deck.items) || [];
     var extra = addedFor(deck && deck.id);
+    var edits = editsFor(deck && deck.id);
     // 収録データの後ろに、アプリ内で足した分をつなげる。
     // 元のデッキ（data.js やユーザーの取り込み）は書き換えない。
     var items = base.concat(extra);
@@ -707,15 +822,26 @@
         id = id + '-' + n;
       }
       used[id] = true;
+      var isAdded = i >= firstAdded;
+      var ja = it.ja, en = it.en, note = it.note || '';
+      // 上書きは元の文の上に当てるだけ。id は元の (ja, en) から作ったままなので、
+      // 文を書き換えても★・並び順・同期の記録がずれない。
+      // 足した文だけは上書き表を使わず、sunkan:added の本体を直接直す。
+      var edit = isAdded ? null : edits[id];
+      if (edit) { ja = edit.ja; en = edit.en; note = edit.note; }
       records.push({
         id: id,
-        ja: it.ja,
-        en: it.en,
-        note: it.note || '',
-        jaLower: it.ja.toLowerCase(),
-        enLower: it.en.toLowerCase(),
-        noteLower: (it.note || '').toLowerCase(),
-        added: i >= firstAdded,
+        ja: ja,
+        en: en,
+        note: note,
+        jaLower: ja.toLowerCase(),
+        enLower: en.toLowerCase(),
+        noteLower: note.toLowerCase(),
+        added: isAdded,
+        edited: !!edit,
+        srcJa: it.ja,             // 「元に戻す」で見せる収録のままの文
+        srcEn: it.en,
+        srcNote: it.note || '',
         el: null,
         numEl: null,
         mainEl: null,
@@ -866,6 +992,7 @@
     setCurrent(rec, false);
     syncToggleAllButton();
     if (next) maybeAutoSpeak(rec);
+    else if (state.speakingId === rec.id) stopSpeech(); // 閉じた行の音は残さない
   }
 
   /** 「表示したら自動で読み上げる」設定のときだけ喋る。
@@ -873,7 +1000,7 @@
   function maybeAutoSpeak(rec) {
     if (!rec || !state.settings.autoSpeak) return;
     if (state.settings.direction === 'en-ja') return;
-    speak(rec.en);
+    speakRecord(rec);
   }
 
   function setAllRevealed(on) {
@@ -1070,42 +1197,45 @@
    * 17. 読み上げ
    * ========================================================== */
 
-  var speechVoice = null;
+  /** speech.js が開けている口。読み込まれていなければ null */
+  function speechPort() {
+    return (window.SUNKAN_SPEECH && typeof window.SUNKAN_SPEECH.speak === 'function')
+      ? window.SUNKAN_SPEECH : null;
+  }
 
   function initSpeech() {
-    state.speechOK = !!(window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function');
-    if (!state.speechOK) return;
-    pickVoice();
-    try {
-      window.speechSynthesis.onvoiceschanged = pickVoice; // 声は遅れて読み込まれることがある
-    } catch (e) { /* 無視 */ }
+    var port = speechPort();
+    state.speechOK = !!(port && port.supported());
+    if (!port) return;
+    // 黙って失敗しないよう、理由は status に出す。
+    // パラフレ帳を開いている間は向こうの status が出るので、こちらは黙る。
+    port.onProblem(function (info) {
+      if (docEl.getAttribute('data-mode') === 'para') return;
+      state.speakingId = null;
+      flashStatus('読み上げ: ' + (info && info.message ? info.message : 'うまくいきませんでした。'));
+    });
   }
 
-  function pickVoice() {
-    try {
-      var voices = window.speechSynthesis.getVoices() || [];
-      var fallback = null;
-      for (var i = 0; i < voices.length; i++) {
-        var lang = (voices[i].lang || '').toLowerCase();
-        if (lang === 'en-us' || lang === 'en_us') { speechVoice = voices[i]; return; }
-        if (!fallback && lang.indexOf('en') === 0) fallback = voices[i];
-      }
-      speechVoice = fallback;
-    } catch (e) {
-      speechVoice = null;
-    }
-  }
-
+  /** 読み上げる。タップから同期で呼ぶこと（あいだに setTimeout を挟むと iOS で鳴らない） */
   function speak(text) {
-    if (!state.speechOK || !text) return;
-    try {
-      window.speechSynthesis.cancel(); // 再生中のものは止める
-      var u = new window.SpeechSynthesisUtterance(text);
-      u.lang = 'en-US';
-      if (speechVoice) u.voice = speechVoice;
-      u.rate = 1;
-      window.speechSynthesis.speak(u);
-    } catch (e) { /* 読み上げできなくても致命的ではない */ }
+    var port = speechPort();
+    if (!port) return false;
+    if (!state.speechOK) {
+      flashStatus('読み上げ: この端末では読み上げが使えません。');
+      return false;
+    }
+    return port.speak(text);
+  }
+
+  function speakRecord(rec) {
+    if (!rec || !rec.en) return;
+    state.speakingId = speak(rec.en) ? rec.id : null;
+  }
+
+  function stopSpeech() {
+    var port = speechPort();
+    state.speakingId = null;
+    if (port) port.cancel();
   }
 
   /* ============================================================
@@ -1124,6 +1254,61 @@
       applyFilter();
     }
     if (keepCurrent && state.byId[keepCurrent]) setCurrent(state.byId[keepCurrent], false);
+  }
+
+  /**
+   * 表を作り直しても、開いていた行・見ている行・並べ方・見ている位置は元に戻す。
+   * 同期も編集も読んでいる最中に割り込むので、ここを捨てると答えが勝手に消える。
+   *
+   * moved は「書き換えで id が変わる行」{ id, ja, en }。足した文の id は (ja, en) から
+   * 作るため、本文を直すと別の行に見えてしまう。作り直したあとに新しい id を引き当てて
+   * 開き具合と現在行を引き継ぎ、その id を返す（★の付け替えに使う）。
+   */
+  function rebuildKeepingView(rebuild, moved) {
+    var open = {}, i, rec;
+    for (i = 0; i < state.records.length; i++) {
+      if (state.records[i].revealed) open[state.records[i].id] = true;
+    }
+    var wasCurrent = state.currentId;
+    var wasShuffled = state.shuffled;
+    var scrollY = window.pageYOffset;
+
+    rebuild();
+
+    var newId = null;
+    if (moved) {
+      rec = findRecordByText(moved.ja, moved.en);
+      newId = rec ? rec.id : null;
+      if (open[moved.id]) {
+        delete open[moved.id];
+        if (newId) open[newId] = true;
+      }
+      if (wasCurrent === moved.id) wasCurrent = newId;
+    }
+
+    var lastOpen = null;
+    for (i = 0; i < state.records.length; i++) {
+      rec = state.records[i];
+      if (!open[rec.id]) continue;
+      setRevealed(rec, true);
+      lastOpen = rec;
+    }
+    // 覚え直さないと「次の行を開いたら前の行を隠す」が効かなくなる
+    state.lastRevealed = lastOpen;
+    if (wasCurrent && state.byId[wasCurrent]) setCurrent(state.byId[wasCurrent], false);
+    if (wasShuffled && state.records.length) toggleShuffle();
+
+    syncToggleAllButton();
+    updateStatusBar();
+    window.scrollTo(0, scrollY);   // 読んでいた位置に戻す
+    return newId;
+  }
+
+  function findRecordByText(ja, en) {
+    for (var i = 0; i < state.records.length; i++) {
+      if (state.records[i].ja === ja && state.records[i].en === en) return state.records[i];
+    }
+    return null;
   }
 
   function currentDeckId() {
@@ -1260,11 +1445,120 @@
   }
 
   /* ============================================================
+   * 17c. 1 文ずつ編集する
+   *
+   * 収録の 360 文は書き換えない。上書き（sunkan:edits）を別に持ち、
+   * 表を組み立てるときに当てる。アプリ内で足した文だけは本体を直接直す。
+   * ========================================================== */
+
+  var editingId = null;   // 編集中の行の id（開いているセットの中でだけ通じる）
+
+  function setEditStatus(msg, isError) {
+    if (!elEditStatus) return;
+    elEditStatus.textContent = msg || '';
+    if (isError) elEditStatus.setAttribute('data-error', 'true');
+    else elEditStatus.removeAttribute('data-error');
+  }
+
+  function openEditDialog(rec, invoker) {
+    if (!rec) return;
+    editingId = rec.id;
+    if (elEditJa) elEditJa.value = rec.ja;
+    if (elEditEn) elEditEn.value = rec.en;
+    if (elEditNote) elEditNote.value = rec.note;
+
+    // 「元に戻す」は上書きを捨てる操作。上書きしていない文と、
+    // アプリ内で足した文（戻す先の元データが無い）には出さない。
+    if (elEditRevert) elEditRevert.hidden = !rec.edited;
+    if (elEditOrigin) {
+      elEditOrigin.hidden = !rec.edited;
+      elEditOrigin.textContent = rec.edited
+        ? '収録の文：' + rec.srcJa + ' / ' + rec.srcEn
+        : '';
+    }
+    setEditStatus('', false);
+    openDialog(elEditDialog, invoker);
+    if (elEditJa) elEditJa.focus();
+  }
+
+  /** 同じ (ja, en) が別の行にもあるか。二つ並ぶとどちらを直したのか分からなくなる */
+  function hasSameSentence(exceptId, ja, en) {
+    for (var i = 0; i < state.records.length; i++) {
+      var rec = state.records[i];
+      if (rec.id === exceptId) continue;
+      if (rec.ja === ja && rec.en === en) return true;
+    }
+    return false;
+  }
+
+  function submitEditSentence() {
+    var rec = editingId ? state.byId[editingId] : null;
+    if (!rec) {
+      setEditStatus('編集する文が見つかりません。', true);
+      return;
+    }
+    var deckId = currentDeckId();
+    var ja = elEditJa ? trim(elEditJa.value) : '';
+    var en = elEditEn ? trim(elEditEn.value) : '';
+    var note = elEditNote ? trim(elEditNote.value) : '';
+
+    if (!ja || !en) {
+      setEditStatus('日本語と英語の両方を入れてください。', true);
+      (!ja && elEditJa ? elEditJa : elEditEn).focus();
+      return;
+    }
+    if (hasSameSentence(rec.id, ja, en)) {
+      setEditStatus('同じ文がすでにあります。', true);
+      return;
+    }
+
+    if (rec.added) {
+      var oldId = rec.id;
+      var wasStarred = isStarred(deckId, oldId);
+      if (!updateAddedSentence(deckId, rec.ja, rec.en, ja, en, note)) {
+        setEditStatus('編集する文が見つかりません。', true);
+        return;
+      }
+      var newId = rebuildKeepingView(refreshCurrentDeck, { id: oldId, ja: ja, en: en });
+      // ★は id に付いている。本文を直すと id ごと変わるので、付け替えないと外れて見える
+      if (wasStarred && newId && newId !== oldId) {
+        setStar(deckId, oldId, false);
+        if (state.byId[newId]) toggleStar(state.byId[newId]);
+      }
+    } else if (ja === rec.srcJa && en === rec.srcEn && note === rec.srcNote) {
+      // 元と同じ中身に戻した＝上書きを持つ意味がない。「元に戻す」と同じ扱いにする
+      clearEdit(deckId, rec.id);
+      rebuildKeepingView(refreshCurrentDeck);
+    } else {
+      setEdit(deckId, rec.id, ja, en, note);
+      rebuildKeepingView(refreshCurrentDeck);
+    }
+
+    renderAddedList();   // 追加ダイアログの一覧にも直した文を出す
+    editingId = null;
+    closeDialog(elEditDialog);
+  }
+
+  /** 上書きを捨てて収録の文へ戻す */
+  function revertEdit() {
+    var rec = editingId ? state.byId[editingId] : null;
+    if (!rec || rec.added || !rec.edited) return;
+    clearEdit(currentDeckId(), rec.id);
+    rebuildKeepingView(refreshCurrentDeck);
+    editingId = null;
+    closeDialog(elEditDialog);
+  }
+
+  /* ============================================================
    * 18. ステータスバー
    * ========================================================== */
 
   function updateStatusBar() {
     if (!elStatusBar) return;
+    if (state.flashTimer) {
+      window.clearTimeout(state.flashTimer);
+      state.flashTimer = null;
+    }
     if (!allDecks().length) {
       elStatusBar.textContent = 'セットがありません。「＋追加」から新しいセットを作れます。';
       return;
@@ -1281,6 +1575,20 @@
     if (state.settings.starredOnly) parts.push('★のみ');
     if (state.shuffled) parts.push('シャッフル中');
     elStatusBar.textContent = parts.join(' ・ ');
+  }
+
+  /** 知らせを status に少しのあいだ出す。次の描画でふつうの件数に戻る */
+  function flashStatus(msg) {
+    if (!elStatusBar) return;
+    if (state.flashTimer) {
+      window.clearTimeout(state.flashTimer);
+      state.flashTimer = null;
+    }
+    elStatusBar.textContent = msg;
+    state.flashTimer = window.setTimeout(function () {
+      state.flashTimer = null;
+      updateStatusBar();
+    }, FLASH_MS);
   }
 
   /* ============================================================
@@ -1300,7 +1608,7 @@
     var speakBtn = target.closest('.row-speak');
     if (speakBtn && elRows.contains(speakBtn)) {
       var recS = recordFromEvent(speakBtn);
-      if (recS) speak(recS.en);
+      if (recS) speakRecord(recS);
       return;
     }
 
@@ -1308,6 +1616,13 @@
     if (starBtn && elRows.contains(starBtn)) {
       var recT = recordFromEvent(starBtn);
       if (recT) toggleStar(recT);
+      return;
+    }
+
+    var editBtn = target.closest('.row-edit');
+    if (editBtn && elRows.contains(editBtn)) {
+      var recE = recordFromEvent(editBtn);
+      if (recE) openEditDialog(recE, editBtn);
       return;
     }
 
@@ -1607,10 +1922,14 @@
       saveStars();
     }
 
-    // このセットに足した文も一緒に片付ける
+    // このセットに足した文も、書き換えた文の上書きも一緒に片付ける
     if (state.added[deckId]) {
       delete state.added[deckId];
       saveAdded();
+    }
+    if (state.edits[deckId]) {
+      delete state.edits[deckId];
+      saveEdits();
     }
 
     renderDeckSelect();
@@ -1697,9 +2016,10 @@
     if (elOptStarredOnly) elOptStarredOnly.checked = state.settings.starredOnly;
     if (elOptAutoSpeak) {
       elOptAutoSpeak.checked = state.settings.autoSpeak;
-      // 読み上げできない環境では触らせない
+      // 読み上げできない環境では触らせない。押せないだけだと理由が分からないので、下に書く
       elOptAutoSpeak.disabled = !state.speechOK;
     }
+    if (elOptAutoSpeakNote) elOptAutoSpeakNote.hidden = state.speechOK;
     if (elOptFontSize) elOptFontSize.value = String(state.settings.fontSize);
     if (elOptFontOut) elOptFontOut.textContent = FONT_LABELS[state.settings.fontSize] || '標準';
   }
@@ -1829,6 +2149,37 @@
       });
     }
 
+    // --- 編集ダイアログ ---
+    if (elEditSave) elEditSave.addEventListener('click', submitEditSentence);
+    if (elEditRevert) elEditRevert.addEventListener('click', revertEdit);
+    if (elEditClose) {
+      elEditClose.addEventListener('click', function () { closeDialog(elEditDialog); });
+    }
+    // Enter で次の欄へ／保存する（フォーム送信で黙って閉じてしまうのを防ぐ）
+    if (elEditJa) {
+      elEditJa.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); if (elEditEn) elEditEn.focus(); }
+      });
+    }
+    if (elEditEn) {
+      elEditEn.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitEditSentence(); }
+      });
+    }
+    if (elEditNote) {
+      elEditNote.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitEditSentence(); }
+      });
+    }
+    if (elEditDialog) {
+      // Esc で閉じたときに編集中の行を残さない（次に開いた行と取り違える）。
+      // close は少し遅れて届くので、その間に別の行の ✎ を押されていたら消さない
+      // （消すと開いたばかりの行を見失って「見つかりません」になる）。
+      elEditDialog.addEventListener('close', function () {
+        if (!elEditDialog.open) editingId = null;
+      });
+    }
+
     // --- データダイアログ ---
     if (elBtnData) {
       elBtnData.addEventListener('click', function () {
@@ -1886,7 +2237,7 @@
     if (elOptAutoSpeak) elOptAutoSpeak.addEventListener('change', onAutoSpeakChange);
 
     // Esc などで閉じたときもフォーカスを戻す
-    [elDataDialog, elSettingsDialog].forEach(function (d) {
+    [elDataDialog, elSettingsDialog, elEditDialog].forEach(function (d) {
       if (!d) return;
       d.addEventListener('close', restoreFocus);
       d.addEventListener('cancel', function () { /* 既定の閉じる動作に任せる */ });
@@ -1959,41 +2310,21 @@
    */
   function reloadFromStorage() {
     // 同期は裏で走る。表を作り直すと、開いていた行の答えが読んでいる最中に
-    // 消えてしまうので、いま開いている行・見ている行・並べ方を覚えておいて戻す。
-    var open = {}, i, rec;
-    for (i = 0; i < state.records.length; i++) {
-      if (state.records[i].revealed) open[state.records[i].id] = true;
-    }
-    var wasCurrent = state.currentId;
-    var wasShuffled = state.shuffled;
-    var scrollY = window.pageYOffset;
+    // 消えてしまうので、開いている行・見ている行・並べ方・見ている位置は
+    // rebuildKeepingView に預けて元に戻す。
+    rebuildKeepingView(function () {
+      loadStars();
+      loadAdded();
+      loadEdits();
+      state.userDecks = loadUserDecks();
 
-    loadStars();
-    loadAdded();
-    state.userDecks = loadUserDecks();
+      renderDeckSelect();
+      renderDeckManageList();
+      renderAddedList();
 
-    renderDeckSelect();
-    renderDeckManageList();
-    renderAddedList();
-
-    var keep = state.deck ? state.deck.id : state.settings.deckId;
-    selectDeck(keep, { persist: false });
-
-    var lastOpen = null;
-    for (i = 0; i < state.records.length; i++) {
-      rec = state.records[i];
-      if (!open[rec.id]) continue;
-      setRevealed(rec, true);
-      lastOpen = rec;
-    }
-    // 覚え直さないと「次の行を開いたら前の行を隠す」が効かなくなる
-    state.lastRevealed = lastOpen;
-    if (wasCurrent && state.byId[wasCurrent]) setCurrent(state.byId[wasCurrent], false);
-    if (wasShuffled && state.records.length) toggleShuffle();
-
-    syncToggleAllButton();
-    updateStatusBar();
-    window.scrollTo(0, scrollY);   // 読んでいた位置に戻す
+      var keep = state.deck ? state.deck.id : state.settings.deckId;
+      selectDeck(keep, { persist: false });
+    });
   }
 
   window.SUNKAN_DRILL = {
@@ -2028,6 +2359,7 @@
     initSpeech();
     loadStars();
     loadAdded();
+    loadEdits();
 
     state.builtinDecks = loadBuiltinDecks();
     state.userDecks = loadUserDecks();
