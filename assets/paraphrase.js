@@ -504,6 +504,12 @@
     if (on && idx < 0) state.stars.push(id);
     if (!on && idx >= 0) state.stars.splice(idx, 1);
     saveStars();
+    // 外したことを伝えないと、同期の足し算で相手側の★が戻ってくる
+    var sync = window.SUNKAN_SYNC;
+    if (!sync) return;
+    var key = 'parastar:' + id;
+    if (on) { if (typeof sync.clearDelete === 'function') sync.clearDelete(key); }
+    else { if (typeof sync.recordDelete === 'function') sync.recordDelete(key); }
   }
 
   /* --- 絞り込みと並べ替え --- */

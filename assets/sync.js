@@ -315,7 +315,10 @@
         if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
         if (!isArray(src[id])) continue;
         if (isDeleted(tombs, 'deck:' + id)) continue;
-        out[id] = mergeStrings(out[id] || [], src[id]);
+        // 外した★は戻さない。足し算だけだと、相手側に残った★が復活する
+        out[id] = mergeStrings(out[id] || [], src[id], function (itemId) {
+          return !isDeleted(tombs, 'star:' + id + ':' + itemId);
+        });
       }
     }
     take(mine);
@@ -395,7 +398,9 @@
       para: {
         genres: genres,
         cards: cards,
-        stars: mergeStrings(mine.para.stars, theirs.para.stars, function (id) { return !!cardIds[id]; })
+        stars: mergeStrings(mine.para.stars, theirs.para.stars, function (id) {
+          return !!cardIds[id] && !isDeleted(map, 'parastar:' + id);
+        })
       },
       // 受信箱だけは自分の記録で判断する。
       // 合併した記録を使うと、別の入れ物のアプリが取り込んだというだけで

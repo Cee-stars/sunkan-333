@@ -21,7 +21,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 25 (2026-08-23)';
+  var APP_VERSION = 'build 26 (2026-08-23)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -676,6 +676,9 @@
     if (on && idx < 0) list.push(itemId);
     if (!on && idx >= 0) list.splice(idx, 1);
     saveStars();
+    // 外したことを伝えないと、同期の足し算で相手側の★が戻ってくる
+    var key = 'star:' + deckId + ':' + itemId;
+    if (on) noteAdd(key); else noteDelete(key);
   }
 
   /* ============================================================

@@ -53,7 +53,9 @@
 | `addedKey(deckId, ja, en)` | 足した 1 文の鍵。作り方を 1 か所にそろえるためここで配る |
 
 鍵の形は `deck:<deckId>` / `card:<cardId>` / `genre:<genreId>` /
-`added:<deckId>\n<ja>\n<en>` の 4 つ。
+`added:<deckId>\n<ja>\n<en>` / `star:<deckId>:<itemId>` / `parastar:<cardId>` の 6 つ。
+
+**★の付け外しもここを通す。** 突き合わせが足し算だけだと、外した★が相手側から復活する。
 
 ## データ形式（`assets/data.js`）
 
