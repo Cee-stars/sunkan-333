@@ -273,8 +273,15 @@
   function setMode(mode, opts) {
     opts = opts || {};
     mode = sanitizeMode(mode);
+    var moved = state.mode !== mode;
     state.mode = mode;
     docEl.setAttribute('data-mode', mode);
+
+    // 画面が入れ替わったら、鳴っている読み上げは持ち越さない
+    if (moved) {
+      var port = speechPort();
+      if (port) port.cancel();
+    }
 
     if (elTabDrill) {
       elTabDrill.setAttribute('aria-selected', mode === 'drill' ? 'true' : 'false');
@@ -752,49 +759,38 @@
    * 11. 読み上げ
    * ========================================================== */
 
-  var speechVoice = null;
+  /** speech.js が開けている口。読み込まれていなければ null */
+  function speechPort() {
+    return (window.SUNKAN_SPEECH && typeof window.SUNKAN_SPEECH.speak === 'function')
+      ? window.SUNKAN_SPEECH : null;
+  }
 
   function initSpeech() {
-    state.speechOK = !!(window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function');
-    if (!state.speechOK) return;
-    pickVoice();
-    try {
-      window.speechSynthesis.onvoiceschanged = pickVoice;
-    } catch (e) { /* 無視 */ }
+    var port = speechPort();
+    state.speechOK = !!(port && port.supported());
+    if (!port) return;
+    // 黙って失敗しないよう理由を出す。表を開いている間は向こうが出すので、こちらは黙る。
+    port.onProblem(function (info) {
+      if (docEl.getAttribute('data-mode') !== 'para') return;
+      flash('読み上げ: ' + (info && info.message ? info.message : 'うまくいきませんでした。'));
+    });
   }
 
-  function pickVoice() {
-    try {
-      var voices = window.speechSynthesis.getVoices() || [];
-      var fallback = null;
-      for (var i = 0; i < voices.length; i++) {
-        var lang = (voices[i].lang || '').toLowerCase();
-        if (lang === 'en-us' || lang === 'en_us') { speechVoice = voices[i]; return; }
-        if (!fallback && lang.indexOf('en') === 0) fallback = voices[i];
-      }
-      speechVoice = fallback;
-    } catch (e) {
-      speechVoice = null;
-    }
-  }
-
-  /** 見出しと言い換えを続けて読む（1 回の発話にまとめる） */
+  /** 見出しと言い換えを続けて読む（タップから同期で呼ぶこと） */
   function speakCard(card) {
-    if (!state.speechOK || !card) return;
+    var port = speechPort();
+    if (!port || !card) return;
+    if (!state.speechOK) {
+      flash('読み上げ: この端末では読み上げが使えません。');
+      return;
+    }
     var parts = [];
     if (card.headEn) parts.push(card.headEn);
     for (var i = 0; i < card.lines.length; i++) {
       if (card.lines[i].en) parts.push(card.lines[i].en);
     }
     if (!parts.length) return;
-    try {
-      window.speechSynthesis.cancel();
-      var u = new window.SpeechSynthesisUtterance(parts.join(' … '));
-      u.lang = 'en-US';
-      if (speechVoice) u.voice = speechVoice;
-      u.rate = 1;
-      window.speechSynthesis.speak(u);
-    } catch (e) { /* 読み上げできなくても致命的ではない */ }
+    port.speak(parts.join(' … '));
   }
 
   /* ============================================================

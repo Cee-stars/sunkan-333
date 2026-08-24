@@ -191,6 +191,7 @@
     <span class="row-tools">
       <button type="button" class="btn btn--icon row-speak" aria-label="英語を読み上げる" tabindex="-1">🔈</button>
       <button type="button" class="btn btn--icon row-star" aria-label="チェックを付ける" aria-pressed="false" tabindex="-1">★</button>
+      <button type="button" class="btn btn--icon row-edit" aria-label="この文を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
       <button type="button" class="btn btn--icon row-delete" aria-label="この文を削除する" tabindex="-1" hidden>🗑</button>
     </span>
   </li>
@@ -278,6 +279,42 @@
       <button type="button" id="btn-data" class="btn btn--ghost" aria-haspopup="dialog">
         表からまとめて読み込む
       </button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 1文だけ編集するダイアログ ===== -->
+<dialog id="edit-dialog" class="dialog" aria-labelledby="edit-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="edit-dialog-title" class="dialog-title">文を編集</h2>
+    <p class="dialog-desc">
+      この1文だけを直します。収録の 360 文は書き換えず、この端末の中に上書きだけを覚えます
+      （「元に戻す」でいつでも収録の文に戻せます）。
+    </p>
+
+    <label class="field">
+      <span class="field-label">日本語</span>
+      <input type="text" id="edit-ja" class="field-input" autocomplete="off" enterkeyhint="next">
+    </label>
+
+    <label class="field">
+      <span class="field-label">英語</span>
+      <input type="text" id="edit-en" class="field-input" autocomplete="off" enterkeyhint="done">
+    </label>
+
+    <label class="field">
+      <span class="field-label">メモ（任意）</span>
+      <input type="text" id="edit-note" class="field-input" autocomplete="off"
+        placeholder="つまずきやすい所があれば">
+    </label>
+
+    <p class="dialog-hint" id="edit-origin" hidden></p>
+    <p class="dialog-note" id="edit-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-edit-close" class="btn btn--ghost">閉じる</button>
+      <button type="button" id="btn-edit-revert" class="btn btn--ghost" hidden>元に戻す</button>
+      <button type="button" id="btn-edit-save" class="btn btn--primary">保存する</button>
     </div>
   </form>
 </dialog>
@@ -463,6 +500,7 @@
     <fieldset class="field-group">
       <legend class="field-label">読み上げ</legend>
       <label class="check"><input type="checkbox" id="opt-auto-speak"> 英語を表示したら自動で読み上げる</label>
+      <p class="dialog-hint" id="opt-auto-speak-note" hidden>この端末（このブラウザ）は読み上げに対応していません。🔈 のボタンも出しません。</p>
     </fieldset>
 
     <fieldset class="field-group">
@@ -606,6 +644,7 @@
   </form>
 </dialog>
 
+<script src="assets/speech.js"></script>
 <script src="assets/data.js"></script>
 <script src="assets/app.js"></script>
 <script src="assets/paraphrase.js"></script>

@@ -18,6 +18,7 @@
 
   var LS_DECKS = 'sunkan:decks';
   var LS_ADDED = 'sunkan:added';
+  var LS_EDITS = 'sunkan:edits';   // 収録の文への上書き（元データは書き換えない）
   var LS_STARS = 'sunkan:stars';
   var LS_PARA_GENRES = 'sunkan:para:genres';
   var LS_PARA_CARDS = 'sunkan:para:cards';
@@ -77,6 +78,10 @@
   function isArray(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
   function isObject(v) { return !!v && typeof v === 'object' && !isArray(v); }
   function str(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function hasKeys(v) {
+    for (var k in v) { if (Object.prototype.hasOwnProperty.call(v, k)) return true; }
+    return false;
+  }
   function trim(v) { return str(v).replace(/^\s+|\s+$/g, ''); }
 
   /* ============================================================
@@ -161,6 +166,9 @@
   // 鍵の作り方。app.js / paraphrase.js / inbox.js もこれと同じ形で渡す
   function addedKey(deckId, ja, en) { return 'added:' + deckId + '\n' + ja + '\n' + en; }
 
+  /** 収録の文 1 つぶんの上書きの鍵。「元に戻す」は取り消しなので、これで記録に残す */
+  function editKey(deckId, itemId) { return 'edit:' + deckId + ':' + itemId; }
+
   /** 受信箱の 1 件を見分ける鍵。id が無ければ中身から作る（inbox.js と同じ形） */
   function inboxKey(card) {
     if (!isObject(card)) return '';
@@ -180,6 +188,7 @@
       at: Date.now(),
       decks: isArray(readJSON(LS_DECKS, [])) ? readJSON(LS_DECKS, []) : [],
       added: isObject(readJSON(LS_ADDED, {})) ? readJSON(LS_ADDED, {}) : {},
+      edits: isObject(readJSON(LS_EDITS, {})) ? readJSON(LS_EDITS, {}) : {},
       stars: isObject(readJSON(LS_STARS, {})) ? readJSON(LS_STARS, {}) : {},
       para: {
         genres: isArray(readJSON(LS_PARA_GENRES, [])) ? readJSON(LS_PARA_GENRES, []) : [],
@@ -198,6 +207,7 @@
     return {
       decks: isArray(d.decks) ? d.decks : [],
       added: isObject(d.added) ? d.added : {},
+      edits: isObject(d.edits) ? d.edits : {},
       stars: isObject(d.stars) ? d.stars : {},
       para: {
         genres: isArray(para.genres) ? para.genres : [],
@@ -227,6 +237,7 @@
 
     put(LS_DECKS, merged.decks, [], 'drill');
     put(LS_ADDED, merged.added, {}, 'drill');
+    put(LS_EDITS, merged.edits, {}, 'drill');
     put(LS_STARS, merged.stars, {}, 'drill');
     put(LS_PARA_GENRES, merged.para.genres, [], 'para');
     put(LS_PARA_CARDS, merged.para.cards, [], 'para');
@@ -303,6 +314,43 @@
 
     for (deckId in out) {
       if (Object.prototype.hasOwnProperty.call(out, deckId) && !out[deckId].length) delete out[deckId];
+    }
+    return out;
+  }
+
+  /**
+   * { deckId: { itemId: {ja,en,note} } } を突き合わせる。
+   * 上書きも「足したもの」と同じで両方から拾い、「元に戻す」だけ記録で落とす。
+   * 足し算だけだと、戻したはずの上書きが相手側から復活する。
+   */
+  function mergeEdits(mine, theirs, tombs, liveDecks) {
+    var out = {}, deckId;
+
+    function take(src) {
+      for (var id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!isObject(src[id])) continue;
+        if (isDeleted(tombs, 'deck:' + id)) continue;   // セットごと消してある
+        if (liveDecks && !liveDecks[id]) continue;      // 収録セットか、生きている自作セットだけ
+        var table = out[id] || (out[id] = {});
+        for (var itemId in src[id]) {
+          if (!Object.prototype.hasOwnProperty.call(src[id], itemId)) continue;
+          if (table[itemId]) continue;                        // 先に出たほう（＝手元）を残す
+          if (isDeleted(tombs, editKey(id, itemId))) continue; // その 1 文だけ元へ戻してある
+          var it = src[id][itemId];
+          if (!isObject(it)) continue;
+          var ja = trim(it.ja), en = trim(it.en);
+          if (!ja || !en) continue;
+          table[itemId] = { ja: ja, en: en, note: trim(it.note) };
+        }
+      }
+    }
+
+    take(mine);
+    take(theirs);
+
+    for (deckId in out) {
+      if (Object.prototype.hasOwnProperty.call(out, deckId) && !hasKeys(out[deckId])) delete out[deckId];
     }
     return out;
   }
@@ -385,6 +433,7 @@
     }
     collectDeckIds(mine.added); collectDeckIds(theirs.added);
     collectDeckIds(mine.stars); collectDeckIds(theirs.stars);
+    collectDeckIds(mine.edits); collectDeckIds(theirs.edits);
 
     var cardIds = {};
     for (i = 0; i < cards.length; i++) cardIds[trim(cards[i].id)] = true;
@@ -394,6 +443,7 @@
     return {
       decks: decks,
       added: addedOut,
+      edits: mergeEdits(mine.edits, theirs.edits, map, liveMap),
       stars: mergeStars(mine.stars, theirs.stars, map),
       para: {
         genres: genres,
@@ -749,7 +799,7 @@
         name = trim(data.decks[i] && data.decks[i].name) || '名前なし';
         if (!best || n > best.n) best = { name: name, n: n };
       }
-    } else if (key === 'added' || key === 'stars') {
+    } else if (key === 'added' || key === 'edits' || key === 'stars') {
       for (var id in data[key]) {
         if (!Object.prototype.hasOwnProperty.call(data[key], id)) continue;
         n = sizeOf(data[key][id]);
@@ -1122,13 +1172,16 @@
       return list.slice(0, REPAIR_KEEP_TOMBS);
     }
 
+    // 送る中身は clean() から作る。ここで項目を並べ直すと、
+    // 新しく増えた種類（上書きなど）を書き足し忘れて黙って送られなくなる。
     function payload(step) {
-      return {
-        app: 'sunkan', v: 1, at: Date.now(),
-        decks: merged.decks, added: merged.added, stars: merged.stars, para: merged.para,
-        inbox: inboxFor(step),
-        tombs: tombsFor(step)
-      };
+      var out = clean(merged);
+      out.app = 'sunkan';
+      out.v = 1;
+      out.at = Date.now();
+      out.inbox = inboxFor(step);
+      out.tombs = tombsFor(step);
+      return out;
     }
 
     function tooBig(e) { return !!(e && e.message && e.message.indexOf('大きすぎます') >= 0); }
@@ -1160,7 +1213,7 @@
   /* --- 変更を見張る（app.js の保存に手を入れずに済ませる） --- */
 
   function fingerprint() {
-    return [LS_DECKS, LS_ADDED, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
+    return [LS_DECKS, LS_ADDED, LS_EDITS, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }
@@ -1467,7 +1520,9 @@
     /** 同じものを足し直したときに呼ぶ（消した記録を忘れる） */
     clearDelete: clearDelete,
     /** 足した 1 文の鍵。呼ぶ側と作り方をそろえるためここで配る */
-    addedKey: addedKey
+    addedKey: addedKey,
+    /** 収録の文への上書き 1 件の鍵。「元に戻す」を記録するのに使う */
+    editKey: editKey
   };
 
   function init() {
