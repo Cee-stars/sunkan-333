@@ -201,10 +201,33 @@
   }
 
   /** 受け取った中身を均す。向こうが壊れていても落ちないように */
+  // ここで名前を知っている項目。これ以外は「新しい版が足したもの」とみなして持ち越す
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'inbox', 'tombs'];
+
+  function isKnown(key) {
+    for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
+    return false;
+  }
+
+  /**
+   * 知らない項目を写す。
+   * 古い版が新しい版と同じ置き場を使うと、知らない項目を落として送り返してしまう。
+   * 実際それで、足したばかりの上書きが消えかけた。中身は解釈せず、そのまま持ち越す。
+   */
+  function carryUnknown(from, to) {
+    for (var k in from) {
+      if (!Object.prototype.hasOwnProperty.call(from, k)) continue;
+      if (isKnown(k)) continue;
+      if (Object.prototype.hasOwnProperty.call(to, k)) continue;
+      to[k] = from[k];
+    }
+    return to;
+  }
+
   function clean(data) {
     var d = isObject(data) ? data : {};
     var para = isObject(d.para) ? d.para : {};
-    return {
+    return carryUnknown(d, {
       decks: isArray(d.decks) ? d.decks : [],
       added: isObject(d.added) ? d.added : {},
       edits: isObject(d.edits) ? d.edits : {},
@@ -216,7 +239,7 @@
       },
       inbox: isArray(d.inbox) ? d.inbox : [],
       tombs: isArray(d.tombs) ? d.tombs : []
-    };
+    });
   }
 
   /** 書き戻す。中身が変わったかどうかを返す（変わったときだけ画面を作り直す） */
@@ -440,7 +463,8 @@
 
     var addedOut = mergeAdded(mine.added, theirs.added, map, liveMap);
 
-    return {
+    // 知らない項目は手元を先に、無ければ相手のものを残す（下の carryUnknown が順に写す）
+    return carryUnknown(theirs, carryUnknown(mine, {
       decks: decks,
       added: addedOut,
       edits: mergeEdits(mine.edits, theirs.edits, map, liveMap),
@@ -458,7 +482,7 @@
       // 取り込み済みの文は addSentences が同じ (ja,en) を弾くので二重にはならない。
       inbox: dropAlreadyHave(mergeInbox(mine.inbox, theirs.inbox, tombMap(mine.tombs)), addedOut),
       tombs: tombs
-    };
+    }));
   }
 
   /* ============================================================

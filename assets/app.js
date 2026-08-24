@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 27 (2026-08-24)';
+  var APP_VERSION = 'build 28 (2026-08-24)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -568,6 +568,8 @@
   var elOptAutoSpeak = $('opt-auto-speak');
   var elOptAutoSpeakNote = $('opt-auto-speak-note');
   var elAppVersion = $('app-version');
+  var elForceUpdate = $('btn-force-update');
+  var elForceUpdateStatus = $('force-update-status');
   var elOptFontSize = $('opt-font-size');
   var elOptFontOut = $('opt-font-size-out');
 
@@ -2235,6 +2237,20 @@
     if (elOptHideJa) elOptHideJa.addEventListener('change', onHideJaChange);
     if (elOptStarredOnly) elOptStarredOnly.addEventListener('change', onStarredOnlyChange);
     if (elOptAutoSpeak) elOptAutoSpeak.addEventListener('change', onAutoSpeakChange);
+
+    // 古い一式が居座って更新が届かないときの逃げ道。update.js が実際の始末をする
+    if (elForceUpdate) {
+      elForceUpdate.addEventListener('click', function () {
+        var u = window.SUNKAN_UPDATE;
+        if (!u || typeof u.force !== 'function') {
+          if (elForceUpdateStatus) elForceUpdateStatus.textContent = 'この画面では使えません。';
+          return;
+        }
+        elForceUpdate.disabled = true;
+        if (elForceUpdateStatus) elForceUpdateStatus.textContent = '新しくしています…';
+        u.force();
+      });
+    }
 
     // Esc などで閉じたときもフォーカスを戻す
     [elDataDialog, elSettingsDialog, elEditDialog].forEach(function (d) {
