@@ -477,6 +477,42 @@ button, input, select, textarea {
 .status-bar:empty { display: none; }
 
 
+/* --- 版ずれの帯（公開されている版と違うときだけ出す） --- */
+
+.update-bar {
+  padding-block: 6px 4px;
+}
+
+/* .header-row が display:flex なので、隠すほうを明示的に勝たせる */
+.update-bar[hidden] { display: none; }
+
+.update-box {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.update-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.update-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
 /* --- 受信箱の帯（別アプリから届いたカードのお知らせ） --- */
 
 .inbox-bar {

@@ -5,7 +5,7 @@
 
 // 名前を変えると activate で古いキャッシュを丸ごと捨てられる。
 // 配信方法を変えたときは必ず上げること。
-var CACHE = 'sunkan-v24';
+var CACHE = 'sunkan-v25';
 
 var ASSETS = [
   './',
@@ -17,6 +17,7 @@ var ASSETS = [
   './assets/paraphrase.js',
   './assets/inbox.js',
   './assets/sync.js',
+  './assets/update.js',
   './assets/icon.svg',
   './manifest.webmanifest'
 ];
@@ -47,7 +48,12 @@ self.addEventListener('fetch', function (event) {
 
   // GET 以外と別オリジンには触らない
   if (req.method !== 'GET') { return; }
-  if (new URL(req.url).origin !== self.location.origin) { return; }
+  var url = new URL(req.url);
+  if (url.origin !== self.location.origin) { return; }
+
+  // 版の突き合わせ先には触らない。ここを溜めると、古い答えを見て
+  // 「最新です」と言ってしまい、版ずれを知らせる仕組みごと死ぬ。
+  if (url.pathname.indexOf('version.json') >= 0) { return; }
 
   // ネットワーク優先。つながるときは必ず最新を出し、
   // 落ちたときだけキャッシュに逃がす。

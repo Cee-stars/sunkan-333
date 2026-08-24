@@ -132,6 +132,17 @@
     </div>
   </div>
 
+  <!-- ===== 版ずれのお知らせ（公開されている版と違うときだけ出す） ===== -->
+  <div class="header-row update-bar" id="update-bar" hidden>
+    <div class="update-box">
+      <p class="update-text" id="update-text" role="status" aria-live="polite"></p>
+      <span class="update-actions">
+        <button type="button" id="btn-update-now" class="btn btn--primary">更新する</button>
+        <button type="button" id="btn-update-later" class="btn btn--ghost">あとで</button>
+      </span>
+    </div>
+  </div>
+
   <p class="status-bar" id="status-bar" data-mode-view="drill" role="status" aria-live="polite"></p>
   <p class="status-bar" id="para-status" data-mode-view="para" role="status" aria-live="polite"></p>
 </header>
@@ -525,8 +536,13 @@
 
     <p class="dialog-hint version-line">
       このアプリの版：<span id="app-version">-</span><br>
-      画面が古いまま変わらないときは、この番号が上がっているか確認してください。
+      画面が古いまま変わらないときは、下の「最新にする」を押してください。
+      溜まっている古い一式を捨ててから読み直します。
     </p>
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-force-update" class="btn btn--ghost">最新にする</button>
+    </div>
+    <p class="dialog-note" id="force-update-status" role="status" aria-live="polite"></p>
   </form>
 </dialog>
 
@@ -650,6 +666,7 @@
 <script src="assets/paraphrase.js"></script>
 <script src="assets/inbox.js"></script>
 <script src="assets/sync.js"></script>
+<script src="assets/update.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
