@@ -262,25 +262,36 @@
    * 読んでいる行が勝手に閉じる。
    */
   function apply(merged) {
-    var hit = { drill: false, para: false, inbox: false };
+    // failed … この端末に書けなかったもの。保存領域がいっぱいだと起きる。
+    // 黙って通すと「同期しました」と言いながら相手のぶんがどこにも無い、になる
+    var hit = { drill: false, para: false, inbox: false, failed: [] };
 
-    function put(key, value, empty, group) {
+    function put(key, value, empty, group, label) {
       var next = JSON.stringify(value);
       if ((lsGet(key) || JSON.stringify(empty)) === next) return;
-      if (next === JSON.stringify(empty)) lsRemove(key); else lsSet(key, next);
+      var saved = (next === JSON.stringify(empty)) ? lsRemove(key) : lsSet(key, next);
+      if (!saved) { hit.failed.push(label); return; }   // 書けていないものを「変わった」とは言わない
       hit[group] = true;
     }
 
-    put(LS_DECKS, merged.decks, [], 'drill');
-    put(LS_ADDED, merged.added, {}, 'drill');
-    put(LS_EDITS, merged.edits, {}, 'drill');
-    put(LS_STARS, merged.stars, {}, 'drill');
-    put(LS_PARA_GENRES, merged.para.genres, [], 'para');
-    put(LS_PARA_CARDS, merged.para.cards, [], 'para');
-    put(LS_PARA_STARS, merged.para.stars, [], 'para');
-    put(LS_INBOX, merged.inbox, [], 'inbox');
+    put(LS_DECKS, merged.decks, [], 'drill', 'セット');
+    put(LS_ADDED, merged.added, {}, 'drill', '足した文');
+    put(LS_EDITS, merged.edits, {}, 'drill', '直した文');
+    put(LS_STARS, merged.stars, {}, 'drill', '★');
+    put(LS_PARA_GENRES, merged.para.genres, [], 'para', 'ジャンル');
+    put(LS_PARA_CARDS, merged.para.cards, [], 'para', 'パラフレ');
+    put(LS_PARA_STARS, merged.para.stars, [], 'para', 'パラフレの★');
+    put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
+  }
+
+  /** 保存できなかったものを名指しする。何が落ちたか分からないのがいちばん困る */
+  function saveFailNote(hit) {
+    return (hit && hit.failed && hit.failed.length)
+      ? 'この端末に保存できませんでした（' + hit.failed.join('・') + '）。'
+        + '保存領域がいっぱいかもしれません。いらないセットを消すと空きます。'
+      : '';
   }
 
   /* ============================================================
@@ -586,6 +597,7 @@
     var merged = merge(before, theirs);
     var hit = apply(merged);
     refreshViews(hit);
+    state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
     return hit.drill || hit.para || hit.inbox;
   }
 
@@ -613,8 +625,7 @@
     var payload = m[1];
     clearHash();   // 読み込み直しで二重に入らないよう先に消す
     unpackPayload(payload).then(function (theirs) {
-      var changed = takeIn(theirs);
-      setStatus(changed ? 'もう片方の端末のぶんを取り込みました。' : '取り込みました（新しいものはありませんでした）。', false);
+      report(takeIn(theirs));
       if (elDialog && !elDialog.open) elDialog.showModal();
     }, function (err) {
       setStatus('取り込めませんでした: ' + (err && err.message ? err.message : '中身を読めませんでした'), true);
@@ -724,9 +735,13 @@
   }
 
   function report(changed) {
-    setStatus(changed
+    var note = state.saveNote;
+    state.saveNote = '';
+    var msg = changed
       ? 'もう片方の端末のぶんを取り込みました。'
-      : '取り込みました（新しいものはありませんでした）。', false);
+      : '取り込みました（新しいものはありませんでした）。';
+    if (note) msg += '\n⚠ ' + note;
+    setStatus(msg, !!note);
   }
 
   function takeDataPayload(payload) {
@@ -1048,7 +1063,8 @@
    * 7. 同期そのもの
    * ========================================================== */
 
-  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '', repairNote: '', handedNote: '' };
+  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '',
+                repairNote: '', handedNote: '', saveNote: '' };
 
   /** 同期中かどうか。居座っているだけなら空けてやる */
   function isBusy() {
@@ -1173,6 +1189,9 @@
       var hit = apply(merged);
       var changed = hit.drill || hit.para || hit.inbox;
       refreshViews(hit);
+      // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
+      // 「同期しました」で流すと、届いていないのに届いた気になる
+      state.saveNote = saveFailNote(hit);
       if (hit.drill) announceArrivals(before, merged);
 
       // 受け渡しファイルの間引き。
@@ -1195,12 +1214,16 @@
       }).then(function () { return changed; });
     }).then(function (changed) {
       lsSet(LS_LAST, String(Date.now()));
-      lsRemove(LS_ERR);
+      var saveNote = state.saveNote;
+      state.saveNote = '';
+      // 書けなかったのなら、それは「済んだ」ことにしない。⚠ を残して次に気付けるようにする
+      if (saveNote) lsSet(LS_ERR, saveNote + '\n' + Date.now()); else lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
       var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
       if (state.handedNote) { msg += '\n' + state.handedNote; state.handedNote = ''; }
       if (state.repairNote) { msg += '\n' + state.repairNote; state.repairNote = ''; }
-      if (!silent || changed) setStatus(msg, false);
+      if (saveNote) msg += '\n⚠ ' + saveNote;
+      if (!silent || changed || saveNote) setStatus(msg, !!saveNote);
       renderState();
       return true;
     }, function (err) {
@@ -1470,8 +1493,7 @@
             setStatus('瞬間英作文の書き出しファイルではないようです。', true);
             return;
           }
-          var changed = takeIn(clean(parsed));
-          setStatus(changed ? 'もう片方の端末のぶんを取り込みました。' : '取り込みました（新しいものはありませんでした）。', false);
+          report(takeIn(clean(parsed)));
         };
         reader.onerror = function () { setStatus('このファイルは読めませんでした。', true); };
         reader.readAsText(f, 'utf-8');
