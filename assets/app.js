@@ -1918,19 +1918,21 @@
     var typedName = trim(elImportName ? elImportName.value : '');
 
     if (!parsed.items.length) {
-      // 名前だけ入れて「読み込む」を押した＝空のセットを作りたい、と受け取る。
+      // 名前**だけ**入れて「読み込む」を押した＝空のセットを作りたい、と受け取る。
       // ここで何も作らずに終わると、名前を付けたのに何も起きない行き止まりになる。
-      if (typedName) {
+      if (typedName && !trim(text)) {
         createEmptyDeck(typedName);
         if (elImportName) elImportName.value = '';
         if (elImportPreview) elImportPreview.textContent = '';
         closeDialog(elDataDialog);
         return;
       }
+      // 貼った中身があるのに 1 行も読めなかったときは、空のセットを作って
+      // 閉じてはいけない。貼ったものが黙って捨てられたように見える。
       if (elImportPreview) {
         elImportPreview.textContent =
           '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。'
-          + ' 空のセットを作りたいときは、上の「セット名」に名前を入れて「読み込む」を押してください。';
+          + ' 空のセットを作りたいときは、貼り付けた文字を消してから、上の「セット名」に名前を入れて「読み込む」を押してください。';
       }
       return;
     }
