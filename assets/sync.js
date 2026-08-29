@@ -107,7 +107,7 @@
    */
   function writeTombs(list) {
     var cutoff = Date.now() - TOMB_MAX_AGE;
-    var out = [], index = {}, i, rec, cur;
+    var out = [], index = {}, i, rec, cur, f;
     for (i = 0; i < list.length; i++) {
       rec = list[i];
       if (!rec || !rec.k) continue;
@@ -118,8 +118,10 @@
         if ((rec.a || 0) > (cur.a || 0)) cur.a = rec.a || 0;
         continue;
       }
-      cur = { k: rec.k, t: rec.t || 0 };
-      if (rec.a) cur.a = rec.a;
+      // 知らない項目は捨てずに写す（新しい版が足したものを、古い版が落とさないように）
+      cur = {};
+      for (f in rec) { if (Object.prototype.hasOwnProperty.call(rec, f)) cur[f] = rec[f]; }
+      cur.t = rec.t || 0;
       index[rec.k] = cur;
       out.push(cur);
     }
