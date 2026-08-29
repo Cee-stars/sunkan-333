@@ -413,10 +413,21 @@
     return out;
   }
 
+  /**
+   * 出題できない札（日本語か英文が欠けている）は、受信箱から取り込めない。
+   * inbox.js は取り込むときに落とすが、消した記録には入らないので、
+   * ここで通してしまうと Gist に残ったぶんが毎回戻ってきて片付かない。
+   * どの端末でも取り込めないものなので、突き合わせの時点で落とす。
+   */
+  function usableCard(card) {
+    return isObject(card) && !!trim(card.ja) && !!trim(card.en);
+  }
+
   /** 取り込み待ちのカード。取り込み済み（消した記録あり）のものは戻さない */
   function mergeInbox(mine, theirs, tombs) {
     var out = [], seen = {}, both = mine.concat(theirs), i, key;
     for (i = 0; i < both.length; i++) {
+      if (!usableCard(both[i])) continue;
       key = inboxKey(both[i]);
       if (!key || seen[key]) continue;
       if (isDeleted(tombs, key)) continue;
