@@ -1018,8 +1018,12 @@
   function toggleRow(rec) {
     if (!rec) return;
     var next = !rec.revealed;
-    if (next && state.settings.autoHide && state.lastRevealed && state.lastRevealed !== rec) {
-      setRevealed(state.lastRevealed, false); // 1 行だけ開く
+    if (next && state.settings.autoHide) {
+      // 1 行だけ開く。直前の 1 行だけでなく、開いているものは全部閉じる
+      //（「全部表示」のあとや、同期の作り直しで開いた行が戻ったあとでも効かせる）
+      for (var i = 0; i < state.records.length; i++) {
+        if (state.records[i] !== rec) setRevealed(state.records[i], false);
+      }
     }
     setRevealed(rec, next);
     state.lastRevealed = next ? rec : null;
@@ -1037,17 +1041,25 @@
     speakRecord(rec);
   }
 
+  /** 「全部表示 / 全部隠す」は、いま表示されている行にだけ効かせる。
+      検索で 3 件に絞ったのに 360 文ぜんぶ開いてしまうと、
+      検索を消したときに答えが全部見えている状態になる。 */
   function setAllRevealed(on) {
-    for (var i = 0; i < state.records.length; i++) {
-      setRevealed(state.records[i], on);
+    var list = visibleRecords();
+    for (var i = 0; i < list.length; i++) {
+      setRevealed(list[i], on);
     }
     state.lastRevealed = null;
     syncToggleAllButton();
   }
 
+  /** 表示されている行の中に開いているものがあるか。
+      隠れている行まで数えると、押しても何も起きないのに
+      ボタンだけ「隠す」と言っている状態になる。 */
   function anyRevealed() {
-    for (var i = 0; i < state.records.length; i++) {
-      if (state.records[i].revealed) return true;
+    var list = visibleRecords();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].revealed) return true;
     }
     return false;
   }
@@ -1171,6 +1183,8 @@
       }
     }
 
+    // 表示される行が変わるとボタンの意味も変わる（隠れた行は数えない）
+    syncToggleAllButton();
     updateStatusBar();
   }
 
