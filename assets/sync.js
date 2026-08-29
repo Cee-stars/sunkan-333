@@ -1074,6 +1074,34 @@
   }
 
   /**
+   * 置いていかれたカードのうち、この端末にとって新しいものの数。
+   * すでに受信箱にあるもの・取り込み済み（消した記録あり）のもの・
+   * 同じ文がもうセットに入っているものは、届いたとは言わない。
+   */
+  function countNewHanded(mine, handed) {
+    var tombs = tombMap(mine.tombs), have = {}, text = {}, n = 0, i, id, key;
+    for (i = 0; i < mine.inbox.length; i++) {
+      key = inboxKey(mine.inbox[i]);
+      if (key) have[key] = true;
+    }
+    for (id in mine.added) {
+      if (!Object.prototype.hasOwnProperty.call(mine.added, id) || !isArray(mine.added[id])) continue;
+      for (i = 0; i < mine.added[id].length; i++) {
+        text[trim(mine.added[id][i].ja) + '\n' + trim(mine.added[id][i].en)] = true;
+      }
+    }
+    for (i = 0; i < handed.length; i++) {
+      if (!usableCard(handed[i])) continue;
+      key = inboxKey(handed[i]);
+      if (!key || have[key]) continue;
+      if (isDeleted(tombs, key)) continue;
+      if (text[trim(handed[i].ja) + '\n' + trim(handed[i].en)]) continue;
+      n++;
+    }
+    return n;
+  }
+
+  /**
    * 同期で文が増えたら知らせる。
    * 別のアプリや別の端末が先に受信箱を取り込むと、こちらには帯が出ない。
    * それでも文は同期で入ってくるので、黙っていると「送ったのに届いていない」に見える。
@@ -1130,11 +1158,18 @@
     var id = gistId(), tk = token();
     return gistGet(id, tk).then(function (theirs) {
       var handedCount = theirs.handed || 0;
-      var before = countAdded(snapshot().added);
-      state.handedNote = handedCount
-        ? 'My Dictionary から ' + handedCount + ' 件受け取りました。'
+      var mine = snapshot();
+      var before = countAdded(mine.added);
+      // 受け渡し箱のカードは 7 日置いておく（どの入れ物が拾うか分からないため）。
+      // その間ずっと数え上げると、取り込んだあとも毎回「受け取りました」と言い続け、
+      // 本当に何か届いた回と見分けが付かなくなる。この端末にとって新しいぶんだけ数える。
+      var handedNew = handedCount
+        ? countNewHanded(mine, theirs.inbox.slice(theirs.inbox.length - handedCount))
+        : 0;
+      state.handedNote = handedNew
+        ? 'My Dictionary から ' + handedNew + ' 件受け取りました。'
         : '';
-      var merged = merge(snapshot(), theirs);
+      var merged = merge(mine, theirs);
       var hit = apply(merged);
       var changed = hit.drill || hit.para || hit.inbox;
       refreshViews(hit);
