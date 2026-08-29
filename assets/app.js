@@ -1319,14 +1319,11 @@
   /** いま開いているセットを保ったまま、行を作り直して表示を更新する */
   function refreshCurrentDeck() {
     if (!state.deck) return;
-    var keepQuery = state.query;
     var keepCurrent = state.currentId;
+    // state.query も検索欄もそのまま。selectDeck の中の applyFilter がそのまま効く。
+    // ここで検索欄へ state.query（小文字に潰した検索語）を書き戻すと、
+    // 打った文字が勝手に変わる。
     selectDeck(state.deck.id, { persist: false });
-    if (keepQuery && elSearch) {
-      elSearch.value = keepQuery;
-      state.query = keepQuery;
-      applyFilter();
-    }
     if (keepCurrent && state.byId[keepCurrent]) setCurrent(state.byId[keepCurrent], false);
   }
 
@@ -1387,6 +1384,21 @@
     return newId;
   }
 
+  /** その文が、いまの検索・絞り込みで隠れているか */
+  function isFilteredOut(ja, en) {
+    var rec = findRecordByText(ja, en);
+    return !!(rec && rec.el && rec.el.hidden);
+  }
+
+  /** いま隠している理由を短く言う。無ければ空文字 */
+  function whyHidden() {
+    if (state.query) {
+      return 'いまの検索「' + (elSearch ? trim(elSearch.value) : state.query) + '」に当てはまらないので、表には出ていません。';
+    }
+    if (state.settings.starredOnly) return '「★だけ表示」なので、表には出ていません。';
+    return '絞り込みに当てはまらないので、表には出ていません。';
+  }
+
   function findRecordByText(ja, en) {
     for (var i = 0; i < state.records.length; i++) {
       if (state.records[i].ja === ja && state.records[i].en === en) return state.records[i];
@@ -1433,7 +1445,10 @@
 
     rebuildKeepingView(refreshCurrentDeck);
     renderAddedList();
-    setAddStatus('「' + ja + '」を追加しました。続けて入力できます。', false);
+    // 足した文が検索で隠れているなら、そう言う。黙っていると
+    //「追加したのに表に出てこない」＝足せていないように見える。
+    var hiddenNote = isFilteredOut(ja, en) ? ' ' + whyHidden() : '';
+    setAddStatus('「' + ja + '」を追加しました。続けて入力できます。' + hiddenNote, false);
     if (elAddJa) elAddJa.focus();
   }
 
@@ -1619,7 +1634,11 @@
 
     renderAddedList();   // 追加ダイアログの一覧にも直した文を出す
     editingId = null;
+    var vanished = isFilteredOut(ja, en);
     closeDialog(elEditDialog);
+    // 直した文が検索から外れると、表からすっと消える。理由を言わないと
+    //「編集したら文が消えた」に見える。
+    if (vanished) flashStatus('直しました。' + whyHidden());
   }
 
   /** 上書きを捨てて収録の文へ戻す */
