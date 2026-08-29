@@ -217,7 +217,10 @@
 
   /** 受け取った中身を均す。向こうが壊れていても落ちないように */
   // ここで名前を知っている項目。これ以外は「新しい版が足したもの」とみなして持ち越す
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'inbox', 'tombs'];
+  // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
+  // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
+  // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
