@@ -971,6 +971,10 @@
       var list = allDecks();
       deck = list.length ? list[0] : null;
     }
+    // 別のセットへ移るなら、前のセットの行を読んでいた音は止める。
+    // 同じセットを作り直しただけ（裏の同期・編集）のときは止めない。
+    if (state.speakingId && (!state.deck || !deck || state.deck.id !== deck.id)) stopSpeech();
+
     state.deck = deck;
     state.records = deck ? buildRecords(deck) : [];
     state.byId = {};
@@ -1012,6 +1016,8 @@
     } else {
       rec.el.classList.remove('is-revealed');
       if (rec.mainEl) rec.mainEl.setAttribute('aria-expanded', 'false');
+      // 閉じた行の音は残さない。「全部隠す」でも「1行だけ開く」でも同じ
+      if (state.speakingId === rec.id) stopSpeech();
     }
   }
 
@@ -1029,8 +1035,7 @@
     state.lastRevealed = next ? rec : null;
     setCurrent(rec, false);
     syncToggleAllButton();
-    if (next) maybeAutoSpeak(rec);
-    else if (state.speakingId === rec.id) stopSpeech(); // 閉じた行の音は残さない
+    if (next) maybeAutoSpeak(rec);   // 閉じたときは setRevealed が音も止める
   }
 
   /** 「表示したら自動で読み上げる」設定のときだけ喋る。
