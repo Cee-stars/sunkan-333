@@ -1189,6 +1189,27 @@
     renumber();
   }
 
+  /**
+   * 作り直したあと、前の表示順（id の並び）に戻す。
+   * 前に無かった行（足したばかりの文・同期で届いた文）は末尾に置く。
+   */
+  function restoreOrder(idOrder) {
+    var rank = {}, known = [], fresh = [], i, rec;
+    for (i = 0; i < idOrder.length; i++) {
+      if (!hasOwn(rank, idOrder[i])) rank[idOrder[i]] = i;
+    }
+    for (i = 0; i < state.records.length; i++) {
+      rec = state.records[i];
+      if (hasOwn(rank, rec.id)) known.push(rec);
+      else fresh.push(rec);
+    }
+    known.sort(function (a, b) { return rank[a.id] - rank[b.id]; });
+    state.order = known.concat(fresh);
+    state.shuffled = true;
+    updateShuffleButton();
+    reorderDom();
+  }
+
   function updateShuffleButton() {
     if (!elShuffle) return;
     elShuffle.setAttribute('aria-pressed', state.shuffled ? 'true' : 'false');
@@ -1273,6 +1294,8 @@
     }
     var wasCurrent = state.currentId;
     var wasShuffled = state.shuffled;
+    var wasOrder = [];
+    for (i = 0; i < state.order.length; i++) wasOrder.push(state.order[i].id);
     var scrollY = window.pageYOffset;
 
     rebuild();
@@ -1286,6 +1309,11 @@
         if (newId) open[newId] = true;
       }
       if (wasCurrent === moved.id) wasCurrent = newId;
+      if (newId && newId !== moved.id) {
+        for (i = 0; i < wasOrder.length; i++) {
+          if (wasOrder[i] === moved.id) wasOrder[i] = newId;
+        }
+      }
     }
 
     var lastOpen = null;
@@ -1298,7 +1326,9 @@
     // 覚え直さないと「次の行を開いたら前の行を隠す」が効かなくなる
     state.lastRevealed = lastOpen;
     if (wasCurrent && state.byId[wasCurrent]) setCurrent(state.byId[wasCurrent], false);
-    if (wasShuffled && state.records.length) toggleShuffle();
+    // シャッフル中に作り直したときは、シャッフルし直さずに元の並びへ戻す。
+    // 引き直すと読んでいた場所ごと飛んでしまう（1 文足しただけで全部並び替わる）。
+    if (wasShuffled && state.records.length) restoreOrder(wasOrder);
 
     syncToggleAllButton();
     updateStatusBar();
@@ -1350,7 +1380,7 @@
     if (elAddEn) elAddEn.value = '';
     if (elAddNote) elAddNote.value = '';
 
-    refreshCurrentDeck();
+    rebuildKeepingView(refreshCurrentDeck);
     renderAddedList();
     setAddStatus('「' + ja + '」を追加しました。続けて入力できます。', false);
     if (elAddJa) elAddJa.focus();
@@ -1361,7 +1391,7 @@
     if (!rec || !rec.added) return;
     if (!window.confirm('「' + rec.ja + '」を削除します。よろしいですか？')) return;
     removeAddedSentence(currentDeckId(), rec.ja, rec.en);
-    refreshCurrentDeck();
+    rebuildKeepingView(refreshCurrentDeck);
     renderAddedList();
   }
 
@@ -2145,7 +2175,7 @@
         var en = btn.getAttribute('data-en');
         if (!window.confirm('「' + ja + '」を削除します。よろしいですか？')) return;
         removeAddedSentence(currentDeckId(), ja, en);
-        refreshCurrentDeck();
+        rebuildKeepingView(refreshCurrentDeck);
         renderAddedList();
         setAddStatus('削除しました。', false);
       });
@@ -2291,7 +2321,7 @@
     }
 
     if (result.added) {
-      refreshCurrentDeck();
+      rebuildKeepingView(refreshCurrentDeck);
       renderAddedList();
       renderDeckManageList();
       updateStatusBar();
