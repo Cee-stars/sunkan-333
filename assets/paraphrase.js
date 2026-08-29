@@ -959,7 +959,9 @@
     for (var i = 0; i < parsed.cards.length; i++) {
       var row = parsed.cards[i];
       if (hasHeadEn(row.headEn)) { dup++; continue; }
-      var genre = row.genreName ? addGenre(row.genreName) : null;
+      // 「ジャンルなし」はジャンルの名前ではない（前の版が書き出した表には入っている）
+      var gname = trim(row.genreName) === genreName(NONE) ? '' : row.genreName;
+      var genre = gname ? addGenre(gname) : null;
       state.cards.push({
         id: uid('p'),
         genreId: genre ? genre.id : '',
@@ -992,7 +994,10 @@
   }
 
   function cardToRow(card) {
-    var cells = [flat(genreName(cardGenreKey(card))), flat(card.headEn), flat(card.headJa)];
+    // ジャンルなしは空欄で書き出す。「ジャンルなし」という文字を入れると、
+    // 読み込み直したときにその名前のジャンルが本当に作られてしまう
+    var key = cardGenreKey(card);
+    var cells = [key === NONE ? '' : flat(genreName(key)), flat(card.headEn), flat(card.headJa)];
     for (var i = 0; i < LINE_COUNT; i++) {
       var line = card.lines[i];
       cells.push(line ? flat(line.en) : '', line ? flat(line.ja) : '');
