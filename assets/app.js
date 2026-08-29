@@ -130,12 +130,44 @@
     }
   }
 
+  // 保存が届かなかったときの言い分。空き容量切れ・プライベートモード・
+  // 保存を禁じた設定など、理由はいろいろだが、利用者にとっては同じ
+  //「足したはずのものが読み込み直すと消える」なので、まとめて知らせる。
+  var STORAGE_MSG = 'この端末に保存できませんでした（空き容量が足りないか、保存が禁じられています）。'
+    + '読み込み直すと元に戻ります。';
+  var storageNoticeTimer = null;
+
+  /** 保存できなかったことを、いま見えている所に出す（黙って落とさない）。
+      成功のしらせを上書きできるよう、同じ処理が済んだあとに回す。
+      1 つの操作で複数のキーを書くことがあるので、同じ回のぶんは 1 度にまとめる。 */
+  function flagStorageProblem() {
+    if (storageNoticeTimer) return;
+    storageNoticeTimer = window.setTimeout(function () {
+      storageNoticeTimer = null;
+      showStorageProblem();
+    }, 0);
+  }
+
+  /** ダイアログが開いていると status バーは見えない。開いている所へ出す */
+  function showStorageProblem() {
+    if (elAddDialog && elAddDialog.open) { setAddStatus(STORAGE_MSG, true); return; }
+    if (elEditDialog && elEditDialog.open) { setEditStatus(STORAGE_MSG, true); return; }
+    if (elDataDialog && elDataDialog.open && elImportPreview) {
+      elImportPreview.textContent = STORAGE_MSG;
+      return;
+    }
+    flashStatus(STORAGE_MSG);
+  }
+
   function lsSet(key, value) {
     try {
       window.localStorage.setItem(key, value);
       return true;
     } catch (e) {
-      return false; // 保存できなくてもアプリは動き続ける
+      // 保存できなくてもアプリは動き続けるが、黙って続けると
+      //「追加したのに読み込み直したら消えていた」になる
+      flagStorageProblem();
+      return false;
     }
   }
 
@@ -505,7 +537,7 @@
   }
 
   function saveSettings() {
-    writeJSON(LS_SETTINGS, state.settings);
+    return writeJSON(LS_SETTINGS, state.settings);
   }
 
   applySettingsToRoot(); // ← DOM 参照より前に実行
@@ -655,7 +687,7 @@
   }
 
   function saveAdded() {
-    writeJSON(LS_ADDED, state.added);
+    return writeJSON(LS_ADDED, state.added);
   }
 
   function addedFor(deckId) {
@@ -739,7 +771,7 @@
   }
 
   function saveEdits() {
-    writeJSON(LS_EDITS, state.edits);
+    return writeJSON(LS_EDITS, state.edits);
   }
 
   function editsFor(deckId) {
@@ -773,7 +805,7 @@
   }
 
   function saveStars() {
-    writeJSON(LS_STARS, state.stars);
+    return writeJSON(LS_STARS, state.stars);
   }
 
   function starListFor(deckId) {
