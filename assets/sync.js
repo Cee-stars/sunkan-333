@@ -100,15 +100,28 @@
    * a を消さずに残すのが肝で、消した記録は向こうの端末にも渡っている。
    * こちらで消しただけでは向こうから戻ってくるので、
    * 「消したあとに足し直した」ことも時刻で残して勝ち負けを決める。
+   *
+   * **鍵ごとに 1 件へまとめる。** 突き合わせは手元と相手の記録をつなげて渡してくるので、
+   * まとめずに置くと同じ鍵が同期のたびに増え、上限に当たって
+   * 本物の記録が押し出される（＝消したものが戻ってくる）。
    */
   function writeTombs(list) {
     var cutoff = Date.now() - TOMB_MAX_AGE;
-    var out = [], i, rec;
+    var out = [], index = {}, i, rec, cur;
     for (i = 0; i < list.length; i++) {
       rec = list[i];
       if (!rec || !rec.k) continue;
       if (Math.max(rec.t || 0, rec.a || 0) < cutoff) continue;
-      out.push(rec);
+      cur = index[rec.k];
+      if (cur) {   // 同じ鍵は新しいほうの時刻を採る
+        if ((rec.t || 0) > (cur.t || 0)) cur.t = rec.t || 0;
+        if ((rec.a || 0) > (cur.a || 0)) cur.a = rec.a || 0;
+        continue;
+      }
+      cur = { k: rec.k, t: rec.t || 0 };
+      if (rec.a) cur.a = rec.a;
+      index[rec.k] = cur;
+      out.push(cur);
     }
     if (out.length > MAX_TOMBS) {
       out.sort(function (a, b) { return Math.max(b.t || 0, b.a || 0) - Math.max(a.t || 0, a.a || 0); });
