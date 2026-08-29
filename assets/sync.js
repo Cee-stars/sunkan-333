@@ -635,7 +635,8 @@
     }, 1000);
   }
 
-  function stamp() {
+  /** 書き出しファイルの名前に使う日付（YYYYMMDD）。画面用の stamp(ms) とは別物 */
+  function fileStamp() {
     var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
     return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
   }
@@ -1401,7 +1402,7 @@
 
     if (save) save.addEventListener('click', function () {
       try {
-        downloadFile('sunkan-' + stamp() + '.json', JSON.stringify(snapshot(), null, 2));
+        downloadFile('sunkan-' + fileStamp() + '.json', JSON.stringify(snapshot(), null, 2));
         setStatus('書き出しました。AirDrop などでもう片方の端末へ送り、そちらで「ファイルを読み込む」を押してください。', false);
       } catch (e) {
         setStatus('書き出せませんでした。', true);
