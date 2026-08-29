@@ -890,13 +890,13 @@
     result.delimiter = table.delimiter;
 
     var rows = table.rows.slice();
-    if (rows.length && looksLikeParaHeader(rows[0])) {
-      rows.shift();
-      result.headerDropped = true;
-    }
 
     for (var i = 0; i < rows.length; i++) {
       var cells = rows[i];
+      // 見出し行は先頭とは限らない。書き出したものを何回分か続けて貼ると途中にも並ぶ。
+      // どこにあっても外す（残すと「見出しの英文」という名前の札ができてしまう）
+      if (looksLikeParaHeader(cells)) { result.headerDropped = true; continue; }
+
       var headEn = trim(cells[1] || '');
       if (!headEn) { result.skipped++; continue; }   // 2 列目（見出しの英文）は必須
 
