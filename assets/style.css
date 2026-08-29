@@ -786,7 +786,10 @@ button, input, select, textarea {
 .cell--en .en-mask { inset-inline-start: calc(var(--cell-pad-x) - 2px); }
 
 /* --- ぼかす --- */
-:root[data-mask="blur"] .row:not(.is-revealed) .en-text {
+/* 伏せるのは答え側だけ。逆向き（en-ja）のときは英語が問題文なので、
+   :not([data-direction="en-ja"]) を付けて英語側には効かせない。
+   両方伏せると行がまるごと読めなくなり、出題そのものが成り立たない。 */
+:root[data-mask="blur"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .en-text {
   filter: blur(var(--mask-blur));
 }
 :root[data-mask="blur"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja {
@@ -794,7 +797,7 @@ button, input, select, textarea {
 }
 
 /* --- 塗りつぶす --- */
-:root[data-mask="block"] .row:not(.is-revealed) .cell--en .en-mask {
+:root[data-mask="block"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .cell--en .en-mask {
   opacity: 1;
 }
 :root[data-mask="block"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja::after {
@@ -802,7 +805,7 @@ button, input, select, textarea {
 }
 
 /* --- 空白にする（高さは保つ） --- */
-:root[data-mask="hidden"] .row:not(.is-revealed) .en-text {
+:root[data-mask="hidden"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .en-text {
   visibility: hidden;
 }
 :root[data-mask="hidden"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja {
@@ -810,7 +813,7 @@ button, input, select, textarea {
 }
 
 /* 空白モードでも「そこに何かある」ことが分かる薄い罫 */
-:root[data-mask="hidden"] .row:not(.is-revealed) .cell--en::after,
+:root[data-mask="hidden"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .cell--en::after,
 :root[data-mask="hidden"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja::before {
   content: "";
   position: absolute;
