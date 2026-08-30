@@ -477,6 +477,28 @@ button, input, select, textarea {
 .status-bar:empty { display: none; }
 
 
+/* --- 設定の中の「◯◯する ／ 右に補足」の行 --- */
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-block-start: 6px;
+}
+
+.menu-row .btn { flex: 0 0 auto; }
+
+.menu-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: end;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
 /* --- 版ずれの帯（公開されている版と違うときだけ出す） --- */
 
 .update-bar {
@@ -786,7 +808,10 @@ button, input, select, textarea {
 .cell--en .en-mask { inset-inline-start: calc(var(--cell-pad-x) - 2px); }
 
 /* --- ぼかす --- */
-:root[data-mask="blur"] .row:not(.is-revealed) .en-text {
+/* 伏せるのは答え側だけ。逆向き（en-ja）のときは英語が問題文なので、
+   :not([data-direction="en-ja"]) を付けて英語側には効かせない。
+   両方伏せると行がまるごと読めなくなり、出題そのものが成り立たない。 */
+:root[data-mask="blur"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .en-text {
   filter: blur(var(--mask-blur));
 }
 :root[data-mask="blur"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja {
@@ -794,7 +819,7 @@ button, input, select, textarea {
 }
 
 /* --- 塗りつぶす --- */
-:root[data-mask="block"] .row:not(.is-revealed) .cell--en .en-mask {
+:root[data-mask="block"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .cell--en .en-mask {
   opacity: 1;
 }
 :root[data-mask="block"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja::after {
@@ -802,7 +827,7 @@ button, input, select, textarea {
 }
 
 /* --- 空白にする（高さは保つ） --- */
-:root[data-mask="hidden"] .row:not(.is-revealed) .en-text {
+:root[data-mask="hidden"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .en-text {
   visibility: hidden;
 }
 :root[data-mask="hidden"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja {
@@ -810,7 +835,7 @@ button, input, select, textarea {
 }
 
 /* 空白モードでも「そこに何かある」ことが分かる薄い罫 */
-:root[data-mask="hidden"] .row:not(.is-revealed) .cell--en::after,
+:root[data-mask="hidden"]:not([data-direction="en-ja"]) .row:not(.is-revealed) .cell--en::after,
 :root[data-mask="hidden"][data-direction="en-ja"] .row:not(.is-revealed) .cell--ja::before {
   content: "";
   position: absolute;

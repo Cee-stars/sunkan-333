@@ -39,7 +39,10 @@
   var ALIVE_STEP = 4000;  // 鳴っている間だけ回す見張りの間隔
   var SILENT_MAX = 1500;  // 解錠用の無音発話を待つ上限
 
+  var LS_VOICE = 'sunkan:voice';   // 選んだ声。端末ごとに入っている声が違うので同期しない
+
   var voice = null;         // 選んだ声。無ければ null（lang だけで喋る）
+  var wantVoice = '';       // 利用者が選んだ声の id。声が届く前でも覚えておく
   var voicesReady = false;
   var unlocked = false;     // 一度でも実際に音が出たか
   var silentPending = false;// 解錠用の無音発話がまだ流れているか
@@ -60,14 +63,53 @@
 
     var exact = null;
     var fallback = null;
+    var chosen = null;
     for (var i = 0; i < voices.length; i++) {
       var lang = String(voices[i].lang || '').toLowerCase().replace('_', '-');
+      // 選んだ声が入っていれば、それがいちばん強い
+      if (!chosen && wantVoice && voiceId(voices[i]) === wantVoice) chosen = voices[i];
       if (!exact && lang === 'en-us') exact = voices[i];
       if (!fallback && lang.indexOf('en') === 0) fallback = voices[i];
     }
-    voice = exact || fallback || null;
+    voice = chosen || exact || fallback || null;
     voicesReady = true;
     return true;
+  }
+
+  /** 声を見分ける id。voiceURI が無い実装のために名前と言語で代わりを作る */
+  function voiceId(v) {
+    if (!v) return '';
+    return String(v.voiceURI || (String(v.name || '') + '|' + String(v.lang || '')));
+  }
+
+  /** 英語の声だけ、選べる形で返す */
+  function listVoices() {
+    if (!supported) return [];
+    var raw = [];
+    try { raw = synth.getVoices() || []; } catch (e) { raw = []; }
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      var lang = String(raw[i].lang || '').toLowerCase().replace('_', '-');
+      if (lang.indexOf('en') !== 0) continue;   // 読むのは英文だけ
+      out.push({
+        id: voiceId(raw[i]),
+        name: String(raw[i].name || ''),
+        lang: String(raw[i].lang || ''),
+        current: voice ? voiceId(raw[i]) === voiceId(voice) : false
+      });
+    }
+    return out;
+  }
+
+  /** 声を選ぶ。空文字なら「おまかせ」に戻す */
+  function setVoice(id) {
+    wantVoice = String(id || '');
+    try {
+      if (wantVoice) window.localStorage.setItem(LS_VOICE, wantVoice);
+      else window.localStorage.removeItem(LS_VOICE);
+    } catch (e) { /* 保存できなくてもその場では効かせる */ }
+    loadVoices();
+    return voice ? voiceId(voice) : '';
   }
 
   /** 声は遅れて届く。イベントで拾いつつ、来ない実装のために数回だけ見に行く（回しっぱなしにはしない） */
@@ -371,6 +413,7 @@
   /* ---------- 起動 ---------- */
 
   if (supported) {
+    try { wantVoice = window.localStorage.getItem(LS_VOICE) || ''; } catch (e) { wantVoice = ''; }
     // 前のページの発話が残っていることがある（再読み込み直後に喋らない不具合の元）
     try { synth.cancel(); } catch (e) { /* 無視 */ }
     watchVoices();
@@ -395,6 +438,14 @@
     ready: function () { return voicesReady; },
     /** 使っている声の名前。無ければ空文字 */
     voiceName: function () { return voice ? String(voice.name || '') : ''; },
+    /** 使っている声の言語。無ければ空文字 */
+    voiceLang: function () { return voice ? String(voice.lang || '') : ''; },
+    /** 選べる英語の声。[{id, name, lang, current}] */
+    voices: listVoices,
+    /** 声を選ぶ（空文字でおまかせに戻す）。選ばれた声の id を返す */
+    setVoice: setVoice,
+    /** いま選んである声の id（おまかせなら空文字） */
+    chosenVoice: function () { return wantVoice; },
     /** 読み上げが失敗したときの理由を受け取る。戻り値を呼ぶと外れる */
     onProblem: function (fn) {
       if (typeof fn !== 'function') return function () {};

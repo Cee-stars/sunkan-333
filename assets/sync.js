@@ -100,15 +100,30 @@
    * a を消さずに残すのが肝で、消した記録は向こうの端末にも渡っている。
    * こちらで消しただけでは向こうから戻ってくるので、
    * 「消したあとに足し直した」ことも時刻で残して勝ち負けを決める。
+   *
+   * **鍵ごとに 1 件へまとめる。** 突き合わせは手元と相手の記録をつなげて渡してくるので、
+   * まとめずに置くと同じ鍵が同期のたびに増え、上限に当たって
+   * 本物の記録が押し出される（＝消したものが戻ってくる）。
    */
   function writeTombs(list) {
     var cutoff = Date.now() - TOMB_MAX_AGE;
-    var out = [], i, rec;
+    var out = [], index = {}, i, rec, cur, f;
     for (i = 0; i < list.length; i++) {
       rec = list[i];
       if (!rec || !rec.k) continue;
       if (Math.max(rec.t || 0, rec.a || 0) < cutoff) continue;
-      out.push(rec);
+      cur = index[rec.k];
+      if (cur) {   // 同じ鍵は新しいほうの時刻を採る
+        if ((rec.t || 0) > (cur.t || 0)) cur.t = rec.t || 0;
+        if ((rec.a || 0) > (cur.a || 0)) cur.a = rec.a || 0;
+        continue;
+      }
+      // 知らない項目は捨てずに写す（新しい版が足したものを、古い版が落とさないように）
+      cur = {};
+      for (f in rec) { if (Object.prototype.hasOwnProperty.call(rec, f)) cur[f] = rec[f]; }
+      cur.t = rec.t || 0;
+      index[rec.k] = cur;
+      out.push(cur);
     }
     if (out.length > MAX_TOMBS) {
       out.sort(function (a, b) { return Math.max(b.t || 0, b.a || 0) - Math.max(a.t || 0, a.a || 0); });
@@ -202,7 +217,10 @@
 
   /** 受け取った中身を均す。向こうが壊れていても落ちないように */
   // ここで名前を知っている項目。これ以外は「新しい版が足したもの」とみなして持ち越す
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'inbox', 'tombs'];
+  // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
+  // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
+  // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -249,25 +267,36 @@
    * 読んでいる行が勝手に閉じる。
    */
   function apply(merged) {
-    var hit = { drill: false, para: false, inbox: false };
+    // failed … この端末に書けなかったもの。保存領域がいっぱいだと起きる。
+    // 黙って通すと「同期しました」と言いながら相手のぶんがどこにも無い、になる
+    var hit = { drill: false, para: false, inbox: false, failed: [] };
 
-    function put(key, value, empty, group) {
+    function put(key, value, empty, group, label) {
       var next = JSON.stringify(value);
       if ((lsGet(key) || JSON.stringify(empty)) === next) return;
-      if (next === JSON.stringify(empty)) lsRemove(key); else lsSet(key, next);
+      var saved = (next === JSON.stringify(empty)) ? lsRemove(key) : lsSet(key, next);
+      if (!saved) { hit.failed.push(label); return; }   // 書けていないものを「変わった」とは言わない
       hit[group] = true;
     }
 
-    put(LS_DECKS, merged.decks, [], 'drill');
-    put(LS_ADDED, merged.added, {}, 'drill');
-    put(LS_EDITS, merged.edits, {}, 'drill');
-    put(LS_STARS, merged.stars, {}, 'drill');
-    put(LS_PARA_GENRES, merged.para.genres, [], 'para');
-    put(LS_PARA_CARDS, merged.para.cards, [], 'para');
-    put(LS_PARA_STARS, merged.para.stars, [], 'para');
-    put(LS_INBOX, merged.inbox, [], 'inbox');
+    put(LS_DECKS, merged.decks, [], 'drill', 'セット');
+    put(LS_ADDED, merged.added, {}, 'drill', '足した文');
+    put(LS_EDITS, merged.edits, {}, 'drill', '直した文');
+    put(LS_STARS, merged.stars, {}, 'drill', '★');
+    put(LS_PARA_GENRES, merged.para.genres, [], 'para', 'ジャンル');
+    put(LS_PARA_CARDS, merged.para.cards, [], 'para', 'パラフレ');
+    put(LS_PARA_STARS, merged.para.stars, [], 'para', 'パラフレの★');
+    put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
+  }
+
+  /** 保存できなかったものを名指しする。何が落ちたか分からないのがいちばん困る */
+  function saveFailNote(hit) {
+    return (hit && hit.failed && hit.failed.length)
+      ? 'この端末に保存できませんでした（' + hit.failed.join('・') + '）。'
+        + '保存領域がいっぱいかもしれません。いらないセットを消すと空きます。'
+      : '';
   }
 
   /* ============================================================
@@ -400,10 +429,21 @@
     return out;
   }
 
+  /**
+   * 出題できない札（日本語か英文が欠けている）は、受信箱から取り込めない。
+   * inbox.js は取り込むときに落とすが、消した記録には入らないので、
+   * ここで通してしまうと Gist に残ったぶんが毎回戻ってきて片付かない。
+   * どの端末でも取り込めないものなので、突き合わせの時点で落とす。
+   */
+  function usableCard(card) {
+    return isObject(card) && !!trim(card.ja) && !!trim(card.en);
+  }
+
   /** 取り込み待ちのカード。取り込み済み（消した記録あり）のものは戻さない */
   function mergeInbox(mine, theirs, tombs) {
     var out = [], seen = {}, both = mine.concat(theirs), i, key;
     for (i = 0; i < both.length; i++) {
+      if (!usableCard(both[i])) continue;
       key = inboxKey(both[i]);
       if (!key || seen[key]) continue;
       if (isDeleted(tombs, key)) continue;
@@ -562,6 +602,7 @@
     var merged = merge(before, theirs);
     var hit = apply(merged);
     refreshViews(hit);
+    state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
     return hit.drill || hit.para || hit.inbox;
   }
 
@@ -589,8 +630,7 @@
     var payload = m[1];
     clearHash();   // 読み込み直しで二重に入らないよう先に消す
     unpackPayload(payload).then(function (theirs) {
-      var changed = takeIn(theirs);
-      setStatus(changed ? 'もう片方の端末のぶんを取り込みました。' : '取り込みました（新しいものはありませんでした）。', false);
+      report(takeIn(theirs));
       if (elDialog && !elDialog.open) elDialog.showModal();
     }, function (err) {
       setStatus('取り込めませんでした: ' + (err && err.message ? err.message : '中身を読めませんでした'), true);
@@ -622,7 +662,8 @@
     }, 1000);
   }
 
-  function stamp() {
+  /** 書き出しファイルの名前に使う日付（YYYYMMDD）。画面用の stamp(ms) とは別物 */
+  function fileStamp() {
     var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; };
     return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
   }
@@ -699,9 +740,13 @@
   }
 
   function report(changed) {
-    setStatus(changed
+    var note = state.saveNote;
+    state.saveNote = '';
+    var msg = changed
       ? 'もう片方の端末のぶんを取り込みました。'
-      : '取り込みました（新しいものはありませんでした）。', false);
+      : '取り込みました（新しいものはありませんでした）。';
+    if (note) msg += '\n⚠ ' + note;
+    setStatus(msg, !!note);
   }
 
   function takeDataPayload(payload) {
@@ -1023,7 +1068,8 @@
    * 7. 同期そのもの
    * ========================================================== */
 
-  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '', repairNote: '', handedNote: '' };
+  var state = { busy: false, busyAt: 0, timer: null, fingerprint: '',
+                repairNote: '', handedNote: '', saveNote: '' };
 
   /** 同期中かどうか。居座っているだけなら空けてやる */
   function isBusy() {
@@ -1046,6 +1092,34 @@
       }
     }
     return out;
+  }
+
+  /**
+   * 置いていかれたカードのうち、この端末にとって新しいものの数。
+   * すでに受信箱にあるもの・取り込み済み（消した記録あり）のもの・
+   * 同じ文がもうセットに入っているものは、届いたとは言わない。
+   */
+  function countNewHanded(mine, handed) {
+    var tombs = tombMap(mine.tombs), have = {}, text = {}, n = 0, i, id, key;
+    for (i = 0; i < mine.inbox.length; i++) {
+      key = inboxKey(mine.inbox[i]);
+      if (key) have[key] = true;
+    }
+    for (id in mine.added) {
+      if (!Object.prototype.hasOwnProperty.call(mine.added, id) || !isArray(mine.added[id])) continue;
+      for (i = 0; i < mine.added[id].length; i++) {
+        text[trim(mine.added[id][i].ja) + '\n' + trim(mine.added[id][i].en)] = true;
+      }
+    }
+    for (i = 0; i < handed.length; i++) {
+      if (!usableCard(handed[i])) continue;
+      key = inboxKey(handed[i]);
+      if (!key || have[key]) continue;
+      if (isDeleted(tombs, key)) continue;
+      if (text[trim(handed[i].ja) + '\n' + trim(handed[i].en)]) continue;
+      n++;
+    }
+    return n;
   }
 
   /**
@@ -1105,14 +1179,24 @@
     var id = gistId(), tk = token();
     return gistGet(id, tk).then(function (theirs) {
       var handedCount = theirs.handed || 0;
-      var before = countAdded(snapshot().added);
-      state.handedNote = handedCount
-        ? 'My Dictionary から ' + handedCount + ' 件受け取りました。'
+      var mine = snapshot();
+      var before = countAdded(mine.added);
+      // 受け渡し箱のカードは 7 日置いておく（どの入れ物が拾うか分からないため）。
+      // その間ずっと数え上げると、取り込んだあとも毎回「受け取りました」と言い続け、
+      // 本当に何か届いた回と見分けが付かなくなる。この端末にとって新しいぶんだけ数える。
+      var handedNew = handedCount
+        ? countNewHanded(mine, theirs.inbox.slice(theirs.inbox.length - handedCount))
+        : 0;
+      state.handedNote = handedNew
+        ? 'My Dictionary から ' + handedNew + ' 件受け取りました。'
         : '';
-      var merged = merge(snapshot(), theirs);
+      var merged = merge(mine, theirs);
       var hit = apply(merged);
       var changed = hit.drill || hit.para || hit.inbox;
       refreshViews(hit);
+      // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
+      // 「同期しました」で流すと、届いていないのに届いた気になる
+      state.saveNote = saveFailNote(hit);
       if (hit.drill) announceArrivals(before, merged);
 
       // 受け渡しファイルの間引き。
@@ -1135,12 +1219,16 @@
       }).then(function () { return changed; });
     }).then(function (changed) {
       lsSet(LS_LAST, String(Date.now()));
-      lsRemove(LS_ERR);
+      var saveNote = state.saveNote;
+      state.saveNote = '';
+      // 書けなかったのなら、それは「済んだ」ことにしない。⚠ を残して次に気付けるようにする
+      if (saveNote) lsSet(LS_ERR, saveNote + '\n' + Date.now()); else lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
       var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
       if (state.handedNote) { msg += '\n' + state.handedNote; state.handedNote = ''; }
       if (state.repairNote) { msg += '\n' + state.repairNote; state.repairNote = ''; }
-      if (!silent || changed) setStatus(msg, false);
+      if (saveNote) msg += '\n⚠ ' + saveNote;
+      if (!silent || changed || saveNote) setStatus(msg, !!saveNote);
       renderState();
       return true;
     }, function (err) {
@@ -1388,7 +1476,7 @@
 
     if (save) save.addEventListener('click', function () {
       try {
-        downloadFile('sunkan-' + stamp() + '.json', JSON.stringify(snapshot(), null, 2));
+        downloadFile('sunkan-' + fileStamp() + '.json', JSON.stringify(snapshot(), null, 2));
         setStatus('書き出しました。AirDrop などでもう片方の端末へ送り、そちらで「ファイルを読み込む」を押してください。', false);
       } catch (e) {
         setStatus('書き出せませんでした。', true);
@@ -1410,8 +1498,7 @@
             setStatus('瞬間英作文の書き出しファイルではないようです。', true);
             return;
           }
-          var changed = takeIn(clean(parsed));
-          setStatus(changed ? 'もう片方の端末のぶんを取り込みました。' : '取り込みました（新しいものはありませんでした）。', false);
+          report(takeIn(clean(parsed)));
         };
         reader.onerror = function () { setStatus('このファイルは読めませんでした。', true); };
         reader.readAsText(f, 'utf-8');
@@ -1546,7 +1633,37 @@
     /** 足した 1 文の鍵。呼ぶ側と作り方をそろえるためここで配る */
     addedKey: addedKey,
     /** 収録の文への上書き 1 件の鍵。「元に戻す」を記録するのに使う */
-    editKey: editKey
+    editKey: editKey,
+    /** バックアップの中身（JSON 文字列）。設定から書き出すのに使う */
+    backupText: function () { return JSON.stringify(snapshot(), null, 2); },
+    /** バックアップのファイル名。日付が入るので、どれが新しいか分かる */
+    backupName: function () { return 'sunkan-' + fileStamp() + '.json'; },
+    /**
+     * 書き出したファイルの中身を取り込む。{ok, message} を返す。
+     * 画面へ出すのは呼んだ側（設定からでも同期ダイアログからでも使えるように）。
+     */
+    takeBackupText: function (text) {
+      var parsed;
+      try { parsed = JSON.parse(text); }
+      catch (e) { return { ok: false, message: 'このファイルは読めませんでした。' }; }
+      if (!isObject(parsed) || parsed.app !== 'sunkan') {
+        return { ok: false, message: '瞬間英作文の書き出しファイルではないようです。' };
+      }
+      var changed;
+      try {
+        changed = takeIn(clean(parsed));
+      } catch (e2) {
+        return { ok: false, message: '読み込めませんでした（' + (e2 && e2.message ? e2.message : '理由不明') + '）。' };
+      }
+      // 保存に失敗したぶんは黙って飲み込まない（同期ダイアログの report と同じ扱い）
+      var note = state.saveNote;
+      state.saveNote = '';
+      var msg = changed
+        ? '読み込みました。書き出したときのぶんを取り込みました。'
+        : '読み込みました（新しいものはありませんでした）。';
+      if (note) return { ok: false, message: msg + '\n⚠ ' + note };
+      return { ok: true, message: msg };
+    }
   };
 
   function init() {

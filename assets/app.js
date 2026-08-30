@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 28 (2026-08-24)';
+  var APP_VERSION = 'build 29 (2026-08-30)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -130,12 +130,44 @@
     }
   }
 
+  // 保存が届かなかったときの言い分。空き容量切れ・プライベートモード・
+  // 保存を禁じた設定など、理由はいろいろだが、利用者にとっては同じ
+  //「足したはずのものが読み込み直すと消える」なので、まとめて知らせる。
+  var STORAGE_MSG = 'この端末に保存できませんでした（空き容量が足りないか、保存が禁じられています）。'
+    + '読み込み直すと元に戻ります。';
+  var storageNoticeTimer = null;
+
+  /** 保存できなかったことを、いま見えている所に出す（黙って落とさない）。
+      成功のしらせを上書きできるよう、同じ処理が済んだあとに回す。
+      1 つの操作で複数のキーを書くことがあるので、同じ回のぶんは 1 度にまとめる。 */
+  function flagStorageProblem() {
+    if (storageNoticeTimer) return;
+    storageNoticeTimer = window.setTimeout(function () {
+      storageNoticeTimer = null;
+      showStorageProblem();
+    }, 0);
+  }
+
+  /** ダイアログが開いていると status バーは見えない。開いている所へ出す */
+  function showStorageProblem() {
+    if (elAddDialog && elAddDialog.open) { setAddStatus(STORAGE_MSG, true); return; }
+    if (elEditDialog && elEditDialog.open) { setEditStatus(STORAGE_MSG, true); return; }
+    if (elDataDialog && elDataDialog.open && elImportPreview) {
+      elImportPreview.textContent = STORAGE_MSG;
+      return;
+    }
+    flashStatus(STORAGE_MSG);
+  }
+
   function lsSet(key, value) {
     try {
       window.localStorage.setItem(key, value);
       return true;
     } catch (e) {
-      return false; // 保存できなくてもアプリは動き続ける
+      // 保存できなくてもアプリは動き続けるが、黙って続けると
+      //「追加したのに読み込み直したら消えていた」になる
+      flagStorageProblem();
+      return false;
     }
   }
 
@@ -505,7 +537,7 @@
   }
 
   function saveSettings() {
-    writeJSON(LS_SETTINGS, state.settings);
+    return writeJSON(LS_SETTINGS, state.settings);
   }
 
   applySettingsToRoot(); // ← DOM 参照より前に実行
@@ -569,6 +601,19 @@
   var elOptAutoSpeakNote = $('opt-auto-speak-note');
   var elAppVersion = $('app-version');
   var elForceUpdate = $('btn-force-update');
+  var elBackupOut = $('btn-backup-out');
+  var elBackupIn = $('btn-backup-in');
+  var elBackupFile = $('backup-file');
+  var elCsvOut = $('btn-csv-out');
+  var elCsvHint = $('csv-hint');
+  var elDataStatus = $('data-status');
+  var elVoiceOpen = $('btn-voice');
+  var elVoiceNow = $('voice-now');
+  var elVoiceDialog = $('voice-dialog');
+  var elVoiceSelect = $('voice-select');
+  var elVoiceStatus = $('voice-status');
+  var elVoiceTest = $('btn-voice-test');
+  var elVoiceClose = $('btn-voice-close');
   var elForceUpdateStatus = $('force-update-status');
   var elOptFontSize = $('opt-font-size');
   var elOptFontOut = $('opt-font-size-out');
@@ -655,7 +700,7 @@
   }
 
   function saveAdded() {
-    writeJSON(LS_ADDED, state.added);
+    return writeJSON(LS_ADDED, state.added);
   }
 
   function addedFor(deckId) {
@@ -739,7 +784,7 @@
   }
 
   function saveEdits() {
-    writeJSON(LS_EDITS, state.edits);
+    return writeJSON(LS_EDITS, state.edits);
   }
 
   function editsFor(deckId) {
@@ -773,7 +818,7 @@
   }
 
   function saveStars() {
-    writeJSON(LS_STARS, state.stars);
+    return writeJSON(LS_STARS, state.stars);
   }
 
   function starListFor(deckId) {
@@ -939,6 +984,10 @@
       var list = allDecks();
       deck = list.length ? list[0] : null;
     }
+    // 別のセットへ移るなら、前のセットの行を読んでいた音は止める。
+    // 同じセットを作り直しただけ（裏の同期・編集）のときは止めない。
+    if (state.speakingId && (!state.deck || !deck || state.deck.id !== deck.id)) stopSpeech();
+
     state.deck = deck;
     state.records = deck ? buildRecords(deck) : [];
     state.byId = {};
@@ -980,21 +1029,26 @@
     } else {
       rec.el.classList.remove('is-revealed');
       if (rec.mainEl) rec.mainEl.setAttribute('aria-expanded', 'false');
+      // 閉じた行の音は残さない。「全部隠す」でも「1行だけ開く」でも同じ
+      if (state.speakingId === rec.id) stopSpeech();
     }
   }
 
   function toggleRow(rec) {
     if (!rec) return;
     var next = !rec.revealed;
-    if (next && state.settings.autoHide && state.lastRevealed && state.lastRevealed !== rec) {
-      setRevealed(state.lastRevealed, false); // 1 行だけ開く
+    if (next && state.settings.autoHide) {
+      // 1 行だけ開く。直前の 1 行だけでなく、開いているものは全部閉じる
+      //（「全部表示」のあとや、同期の作り直しで開いた行が戻ったあとでも効かせる）
+      for (var i = 0; i < state.records.length; i++) {
+        if (state.records[i] !== rec) setRevealed(state.records[i], false);
+      }
     }
     setRevealed(rec, next);
     state.lastRevealed = next ? rec : null;
     setCurrent(rec, false);
     syncToggleAllButton();
-    if (next) maybeAutoSpeak(rec);
-    else if (state.speakingId === rec.id) stopSpeech(); // 閉じた行の音は残さない
+    if (next) maybeAutoSpeak(rec);   // 閉じたときは setRevealed が音も止める
   }
 
   /** 「表示したら自動で読み上げる」設定のときだけ喋る。
@@ -1005,17 +1059,25 @@
     speakRecord(rec);
   }
 
+  /** 「全部表示 / 全部隠す」は、いま表示されている行にだけ効かせる。
+      検索で 3 件に絞ったのに 360 文ぜんぶ開いてしまうと、
+      検索を消したときに答えが全部見えている状態になる。 */
   function setAllRevealed(on) {
-    for (var i = 0; i < state.records.length; i++) {
-      setRevealed(state.records[i], on);
+    var list = visibleRecords();
+    for (var i = 0; i < list.length; i++) {
+      setRevealed(list[i], on);
     }
     state.lastRevealed = null;
     syncToggleAllButton();
   }
 
+  /** 表示されている行の中に開いているものがあるか。
+      隠れている行まで数えると、押しても何も起きないのに
+      ボタンだけ「隠す」と言っている状態になる。 */
   function anyRevealed() {
-    for (var i = 0; i < state.records.length; i++) {
-      if (state.records[i].revealed) return true;
+    var list = visibleRecords();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].revealed) return true;
     }
     return false;
   }
@@ -1139,6 +1201,8 @@
       }
     }
 
+    // 表示される行が変わるとボタンの意味も変わる（隠れた行は数えない）
+    syncToggleAllButton();
     updateStatusBar();
   }
 
@@ -1187,6 +1251,27 @@
     }
     elRows.appendChild(frag);
     renumber();
+  }
+
+  /**
+   * 作り直したあと、前の表示順（id の並び）に戻す。
+   * 前に無かった行（足したばかりの文・同期で届いた文）は末尾に置く。
+   */
+  function restoreOrder(idOrder) {
+    var rank = {}, known = [], fresh = [], i, rec;
+    for (i = 0; i < idOrder.length; i++) {
+      if (!hasOwn(rank, idOrder[i])) rank[idOrder[i]] = i;
+    }
+    for (i = 0; i < state.records.length; i++) {
+      rec = state.records[i];
+      if (hasOwn(rank, rec.id)) known.push(rec);
+      else fresh.push(rec);
+    }
+    known.sort(function (a, b) { return rank[a.id] - rank[b.id]; });
+    state.order = known.concat(fresh);
+    state.shuffled = true;
+    updateShuffleButton();
+    reorderDom();
   }
 
   function updateShuffleButton() {
@@ -1247,14 +1332,11 @@
   /** いま開いているセットを保ったまま、行を作り直して表示を更新する */
   function refreshCurrentDeck() {
     if (!state.deck) return;
-    var keepQuery = state.query;
     var keepCurrent = state.currentId;
+    // state.query も検索欄もそのまま。selectDeck の中の applyFilter がそのまま効く。
+    // ここで検索欄へ state.query（小文字に潰した検索語）を書き戻すと、
+    // 打った文字が勝手に変わる。
     selectDeck(state.deck.id, { persist: false });
-    if (keepQuery && elSearch) {
-      elSearch.value = keepQuery;
-      state.query = keepQuery;
-      applyFilter();
-    }
     if (keepCurrent && state.byId[keepCurrent]) setCurrent(state.byId[keepCurrent], false);
   }
 
@@ -1273,6 +1355,8 @@
     }
     var wasCurrent = state.currentId;
     var wasShuffled = state.shuffled;
+    var wasOrder = [];
+    for (i = 0; i < state.order.length; i++) wasOrder.push(state.order[i].id);
     var scrollY = window.pageYOffset;
 
     rebuild();
@@ -1286,6 +1370,11 @@
         if (newId) open[newId] = true;
       }
       if (wasCurrent === moved.id) wasCurrent = newId;
+      if (newId && newId !== moved.id) {
+        for (i = 0; i < wasOrder.length; i++) {
+          if (wasOrder[i] === moved.id) wasOrder[i] = newId;
+        }
+      }
     }
 
     var lastOpen = null;
@@ -1298,12 +1387,29 @@
     // 覚え直さないと「次の行を開いたら前の行を隠す」が効かなくなる
     state.lastRevealed = lastOpen;
     if (wasCurrent && state.byId[wasCurrent]) setCurrent(state.byId[wasCurrent], false);
-    if (wasShuffled && state.records.length) toggleShuffle();
+    // シャッフル中に作り直したときは、シャッフルし直さずに元の並びへ戻す。
+    // 引き直すと読んでいた場所ごと飛んでしまう（1 文足しただけで全部並び替わる）。
+    if (wasShuffled && state.records.length) restoreOrder(wasOrder);
 
     syncToggleAllButton();
     updateStatusBar();
     window.scrollTo(0, scrollY);   // 読んでいた位置に戻す
     return newId;
+  }
+
+  /** その文が、いまの検索・絞り込みで隠れているか */
+  function isFilteredOut(ja, en) {
+    var rec = findRecordByText(ja, en);
+    return !!(rec && rec.el && rec.el.hidden);
+  }
+
+  /** いま隠している理由を短く言う。無ければ空文字 */
+  function whyHidden() {
+    if (state.query) {
+      return 'いまの検索「' + (elSearch ? trim(elSearch.value) : state.query) + '」に当てはまらないので、表には出ていません。';
+    }
+    if (state.settings.starredOnly) return '「★だけ表示」なので、表には出ていません。';
+    return '絞り込みに当てはまらないので、表には出ていません。';
   }
 
   function findRecordByText(ja, en) {
@@ -1350,9 +1456,12 @@
     if (elAddEn) elAddEn.value = '';
     if (elAddNote) elAddNote.value = '';
 
-    refreshCurrentDeck();
+    rebuildKeepingView(refreshCurrentDeck);
     renderAddedList();
-    setAddStatus('「' + ja + '」を追加しました。続けて入力できます。', false);
+    // 足した文が検索で隠れているなら、そう言う。黙っていると
+    //「追加したのに表に出てこない」＝足せていないように見える。
+    var hiddenNote = isFilteredOut(ja, en) ? ' ' + whyHidden() : '';
+    setAddStatus('「' + ja + '」を追加しました。続けて入力できます。' + hiddenNote, false);
     if (elAddJa) elAddJa.focus();
   }
 
@@ -1361,7 +1470,7 @@
     if (!rec || !rec.added) return;
     if (!window.confirm('「' + rec.ja + '」を削除します。よろしいですか？')) return;
     removeAddedSentence(currentDeckId(), rec.ja, rec.en);
-    refreshCurrentDeck();
+    rebuildKeepingView(refreshCurrentDeck);
     renderAddedList();
   }
 
@@ -1538,7 +1647,11 @@
 
     renderAddedList();   // 追加ダイアログの一覧にも直した文を出す
     editingId = null;
+    var vanished = isFilteredOut(ja, en);
     closeDialog(elEditDialog);
+    // 直した文が検索から外れると、表からすっと消える。理由を言わないと
+    //「編集したら文が消えた」に見える。
+    if (vanished) flashStatus('直しました。' + whyHidden());
   }
 
   /** 上書きを捨てて収録の文へ戻す */
@@ -1549,6 +1662,198 @@
     rebuildKeepingView(refreshCurrentDeck);
     editingId = null;
     closeDialog(elEditDialog);
+  }
+
+  /* ============================================================
+   * 17d. データの持ち出し（バックアップ・CSV）
+   *
+   * 機種変更のときに手ぶらで移れるようにするための出口。
+   * バックアップ（JSON）は同期と同じ形なので、読み込めば★も上書きも戻る。
+   * CSV は Excel などで開くためのもので、いま開いているセットの文だけ。
+   * ========================================================== */
+
+  function setDataStatus(msg, isError) {
+    if (!elDataStatus) return;
+    elDataStatus.textContent = msg || '';
+    if (isError) elDataStatus.setAttribute('data-error', 'true');
+    else elDataStatus.removeAttribute('data-error');
+  }
+
+  /** 中身をファイルとして落とす。押しても何も起きない、を作らないため戻り値で返す */
+  function downloadText(name, text, mime) {
+    try {
+      var blob = new window.Blob([text], { type: mime || 'text/plain;charset=utf-8' });
+      var url = window.URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      // click() の直後に外すと、ブラウザが download 属性を拾う前に消えてしまい、
+      // ファイル名が "download" になる。片付けは少し置いてから。
+      window.setTimeout(function () {
+        window.URL.revokeObjectURL(url);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 1000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** CSV の 1 マス。区切り・引用符・改行が入っていても壊れないように包む */
+  function csvCell(v) {
+    var t = str(v);
+    if (/[",\r\n]/.test(t)) return '"' + t.replace(/"/g, '""') + '"';
+    return t;
+  }
+
+  /**
+   * いま開いているセットを CSV に。
+   * 先頭に BOM を付ける。付けないと Excel が UTF-8 と見てくれず、
+   * 日本語が文字化けして「開ける」と言った意味がなくなる。
+   * 改行も CRLF にしておく（Excel はそちらを好む）。
+   */
+  function deckToCSV(records) {
+    var rows = ['日本語,英語,メモ'];
+    for (var i = 0; i < records.length; i++) {
+      rows.push(csvCell(records[i].ja) + ',' + csvCell(records[i].en) + ',' + csvCell(records[i].note));
+    }
+    return '\uFEFF' + rows.join('\r\n') + '\r\n';
+  }
+
+  /**
+   * ファイル名に使う部分。
+   * 日本語のままだと、ブラウザによっては名前ごと捨てられて「download」という
+   * 拡張子なしのファイルになる（Excel で開けなくなる）。確実に開けるほうを取り、
+   * 英数字だけ残す。どのセットを書き出したかは、画面のほうで名指しする。
+   */
+  function safeName(name) {
+    var t = str(name).replace(/[^A-Za-z0-9 _-]+/g, ' ').replace(/\s+/g, ' ').replace(/^ | $/g, '');
+    return t ? t.replace(/ /g, '-') : 'sunkan';
+  }
+
+  function todayStamp() {
+    var d = new Date();
+    function two(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + two(d.getMonth() + 1) + two(d.getDate());
+  }
+
+  function exportBackup() {
+    var sync = window.SUNKAN_SYNC;
+    if (!sync || typeof sync.backupText !== 'function') {
+      setDataStatus('この画面では書き出せません。', true);
+      return;
+    }
+    var text, name;
+    try {
+      text = sync.backupText();
+      name = sync.backupName();
+    } catch (e) {
+      setDataStatus('書き出せませんでした（' + (e && e.message ? e.message : '理由不明') + '）。', true);
+      return;
+    }
+    if (downloadText(name, text, 'application/json')) {
+      setDataStatus(name + ' を書き出しました。新しい端末で「バックアップを読み込む」を押してください。', false);
+    } else {
+      setDataStatus('書き出せませんでした。', true);
+    }
+  }
+
+  function importBackup(file) {
+    var sync = window.SUNKAN_SYNC;
+    if (!sync || typeof sync.takeBackupText !== 'function') {
+      setDataStatus('この画面では読み込めません。', true);
+      return;
+    }
+    var reader = new window.FileReader();
+    reader.onload = function () {
+      var r = sync.takeBackupText(reader.result);
+      setDataStatus(r.message, !r.ok);
+    };
+    reader.onerror = function () { setDataStatus('このファイルは読めませんでした。', true); };
+    try {
+      reader.readAsText(file, 'utf-8');
+    } catch (e) {
+      setDataStatus('このファイルは読めませんでした。', true);
+    }
+  }
+
+  function exportCSV() {
+    if (!state.deck || !state.records.length) {
+      setDataStatus('書き出せるセットがありません。', true);
+      return;
+    }
+    var name = 'sunkan-' + safeName(state.deck.name) + '-' + todayStamp() + '.csv';
+    if (downloadText(name, deckToCSV(state.records), 'text/csv;charset=utf-8')) {
+      setDataStatus('「' + state.deck.name + '」を ' + state.records.length + ' 行、'
+        + name + ' に書き出しました。', false);
+    } else {
+      setDataStatus('書き出せませんでした。', true);
+    }
+  }
+
+  /* ============================================================
+   * 17e. 音声の設定（声を選ぶ）
+   *
+   * 入っている声は端末ごとに違うので、この設定は同期しない。
+   * 覚えておくのは speech.js（声のことは 1 か所に閉じ込める約束）。
+   * ========================================================== */
+
+  function speechPortOrNull() {
+    var p = window.SUNKAN_SPEECH;
+    return (p && typeof p.voices === 'function') ? p : null;
+  }
+
+  /** 設定の「音声の設定」の右に、いま使っている声を出す */
+  function renderVoiceNow() {
+    if (!elVoiceNow) return;
+    var port = speechPortOrNull();
+    if (!port || !port.supported()) { elVoiceNow.textContent = '使えません'; return; }
+    var name = port.voiceName();
+    if (!name) { elVoiceNow.textContent = port.chosenVoice() ? '選んだ声が見つかりません' : 'おまかせ'; return; }
+    var lang = port.voiceLang();
+    elVoiceNow.textContent = port.chosenVoice() ? (name + (lang ? '（' + lang + '）' : '')) : (name + '（おまかせ）');
+  }
+
+  function renderVoiceList() {
+    if (!elVoiceSelect) return;
+    var port = speechPortOrNull();
+    elVoiceSelect.innerHTML = '';
+
+    var auto = document.createElement('option');
+    auto.value = '';
+    auto.textContent = 'おまかせ（英語の声を自動で選ぶ）';
+    elVoiceSelect.appendChild(auto);
+
+    var list = port ? port.voices() : [];
+    for (var i = 0; i < list.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = list[i].id;
+      opt.textContent = list[i].name + (list[i].lang ? '（' + list[i].lang + '）' : '');
+      elVoiceSelect.appendChild(opt);
+    }
+    elVoiceSelect.value = port ? port.chosenVoice() : '';
+    // 選んだ声が入っていない端末では value が空に落ちる。おまかせに戻して見せる
+    if (elVoiceSelect.value !== (port ? port.chosenVoice() : '')) elVoiceSelect.value = '';
+
+    if (!port || !port.supported()) {
+      elVoiceSelect.disabled = true;
+      setVoiceStatus('この端末（このブラウザ）は読み上げに対応していません。', true);
+    } else if (!list.length) {
+      elVoiceSelect.disabled = true;
+      setVoiceStatus('英語の声が見つかりません。端末の設定で英語の音声を入れると選べます。', true);
+    } else {
+      elVoiceSelect.disabled = false;
+      setVoiceStatus('', false);
+    }
+  }
+
+  function setVoiceStatus(msg, isError) {
+    if (!elVoiceStatus) return;
+    elVoiceStatus.textContent = msg || '';
+    if (isError) elVoiceStatus.setAttribute('data-error', 'true');
+    else elVoiceStatus.removeAttribute('data-error');
   }
 
   /* ============================================================
@@ -1818,19 +2123,21 @@
     var typedName = trim(elImportName ? elImportName.value : '');
 
     if (!parsed.items.length) {
-      // 名前だけ入れて「読み込む」を押した＝空のセットを作りたい、と受け取る。
+      // 名前**だけ**入れて「読み込む」を押した＝空のセットを作りたい、と受け取る。
       // ここで何も作らずに終わると、名前を付けたのに何も起きない行き止まりになる。
-      if (typedName) {
+      if (typedName && !trim(text)) {
         createEmptyDeck(typedName);
         if (elImportName) elImportName.value = '';
         if (elImportPreview) elImportPreview.textContent = '';
         closeDialog(elDataDialog);
         return;
       }
+      // 貼った中身があるのに 1 行も読めなかったときは、空のセットを作って
+      // 閉じてはいけない。貼ったものが黙って捨てられたように見える。
       if (elImportPreview) {
         elImportPreview.textContent =
           '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。'
-          + ' 空のセットを作りたいときは、上の「セット名」に名前を入れて「読み込む」を押してください。';
+          + ' 空のセットを作りたいときは、貼り付けた文字を消してから、上の「セット名」に名前を入れて「読み込む」を押してください。';
       }
       return;
     }
@@ -2022,6 +2329,13 @@
       elOptAutoSpeak.disabled = !state.speechOK;
     }
     if (elOptAutoSpeakNote) elOptAutoSpeakNote.hidden = state.speechOK;
+    renderVoiceNow();
+    if (elCsvHint) {
+      elCsvHint.textContent = state.deck
+        ? '「' + state.deck.name + '」を Excel などで開ける形に'
+        : 'Excel などで開ける';
+    }
+    setDataStatus('', false);
     if (elOptFontSize) elOptFontSize.value = String(state.settings.fontSize);
     if (elOptFontOut) elOptFontOut.textContent = FONT_LABELS[state.settings.fontSize] || '標準';
   }
@@ -2145,7 +2459,7 @@
         var en = btn.getAttribute('data-en');
         if (!window.confirm('「' + ja + '」を削除します。よろしいですか？')) return;
         removeAddedSentence(currentDeckId(), ja, en);
-        refreshCurrentDeck();
+        rebuildKeepingView(refreshCurrentDeck);
         renderAddedList();
         setAddStatus('削除しました。', false);
       });
@@ -2238,6 +2552,52 @@
     if (elOptStarredOnly) elOptStarredOnly.addEventListener('change', onStarredOnlyChange);
     if (elOptAutoSpeak) elOptAutoSpeak.addEventListener('change', onAutoSpeakChange);
 
+    // --- データの持ち出し ---
+    if (elBackupOut) elBackupOut.addEventListener('click', exportBackup);
+    if (elBackupIn && elBackupFile) {
+      elBackupIn.addEventListener('click', function () { elBackupFile.click(); });
+      elBackupFile.addEventListener('change', function () {
+        var f = elBackupFile.files && elBackupFile.files[0];
+        elBackupFile.value = '';   // 同じファイルを選び直せるように
+        if (f) importBackup(f);
+      });
+    }
+    if (elCsvOut) elCsvOut.addEventListener('click', exportCSV);
+
+    // --- 音声の設定 ---
+    if (elVoiceOpen) {
+      elVoiceOpen.addEventListener('click', function () {
+        renderVoiceList();
+        openDialog(elVoiceDialog, elVoiceOpen);
+      });
+    }
+    if (elVoiceSelect) {
+      elVoiceSelect.addEventListener('change', function () {
+        var port = speechPortOrNull();
+        if (!port) return;
+        port.setVoice(elVoiceSelect.value);
+        renderVoiceNow();
+        setVoiceStatus(elVoiceSelect.value ? 'この声にしました。「聞いてみる」で確かめられます。'
+                                           : 'おまかせに戻しました。', false);
+      });
+    }
+    if (elVoiceTest) {
+      // タップから同期で呼ぶ（あいだに何か挟むと iOS で鳴らない）
+      elVoiceTest.addEventListener('click', function () {
+        var port = speechPortOrNull();
+        if (!port || !port.supported()) { setVoiceStatus('この端末では読み上げが使えません。', true); return; }
+        port.speak('This is how the English will sound.');
+        setVoiceStatus('鳴らしています…', false);
+      });
+    }
+    if (elVoiceClose) {
+      elVoiceClose.addEventListener('click', function () {
+        var port = speechPortOrNull();
+        if (port) port.cancel();   // 試し聞きを持ち越さない
+        closeDialog(elVoiceDialog);
+      });
+    }
+
     // 古い一式が居座って更新が届かないときの逃げ道。update.js が実際の始末をする
     if (elForceUpdate) {
       elForceUpdate.addEventListener('click', function () {
@@ -2253,7 +2613,7 @@
     }
 
     // Esc などで閉じたときもフォーカスを戻す
-    [elDataDialog, elSettingsDialog, elEditDialog].forEach(function (d) {
+    [elDataDialog, elSettingsDialog, elEditDialog, elVoiceDialog].forEach(function (d) {
       if (!d) return;
       d.addEventListener('close', restoreFocus);
       d.addEventListener('cancel', function () { /* 既定の閉じる動作に任せる */ });
@@ -2291,7 +2651,7 @@
     }
 
     if (result.added) {
-      refreshCurrentDeck();
+      rebuildKeepingView(refreshCurrentDeck);
       renderAddedList();
       renderDeckManageList();
       updateStatusBar();
