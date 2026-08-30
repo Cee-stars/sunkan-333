@@ -383,11 +383,19 @@
       added++;
     }
     if (!added) return 0;
+
+    // 受信箱は MAX_PENDING 件で頭を打つ。あふれたぶんは writeRaw が古いほうから捨てるので、
+    // 足せた数をそのまま返すと「500 件届きました」と言いながら中身が無いことになる。
+    // 落としたことは黙らずに帯へ出し、返す数も実際に残ったぶんにそろえる。
+    var dropped = raw.length > MAX_PENDING ? raw.length - MAX_PENDING : 0;
     writeRaw(raw);
     state.dismissed = '';   // 「あとで」で畳んでいても、新しく届いたので出す
     clearFlash();
     refresh();
-    return added;
+    if (dropped) {
+      flash('受信箱は ' + MAX_PENDING + ' 件までです。古いほうから ' + dropped + ' 件を落としました。');
+    }
+    return added > MAX_PENDING ? MAX_PENDING : added;
   }
 
   window.SUNKAN_INBOX = {
