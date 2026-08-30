@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 30 (2026-08-30)';
+  var APP_VERSION = 'build 31 (2026-08-30)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -1669,6 +1669,34 @@
     closeDialog(elEditDialog);
   }
 
+  /**
+   * 版の表示。
+   *
+   * 出すのは「いま読み込まれている index.html の版」。ここを app.js の
+   * 数字にしていたせいで、index.html だけが古いまま（本体は新しい）のときに
+   * 「build 30」と出て、それでいて画面には新しいものが何も無い、という
+   * いちばん困る状態を作っていた。版ずれの帯も出なかった。
+   *
+   * 2 つが食い違っていたら、それ自体が「途中まで新しくなっている」しるしなので、
+   * 黙らずに言う。
+   */
+  function htmlBuild() {
+    var m = document.querySelector('meta[name="sunkan-build"]');
+    return m ? trim(m.getAttribute('content')) : '';
+  }
+
+  function renderVersionLine() {
+    if (!elAppVersion) return;
+    var page = htmlBuild();
+    elAppVersion.textContent = page || APP_VERSION;
+    // update.js が突き合わせに使う。読む側と作る側で取り違えないよう属性で渡す
+    elAppVersion.setAttribute('data-app-build', APP_VERSION);
+    elAppVersion.setAttribute('data-page-build', page);
+    if (page && page !== APP_VERSION) {
+      elAppVersion.textContent = page + '（本体は ' + APP_VERSION + '）';
+    }
+  }
+
   /* ============================================================
    * 17d. データの持ち出し（バックアップ・CSV）
    *
@@ -2813,7 +2841,7 @@
   function init() {
     if (!elRows || !elRowTemplate) return; // DOM が想定と違うときは何もしない
 
-    if (elAppVersion) elAppVersion.textContent = APP_VERSION;
+    renderVersionLine();
 
     initSpeech();
     loadStars();

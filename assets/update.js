@@ -28,9 +28,29 @@
 
   function trim(v) { return (v === null || v === undefined ? '' : String(v)).replace(/^\s+|\s+$/g, ''); }
 
+  /**
+   * いま動いている版。
+   * 見るのは **index.html 自身の版**（meta[name=sunkan-build]）。
+   * app.js の中の数字を見ていたせいで、index.html だけが古いまま
+   * （本体は新しい）のときに「最新です」と言ってしまい、
+   * 画面に何も新しいものが無いのに帯も出ない、という状態を作っていた。
+   */
   function running() {
-    var el = document.getElementById('app-version');
+    var m = document.querySelector('meta[name="sunkan-build"]');
+    var page = m ? trim(m.getAttribute('content')) : '';
+    if (page) return page;
+    var el = document.getElementById('app-version');   // 古い版には meta が無い
     return el ? trim(el.textContent) : '';
+  }
+
+  /** index.html と app.js の版が食い違っていないか（途中まで新しくなっている） */
+  function halfUpdated() {
+    var el = document.getElementById('app-version');
+    if (!el) return '';
+    var app = trim(el.getAttribute('data-app-build'));
+    var page = trim(el.getAttribute('data-page-build'));
+    if (!app || !page) return '';
+    return app === page ? '' : page;
   }
 
   function withTimeout(p) {
@@ -82,6 +102,16 @@
 
     var mine = running();
     if (!mine || mine === '-') return;   // まだ出ていない
+
+    // 相手に聞くまでもなく、手元だけで分かる食い違い
+    var half = halfUpdated();
+    if (half) {
+      latest = 'mixed';
+      if (dismissed !== 'mixed') {
+        show('画面の一部が古いままです（ページは ' + half + '）。「更新する」で揃います。');
+      }
+      return;
+    }
 
     fetchLatest().then(function (theirs) {
       latest = theirs;

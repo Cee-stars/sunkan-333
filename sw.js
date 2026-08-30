@@ -5,7 +5,7 @@
 
 // 名前を変えると activate で古いキャッシュを丸ごと捨てられる。
 // 配信方法を変えたときは必ず上げること。
-var CACHE = 'sunkan-v27';
+var CACHE = 'sunkan-v28';
 
 var ASSETS = [
   './',
@@ -61,8 +61,22 @@ self.addEventListener('fetch', function (event) {
   // 以前はキャッシュ優先にしていたが、それだと更新を出しても
   // 古い一式が返り続けて「何も変わらない」状態になる。
   // オフライン対応より、更新が確実に届くことを優先する。
+  // ブラウザ自身のキャッシュを素通りさせない。
+  // ネットワーク優先にしていても、fetch(req) はブラウザの持っている一式を
+  // そのまま返すことがある。実際それで index.html だけが古いまま残り、
+  // 本体（app.js）は新しい、という半端な状態になった。
+  // no-cache は「毎回サーバーに確かめる」であって「毎回落とし直す」ではないので、
+  // 変わっていなければ 304 で済む。
+  function freshFetch(request) {
+    try {
+      return fetch(request, { cache: 'no-cache' });
+    } catch (e) {
+      return fetch(request);   // 受け付けない実装のために元の道も残す
+    }
+  }
+
   event.respondWith(
-    fetch(req).then(function (res) {
+    freshFetch(req).then(function (res) {
       if (res && res.status === 200 && res.type === 'basic') {
         var copy = res.clone();
         caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
