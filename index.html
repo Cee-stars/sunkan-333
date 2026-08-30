@@ -72,6 +72,7 @@
       <span aria-hidden="true">⇅</span><span class="btn-label">シャッフル</span>
     </button>
 
+    <button type="button" id="btn-menu" class="btn btn--icon" aria-label="メニュー" aria-haspopup="dialog">☰</button>
     <button type="button" id="btn-settings" class="btn btn--icon" aria-label="設定" aria-haspopup="dialog">⚙</button>
   </div>
 
@@ -330,6 +331,55 @@
   </form>
 </dialog>
 
+<!-- ===== メニュー（持ち出しと端末まわりを 1 か所に） ===== -->
+<dialog id="menu-dialog" class="dialog dialog--sheet" aria-labelledby="menu-dialog-title">
+  <form method="dialog" class="dialog-inner sheet-inner">
+    <h2 id="menu-dialog-title" class="dialog-title">メニュー</h2>
+
+    <ul class="sheet-list">
+      <li class="sheet-item">
+        <button type="button" id="btn-backup-out" class="sheet-btn">
+          <span class="sheet-label">バックアップを書き出す</span>
+          <span class="sheet-hint">JSON ファイル</span>
+        </button>
+      </li>
+      <li class="sheet-item">
+        <button type="button" id="btn-backup-in" class="sheet-btn">
+          <span class="sheet-label">バックアップを読み込む</span>
+          <span class="sheet-hint">JSON / CSV</span>
+        </button>
+      </li>
+      <li class="sheet-item">
+        <button type="button" id="btn-csv-out" class="sheet-btn">
+          <span class="sheet-label">CSV で書き出す</span>
+          <span class="sheet-hint" id="csv-hint">Excel などで開ける</span>
+        </button>
+      </li>
+      <li class="sheet-item">
+        <button type="button" id="btn-voice" class="sheet-btn" aria-haspopup="dialog">
+          <span class="sheet-label">音声の設定</span>
+          <span class="sheet-hint" id="voice-now">おまかせ</span>
+        </button>
+      </li>
+      <li class="sheet-item">
+        <button type="button" id="btn-menu-sync" class="sheet-btn" aria-haspopup="dialog">
+          <span class="sheet-label">同期の設定</span>
+          <span class="sheet-hint" id="menu-sync-hint">まだ設定していません</span>
+        </button>
+      </li>
+    </ul>
+
+    <input type="file" id="backup-file" accept=".json,.csv,.tsv,.txt,application/json,text/csv" hidden>
+    <p class="dialog-note" id="data-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-menu-close" class="btn btn--primary sheet-close">閉じる</button>
+    </div>
+
+    <p class="dialog-hint sheet-foot">機種変更のときは書き出し → 新しい端末で読み込み</p>
+  </form>
+</dialog>
+
 <!-- ===== 音声の設定ダイアログ ===== -->
 <dialog id="voice-dialog" class="dialog" aria-labelledby="voice-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -535,10 +585,6 @@
       <legend class="field-label">読み上げ</legend>
       <label class="check"><input type="checkbox" id="opt-auto-speak"> 英語を表示したら自動で読み上げる</label>
       <p class="dialog-hint" id="opt-auto-speak-note" hidden>この端末（このブラウザ）は読み上げに対応していません。🔈 のボタンも出しません。</p>
-      <div class="menu-row">
-        <button type="button" id="btn-voice" class="btn btn--ghost" aria-haspopup="dialog">音声の設定</button>
-        <span class="menu-hint" id="voice-now">おまかせ</span>
-      </div>
     </fieldset>
 
     <fieldset class="field-group">
@@ -553,29 +599,6 @@
       <button type="button" id="btn-sync-open" class="btn btn--ghost" aria-haspopup="dialog">
         同期の設定<span class="sync-state" id="sync-state"></span>
       </button>
-    </fieldset>
-
-    <fieldset class="field-group">
-      <legend class="field-label">データ</legend>
-
-      <div class="menu-row">
-        <button type="button" id="btn-backup-out" class="btn btn--ghost">バックアップを書き出す</button>
-        <span class="menu-hint">JSON ファイル</span>
-      </div>
-
-      <div class="menu-row">
-        <button type="button" id="btn-backup-in" class="btn btn--ghost">バックアップを読み込む</button>
-        <span class="menu-hint">JSON ファイル</span>
-      </div>
-
-      <div class="menu-row">
-        <button type="button" id="btn-csv-out" class="btn btn--ghost">CSV で書き出す</button>
-        <span class="menu-hint" id="csv-hint">Excel などで開ける</span>
-      </div>
-
-      <input type="file" id="backup-file" accept="application/json,.json" hidden>
-      <p class="dialog-note" id="data-status" role="status" aria-live="polite"></p>
-      <p class="dialog-hint">機種変更のときは、こちらで書き出して、新しい端末で読み込んでください。</p>
     </fieldset>
 
     <div class="dialog-actions">

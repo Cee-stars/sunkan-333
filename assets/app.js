@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 29 (2026-08-30)';
+  var APP_VERSION = 'build 30 (2026-08-30)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -601,6 +601,11 @@
   var elOptAutoSpeakNote = $('opt-auto-speak-note');
   var elAppVersion = $('app-version');
   var elForceUpdate = $('btn-force-update');
+  var elMenuOpen = $('btn-menu');
+  var elMenuDialog = $('menu-dialog');
+  var elMenuClose = $('btn-menu-close');
+  var elMenuSync = $('btn-menu-sync');
+  var elMenuSyncHint = $('menu-sync-hint');
   var elBackupOut = $('btn-backup-out');
   var elBackupIn = $('btn-backup-in');
   var elBackupFile = $('backup-file');
@@ -1760,16 +1765,18 @@
     }
   }
 
+  /**
+   * 読み込んだファイルを取り込む。
+   * バックアップ（JSON）と、書き出した CSV / TSV の両方を受ける。
+   * 見分けは中身でする。名前だけで決めると、拡張子の付かない端末で読めなくなる。
+   */
   function importBackup(file) {
-    var sync = window.SUNKAN_SYNC;
-    if (!sync || typeof sync.takeBackupText !== 'function') {
-      setDataStatus('この画面では読み込めません。', true);
-      return;
-    }
     var reader = new window.FileReader();
     reader.onload = function () {
-      var r = sync.takeBackupText(reader.result);
-      setDataStatus(r.message, !r.ok);
+      var text = str(reader.result);
+      var head = text.replace(/^\uFEFF/, '').replace(/^\s+/, '');
+      if (head.charAt(0) === '{' || head.charAt(0) === '[') importBackupJSON(text);
+      else importTableFile(file.name, text);
     };
     reader.onerror = function () { setDataStatus('このファイルは読めませんでした。', true); };
     try {
@@ -1777,6 +1784,67 @@
     } catch (e) {
       setDataStatus('このファイルは読めませんでした。', true);
     }
+  }
+
+  function importBackupJSON(text) {
+    var sync = window.SUNKAN_SYNC;
+    if (!sync || typeof sync.takeBackupText !== 'function') {
+      setDataStatus('この画面では読み込めません。', true);
+      return;
+    }
+    var r = sync.takeBackupText(text);
+    setDataStatus(r.message, !r.ok);
+  }
+
+  /**
+   * ファイル名からセット名を作る。拡張子と、こちらが付けた sunkan- と日付を落とす。
+   * 端末によっては元の名前ではなく、中身のない id を渡してくることがある
+   * （そのままだと 8f3a-… という名前のセットができる）。使えない名前は諦める。
+   */
+  function deckNameFromFile(fileName) {
+    var n = str(fileName).replace(/\.[A-Za-z0-9]+$/, '');
+    n = n.replace(/^sunkan-/, '').replace(/-\d{8}$/, '');
+    n = trim(n);
+    if (!n) return '読み込んだ表';
+    if (/^[0-9a-fA-F-]{16,}$/.test(n)) return '読み込んだ表';   // id を渡された
+    if (/^(download|untitled|file|document)$/i.test(n)) return '読み込んだ表';
+    return n;
+  }
+
+  /**
+   * 書き出した CSV / TSV を読み戻す。
+   * 貼り付けの取り込みと同じ道（parseImportText）を通すので、
+   * 引用符も改行もそこの決まりのまま扱える。
+   */
+  function importTableFile(fileName, text) {
+    var clean = str(text).replace(/^\uFEFF/, '');
+    var parsed = parseImportText(clean);
+    if (!parsed.items.length) {
+      setDataStatus('読み込める行がありませんでした。1 列目に日本語、2 列目に英語（カンマまたはタブ区切り）になっているか確かめてください。', true);
+      return;
+    }
+    var name = deckNameFromFile(fileName);
+    var result = addSentencesToNamedDeck(name, parsed.items);
+    var msg = '「' + result.deckName + '」に ' + result.added + ' 文を読み込みました。';
+    if (result.skipped) msg += '（同じ文 ' + result.skipped + ' 件は飛ばしました）';
+    setDataStatus(msg, false);
+  }
+
+  /** メニューを開くたびに、右側の補足をいまの状態に合わせる */
+  function refreshMenuHints() {
+    renderVoiceNow();
+    if (elCsvHint) {
+      elCsvHint.textContent = state.deck ? '「' + state.deck.name + '」' : 'Excel などで開ける';
+    }
+    if (elMenuSyncHint) {
+      var on = false, set = false;
+      try {
+        set = !!window.localStorage.getItem('sunkan:sync:gistId');
+        on = window.localStorage.getItem('sunkan:sync:auto') === '1';
+      } catch (e) { set = false; on = false; }
+      elMenuSyncHint.textContent = !set ? 'まだ設定していません' : (on ? '自動 ON' : '自動 OFF');
+    }
+    setDataStatus('', false);
   }
 
   function exportCSV() {
@@ -2329,13 +2397,7 @@
       elOptAutoSpeak.disabled = !state.speechOK;
     }
     if (elOptAutoSpeakNote) elOptAutoSpeakNote.hidden = state.speechOK;
-    renderVoiceNow();
-    if (elCsvHint) {
-      elCsvHint.textContent = state.deck
-        ? '「' + state.deck.name + '」を Excel などで開ける形に'
-        : 'Excel などで開ける';
-    }
-    setDataStatus('', false);
+
     if (elOptFontSize) elOptFontSize.value = String(state.settings.fontSize);
     if (elOptFontOut) elOptFontOut.textContent = FONT_LABELS[state.settings.fontSize] || '標準';
   }
@@ -2552,6 +2614,26 @@
     if (elOptStarredOnly) elOptStarredOnly.addEventListener('change', onStarredOnlyChange);
     if (elOptAutoSpeak) elOptAutoSpeak.addEventListener('change', onAutoSpeakChange);
 
+    // --- メニュー ---
+    if (elMenuOpen) {
+      elMenuOpen.addEventListener('click', function () {
+        refreshMenuHints();
+        openDialog(elMenuDialog, elMenuOpen);
+      });
+    }
+    if (elMenuClose) {
+      elMenuClose.addEventListener('click', function () { closeDialog(elMenuDialog); });
+    }
+    if (elMenuSync) {
+      elMenuSync.addEventListener('click', function () {
+        // 同期の設定はもともと ⚙ の中にある。同じ扉をここからも開けるようにする
+        var open = $('btn-sync-open');
+        closeDialog(elMenuDialog);
+        if (open) open.click();
+        else setDataStatus('同期の設定を開けませんでした。', true);
+      });
+    }
+
     // --- データの持ち出し ---
     if (elBackupOut) elBackupOut.addEventListener('click', exportBackup);
     if (elBackupIn && elBackupFile) {
@@ -2568,7 +2650,8 @@
     if (elVoiceOpen) {
       elVoiceOpen.addEventListener('click', function () {
         renderVoiceList();
-        openDialog(elVoiceDialog, elVoiceOpen);
+        closeDialog(elMenuDialog);   // シートを重ねない
+        openDialog(elVoiceDialog, elMenuOpen);
       });
     }
     if (elVoiceSelect) {
@@ -2613,7 +2696,7 @@
     }
 
     // Esc などで閉じたときもフォーカスを戻す
-    [elDataDialog, elSettingsDialog, elEditDialog, elVoiceDialog].forEach(function (d) {
+    [elDataDialog, elSettingsDialog, elEditDialog, elVoiceDialog, elMenuDialog].forEach(function (d) {
       if (!d) return;
       d.addEventListener('close', restoreFocus);
       d.addEventListener('cancel', function () { /* 既定の閉じる動作に任せる */ });
