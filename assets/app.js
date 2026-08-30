@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 28 (2026-08-24)';
+  var APP_VERSION = 'build 29 (2026-08-30)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -601,6 +601,19 @@
   var elOptAutoSpeakNote = $('opt-auto-speak-note');
   var elAppVersion = $('app-version');
   var elForceUpdate = $('btn-force-update');
+  var elBackupOut = $('btn-backup-out');
+  var elBackupIn = $('btn-backup-in');
+  var elBackupFile = $('backup-file');
+  var elCsvOut = $('btn-csv-out');
+  var elCsvHint = $('csv-hint');
+  var elDataStatus = $('data-status');
+  var elVoiceOpen = $('btn-voice');
+  var elVoiceNow = $('voice-now');
+  var elVoiceDialog = $('voice-dialog');
+  var elVoiceSelect = $('voice-select');
+  var elVoiceStatus = $('voice-status');
+  var elVoiceTest = $('btn-voice-test');
+  var elVoiceClose = $('btn-voice-close');
   var elForceUpdateStatus = $('force-update-status');
   var elOptFontSize = $('opt-font-size');
   var elOptFontOut = $('opt-font-size-out');
@@ -1652,6 +1665,198 @@
   }
 
   /* ============================================================
+   * 17d. データの持ち出し（バックアップ・CSV）
+   *
+   * 機種変更のときに手ぶらで移れるようにするための出口。
+   * バックアップ（JSON）は同期と同じ形なので、読み込めば★も上書きも戻る。
+   * CSV は Excel などで開くためのもので、いま開いているセットの文だけ。
+   * ========================================================== */
+
+  function setDataStatus(msg, isError) {
+    if (!elDataStatus) return;
+    elDataStatus.textContent = msg || '';
+    if (isError) elDataStatus.setAttribute('data-error', 'true');
+    else elDataStatus.removeAttribute('data-error');
+  }
+
+  /** 中身をファイルとして落とす。押しても何も起きない、を作らないため戻り値で返す */
+  function downloadText(name, text, mime) {
+    try {
+      var blob = new window.Blob([text], { type: mime || 'text/plain;charset=utf-8' });
+      var url = window.URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      // click() の直後に外すと、ブラウザが download 属性を拾う前に消えてしまい、
+      // ファイル名が "download" になる。片付けは少し置いてから。
+      window.setTimeout(function () {
+        window.URL.revokeObjectURL(url);
+        if (a.parentNode) a.parentNode.removeChild(a);
+      }, 1000);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** CSV の 1 マス。区切り・引用符・改行が入っていても壊れないように包む */
+  function csvCell(v) {
+    var t = str(v);
+    if (/[",\r\n]/.test(t)) return '"' + t.replace(/"/g, '""') + '"';
+    return t;
+  }
+
+  /**
+   * いま開いているセットを CSV に。
+   * 先頭に BOM を付ける。付けないと Excel が UTF-8 と見てくれず、
+   * 日本語が文字化けして「開ける」と言った意味がなくなる。
+   * 改行も CRLF にしておく（Excel はそちらを好む）。
+   */
+  function deckToCSV(records) {
+    var rows = ['日本語,英語,メモ'];
+    for (var i = 0; i < records.length; i++) {
+      rows.push(csvCell(records[i].ja) + ',' + csvCell(records[i].en) + ',' + csvCell(records[i].note));
+    }
+    return '\uFEFF' + rows.join('\r\n') + '\r\n';
+  }
+
+  /**
+   * ファイル名に使う部分。
+   * 日本語のままだと、ブラウザによっては名前ごと捨てられて「download」という
+   * 拡張子なしのファイルになる（Excel で開けなくなる）。確実に開けるほうを取り、
+   * 英数字だけ残す。どのセットを書き出したかは、画面のほうで名指しする。
+   */
+  function safeName(name) {
+    var t = str(name).replace(/[^A-Za-z0-9 _-]+/g, ' ').replace(/\s+/g, ' ').replace(/^ | $/g, '');
+    return t ? t.replace(/ /g, '-') : 'sunkan';
+  }
+
+  function todayStamp() {
+    var d = new Date();
+    function two(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + two(d.getMonth() + 1) + two(d.getDate());
+  }
+
+  function exportBackup() {
+    var sync = window.SUNKAN_SYNC;
+    if (!sync || typeof sync.backupText !== 'function') {
+      setDataStatus('この画面では書き出せません。', true);
+      return;
+    }
+    var text, name;
+    try {
+      text = sync.backupText();
+      name = sync.backupName();
+    } catch (e) {
+      setDataStatus('書き出せませんでした（' + (e && e.message ? e.message : '理由不明') + '）。', true);
+      return;
+    }
+    if (downloadText(name, text, 'application/json')) {
+      setDataStatus(name + ' を書き出しました。新しい端末で「バックアップを読み込む」を押してください。', false);
+    } else {
+      setDataStatus('書き出せませんでした。', true);
+    }
+  }
+
+  function importBackup(file) {
+    var sync = window.SUNKAN_SYNC;
+    if (!sync || typeof sync.takeBackupText !== 'function') {
+      setDataStatus('この画面では読み込めません。', true);
+      return;
+    }
+    var reader = new window.FileReader();
+    reader.onload = function () {
+      var r = sync.takeBackupText(reader.result);
+      setDataStatus(r.message, !r.ok);
+    };
+    reader.onerror = function () { setDataStatus('このファイルは読めませんでした。', true); };
+    try {
+      reader.readAsText(file, 'utf-8');
+    } catch (e) {
+      setDataStatus('このファイルは読めませんでした。', true);
+    }
+  }
+
+  function exportCSV() {
+    if (!state.deck || !state.records.length) {
+      setDataStatus('書き出せるセットがありません。', true);
+      return;
+    }
+    var name = 'sunkan-' + safeName(state.deck.name) + '-' + todayStamp() + '.csv';
+    if (downloadText(name, deckToCSV(state.records), 'text/csv;charset=utf-8')) {
+      setDataStatus('「' + state.deck.name + '」を ' + state.records.length + ' 行、'
+        + name + ' に書き出しました。', false);
+    } else {
+      setDataStatus('書き出せませんでした。', true);
+    }
+  }
+
+  /* ============================================================
+   * 17e. 音声の設定（声を選ぶ）
+   *
+   * 入っている声は端末ごとに違うので、この設定は同期しない。
+   * 覚えておくのは speech.js（声のことは 1 か所に閉じ込める約束）。
+   * ========================================================== */
+
+  function speechPortOrNull() {
+    var p = window.SUNKAN_SPEECH;
+    return (p && typeof p.voices === 'function') ? p : null;
+  }
+
+  /** 設定の「音声の設定」の右に、いま使っている声を出す */
+  function renderVoiceNow() {
+    if (!elVoiceNow) return;
+    var port = speechPortOrNull();
+    if (!port || !port.supported()) { elVoiceNow.textContent = '使えません'; return; }
+    var name = port.voiceName();
+    if (!name) { elVoiceNow.textContent = port.chosenVoice() ? '選んだ声が見つかりません' : 'おまかせ'; return; }
+    var lang = port.voiceLang();
+    elVoiceNow.textContent = port.chosenVoice() ? (name + (lang ? '（' + lang + '）' : '')) : (name + '（おまかせ）');
+  }
+
+  function renderVoiceList() {
+    if (!elVoiceSelect) return;
+    var port = speechPortOrNull();
+    elVoiceSelect.innerHTML = '';
+
+    var auto = document.createElement('option');
+    auto.value = '';
+    auto.textContent = 'おまかせ（英語の声を自動で選ぶ）';
+    elVoiceSelect.appendChild(auto);
+
+    var list = port ? port.voices() : [];
+    for (var i = 0; i < list.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = list[i].id;
+      opt.textContent = list[i].name + (list[i].lang ? '（' + list[i].lang + '）' : '');
+      elVoiceSelect.appendChild(opt);
+    }
+    elVoiceSelect.value = port ? port.chosenVoice() : '';
+    // 選んだ声が入っていない端末では value が空に落ちる。おまかせに戻して見せる
+    if (elVoiceSelect.value !== (port ? port.chosenVoice() : '')) elVoiceSelect.value = '';
+
+    if (!port || !port.supported()) {
+      elVoiceSelect.disabled = true;
+      setVoiceStatus('この端末（このブラウザ）は読み上げに対応していません。', true);
+    } else if (!list.length) {
+      elVoiceSelect.disabled = true;
+      setVoiceStatus('英語の声が見つかりません。端末の設定で英語の音声を入れると選べます。', true);
+    } else {
+      elVoiceSelect.disabled = false;
+      setVoiceStatus('', false);
+    }
+  }
+
+  function setVoiceStatus(msg, isError) {
+    if (!elVoiceStatus) return;
+    elVoiceStatus.textContent = msg || '';
+    if (isError) elVoiceStatus.setAttribute('data-error', 'true');
+    else elVoiceStatus.removeAttribute('data-error');
+  }
+
+  /* ============================================================
    * 18. ステータスバー
    * ========================================================== */
 
@@ -2124,6 +2329,13 @@
       elOptAutoSpeak.disabled = !state.speechOK;
     }
     if (elOptAutoSpeakNote) elOptAutoSpeakNote.hidden = state.speechOK;
+    renderVoiceNow();
+    if (elCsvHint) {
+      elCsvHint.textContent = state.deck
+        ? '「' + state.deck.name + '」を Excel などで開ける形に'
+        : 'Excel などで開ける';
+    }
+    setDataStatus('', false);
     if (elOptFontSize) elOptFontSize.value = String(state.settings.fontSize);
     if (elOptFontOut) elOptFontOut.textContent = FONT_LABELS[state.settings.fontSize] || '標準';
   }
@@ -2340,6 +2552,52 @@
     if (elOptStarredOnly) elOptStarredOnly.addEventListener('change', onStarredOnlyChange);
     if (elOptAutoSpeak) elOptAutoSpeak.addEventListener('change', onAutoSpeakChange);
 
+    // --- データの持ち出し ---
+    if (elBackupOut) elBackupOut.addEventListener('click', exportBackup);
+    if (elBackupIn && elBackupFile) {
+      elBackupIn.addEventListener('click', function () { elBackupFile.click(); });
+      elBackupFile.addEventListener('change', function () {
+        var f = elBackupFile.files && elBackupFile.files[0];
+        elBackupFile.value = '';   // 同じファイルを選び直せるように
+        if (f) importBackup(f);
+      });
+    }
+    if (elCsvOut) elCsvOut.addEventListener('click', exportCSV);
+
+    // --- 音声の設定 ---
+    if (elVoiceOpen) {
+      elVoiceOpen.addEventListener('click', function () {
+        renderVoiceList();
+        openDialog(elVoiceDialog, elVoiceOpen);
+      });
+    }
+    if (elVoiceSelect) {
+      elVoiceSelect.addEventListener('change', function () {
+        var port = speechPortOrNull();
+        if (!port) return;
+        port.setVoice(elVoiceSelect.value);
+        renderVoiceNow();
+        setVoiceStatus(elVoiceSelect.value ? 'この声にしました。「聞いてみる」で確かめられます。'
+                                           : 'おまかせに戻しました。', false);
+      });
+    }
+    if (elVoiceTest) {
+      // タップから同期で呼ぶ（あいだに何か挟むと iOS で鳴らない）
+      elVoiceTest.addEventListener('click', function () {
+        var port = speechPortOrNull();
+        if (!port || !port.supported()) { setVoiceStatus('この端末では読み上げが使えません。', true); return; }
+        port.speak('This is how the English will sound.');
+        setVoiceStatus('鳴らしています…', false);
+      });
+    }
+    if (elVoiceClose) {
+      elVoiceClose.addEventListener('click', function () {
+        var port = speechPortOrNull();
+        if (port) port.cancel();   // 試し聞きを持ち越さない
+        closeDialog(elVoiceDialog);
+      });
+    }
+
     // 古い一式が居座って更新が届かないときの逃げ道。update.js が実際の始末をする
     if (elForceUpdate) {
       elForceUpdate.addEventListener('click', function () {
@@ -2355,7 +2613,7 @@
     }
 
     // Esc などで閉じたときもフォーカスを戻す
-    [elDataDialog, elSettingsDialog, elEditDialog].forEach(function (d) {
+    [elDataDialog, elSettingsDialog, elEditDialog, elVoiceDialog].forEach(function (d) {
       if (!d) return;
       d.addEventListener('close', restoreFocus);
       d.addEventListener('cancel', function () { /* 既定の閉じる動作に任せる */ });

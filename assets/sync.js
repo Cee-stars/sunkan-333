@@ -1633,7 +1633,37 @@
     /** 足した 1 文の鍵。呼ぶ側と作り方をそろえるためここで配る */
     addedKey: addedKey,
     /** 収録の文への上書き 1 件の鍵。「元に戻す」を記録するのに使う */
-    editKey: editKey
+    editKey: editKey,
+    /** バックアップの中身（JSON 文字列）。設定から書き出すのに使う */
+    backupText: function () { return JSON.stringify(snapshot(), null, 2); },
+    /** バックアップのファイル名。日付が入るので、どれが新しいか分かる */
+    backupName: function () { return 'sunkan-' + fileStamp() + '.json'; },
+    /**
+     * 書き出したファイルの中身を取り込む。{ok, message} を返す。
+     * 画面へ出すのは呼んだ側（設定からでも同期ダイアログからでも使えるように）。
+     */
+    takeBackupText: function (text) {
+      var parsed;
+      try { parsed = JSON.parse(text); }
+      catch (e) { return { ok: false, message: 'このファイルは読めませんでした。' }; }
+      if (!isObject(parsed) || parsed.app !== 'sunkan') {
+        return { ok: false, message: '瞬間英作文の書き出しファイルではないようです。' };
+      }
+      var changed;
+      try {
+        changed = takeIn(clean(parsed));
+      } catch (e2) {
+        return { ok: false, message: '読み込めませんでした（' + (e2 && e2.message ? e2.message : '理由不明') + '）。' };
+      }
+      // 保存に失敗したぶんは黙って飲み込まない（同期ダイアログの report と同じ扱い）
+      var note = state.saveNote;
+      state.saveNote = '';
+      var msg = changed
+        ? '読み込みました。書き出したときのぶんを取り込みました。'
+        : '読み込みました（新しいものはありませんでした）。';
+      if (note) return { ok: false, message: msg + '\n⚠ ' + note };
+      return { ok: true, message: msg };
+    }
   };
 
   function init() {

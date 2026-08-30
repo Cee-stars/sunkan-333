@@ -330,6 +330,29 @@
   </form>
 </dialog>
 
+<!-- ===== 音声の設定ダイアログ ===== -->
+<dialog id="voice-dialog" class="dialog" aria-labelledby="voice-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="voice-dialog-title" class="dialog-title">音声の設定</h2>
+    <p class="dialog-desc">
+      英語を読み上げる声を選べます。入っている声は端末ごとに違うので、
+      この設定は<strong>この端末だけ</strong>のものです（同期しません）。
+    </p>
+
+    <label class="field">
+      <span class="field-label">声</span>
+      <select id="voice-select" class="field-input"></select>
+    </label>
+
+    <p class="dialog-note" id="voice-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-voice-close" class="btn btn--ghost">閉じる</button>
+      <button type="button" id="btn-voice-test" class="btn btn--primary">聞いてみる</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ===== データ取り込みダイアログ ===== -->
 <dialog id="data-dialog" class="dialog" aria-labelledby="data-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -512,6 +535,10 @@
       <legend class="field-label">読み上げ</legend>
       <label class="check"><input type="checkbox" id="opt-auto-speak"> 英語を表示したら自動で読み上げる</label>
       <p class="dialog-hint" id="opt-auto-speak-note" hidden>この端末（このブラウザ）は読み上げに対応していません。🔈 のボタンも出しません。</p>
+      <div class="menu-row">
+        <button type="button" id="btn-voice" class="btn btn--ghost" aria-haspopup="dialog">音声の設定</button>
+        <span class="menu-hint" id="voice-now">おまかせ</span>
+      </div>
     </fieldset>
 
     <fieldset class="field-group">
@@ -526,6 +553,29 @@
       <button type="button" id="btn-sync-open" class="btn btn--ghost" aria-haspopup="dialog">
         同期の設定<span class="sync-state" id="sync-state"></span>
       </button>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend class="field-label">データ</legend>
+
+      <div class="menu-row">
+        <button type="button" id="btn-backup-out" class="btn btn--ghost">バックアップを書き出す</button>
+        <span class="menu-hint">JSON ファイル</span>
+      </div>
+
+      <div class="menu-row">
+        <button type="button" id="btn-backup-in" class="btn btn--ghost">バックアップを読み込む</button>
+        <span class="menu-hint">JSON ファイル</span>
+      </div>
+
+      <div class="menu-row">
+        <button type="button" id="btn-csv-out" class="btn btn--ghost">CSV で書き出す</button>
+        <span class="menu-hint" id="csv-hint">Excel などで開ける</span>
+      </div>
+
+      <input type="file" id="backup-file" accept="application/json,.json" hidden>
+      <p class="dialog-note" id="data-status" role="status" aria-live="polite"></p>
+      <p class="dialog-hint">機種変更のときは、こちらで書き出して、新しい端末で読み込んでください。</p>
     </fieldset>
 
     <div class="dialog-actions">

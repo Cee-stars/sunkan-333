@@ -477,6 +477,28 @@ button, input, select, textarea {
 .status-bar:empty { display: none; }
 
 
+/* --- 設定の中の「◯◯する ／ 右に補足」の行 --- */
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-block-start: 6px;
+}
+
+.menu-row .btn { flex: 0 0 auto; }
+
+.menu-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: end;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
 /* --- 版ずれの帯（公開されている版と違うときだけ出す） --- */
 
 .update-bar {
