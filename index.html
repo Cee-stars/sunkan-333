@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 32 (2026-09-11)">
+<meta name="sunkan-build" content="build 33 (2026-09-11)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -149,14 +149,18 @@
     <button type="button" id="btn-card-settings" class="btn btn--icon" aria-label="カードの設定" aria-haspopup="dialog">⚙</button>
   </div>
 
-  <!-- 今日の残り。3 つの面ごとに出す（何が残っているか一目で分かるように） -->
+  <!-- 今日の進み具合。予定は始めた時点で決まり、途中で増えないので必ず減る -->
   <div class="header-row header-row--due" data-mode-view="cards">
-    <ul class="due-counts" id="due-counts" aria-label="今日の残り">
-      <li class="due-count" data-face="r"><span class="due-face">読</span><span class="due-num" id="due-r">0</span></li>
-      <li class="due-count" data-face="l"><span class="due-face">聞</span><span class="due-num" id="due-l">0</span></li>
-      <li class="due-count" data-face="s"><span class="due-face">言</span><span class="due-num" id="due-s">0</span></li>
-      <li class="due-count due-count--new"><span class="due-face">新しい札</span><span class="due-num" id="due-new">0</span></li>
-    </ul>
+    <div class="progress" id="card-progress">
+      <div class="progress-line">
+        <span class="progress-left" id="progress-left">のこり 0 枚</span>
+        <span class="progress-count" id="progress-count">0 / 0</span>
+      </div>
+      <div class="progress-track" role="progressbar" id="progress-track"
+        aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-label="今日の進み具合">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ===== 受信箱（同じドメインの別アプリから届いたカード。どちらのモードでも出す） ===== -->

@@ -1962,34 +1962,49 @@ legend.field-label {
         「めくる」までは答えに関わるものを一切置かない。
    ============================================================= */
 
-/* --- 今日の残り --- */
+/* --- 今日の進み具合 ---
+   予定は始めた時点で決まり、途中で増えない。だから帯は必ず右へ進み、
+   「のこり」は減る一方になる。やめ時が見えるということは、これのこと。 */
 
 .header-row--due { padding-block: 0 8px; }
 
-.due-counts {
+.progress { flex: 1 1 auto; min-width: 0; }
+
+.progress-line {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
 }
 
-.due-count {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  padding: 4px 10px;
-  border: 1px solid var(--hairline);
+.progress-left {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.progress-count {
+  font-size: 0.8125rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  height: 6px;
   border-radius: 999px;
   background: var(--surface-sunken);
-  font-size: 0.8125rem;
-  line-height: 1.2;
+  border: 1px solid var(--hairline);
+  overflow: hidden;
 }
 
-.due-face { color: var(--text-muted); font-weight: 700; }
-.due-num { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
-.due-count--new .due-face { color: var(--text-faint); font-weight: 400; }
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
 
 /* --- 1 枚 --- */
 
@@ -2226,7 +2241,10 @@ legend.field-label {
 .card-tools .is-on { color: var(--star); }
 
 .card-empty {
-  margin: 48px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 48px auto;
   padding: 0 16px;
   max-width: 28rem;
   text-align: center;
@@ -2234,6 +2252,21 @@ legend.field-label {
   line-height: 1.7;
   color: var(--text-muted);
 }
+
+/* 終わったことははっきり言う。「まだ何か残っているのでは」と思わせない */
+.card-empty-head {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text);
+  /* 「やりま／した」のように語の途中で折り返させない。
+     効かない端末でも、ふつうの折り返しになるだけで読めなくはならない。 */
+  word-break: auto-phrase;
+  line-break: strict;
+}
+
+.card-empty-sub { font-size: 0.9375rem; }
+.card-empty-note { font-size: 0.8125rem; color: var(--text-faint); }
 
 /* --- 一覧 --- */
 

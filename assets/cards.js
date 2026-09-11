@@ -3,8 +3,11 @@
  * 1 枚のカードに 3 つの面を持たせ、育ち具合で順に開放する。
  *
  *   読 … 英語の例文を読んで、意味を言う      （受容・リーディング）いつもある
- *   聞 … 音だけ聞いて、英文を思い浮かべる    （受容・リスニング）  読が続けて 2 回できたら
- *   言 … 日本語を見て、英語を声に出す        （産出・スピーキング）聞が続けて 2 回できたら
+ *   聞 … 音だけ聞いて、英文を思い浮かべる    （受容・リスニング）  読ができた次の日から
+ *   言 … 日本語を見て、英語を声に出す        （産出・スピーキング）聞ができた次の日から
+ *
+ * **その日の予定は、始めた時点で決まる。** 途中で面が開いても、出すのは次の日から。
+ * 答えている最中に予定が増えると「のこり」が戻り、やめ時が分からなくなる。
  *
  * なぜ 3 つに分けて、しかも順に開放するのか:
  *   研究では「日本語→英語（産出）」がいちばん話す力を伸ばすが、時間がかかる。
@@ -60,17 +63,29 @@
     if (sync && typeof sync.recordDelete === 'function') sync.recordDelete(prefix + id);
   }
 
+  /**
+   * 取り込みで「同じカード」と見なすための鍵。
+   * 区切りに \u0000 を使うのは、英文にも例文にも絶対に出てこない字だから
+   * （空白で区切ると「a b」＋「c」と「a」＋「b c」が同じ鍵になってしまう）。
+   */
+  function dupKey(en, exEn) {
+    return (trim(en) + '\u0000' + trim(exEn)).toLowerCase();
+  }
+
   /** 一意な id。時刻＋乱数で十分（同じミリ秒に 2 枚作っても当たらない） */
   function makeId(prefix) {
     return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
 
-  /** ローカルの「今日」を YYYY-MM-DD で。日付の変わり目は端末の真夜中 */
-  function today() {
-    var d = new Date();
+  /** その時刻の日付を YYYY-MM-DD で。日付の変わり目は端末の真夜中 */
+  function dayOf(ms) {
+    var d = new Date(ms);
     var m = d.getMonth() + 1, day = d.getDate();
     return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
   }
+
+  /** ローカルの「今日」 */
+  function today() { return dayOf(Date.now()); }
 
   /** 配列をその場でシャッフルする（Fisher-Yates） */
   function shuffle(list) {
@@ -101,8 +116,14 @@
     s: { badge: '言', desc: '声に出して英語にする' }
   };
 
-  /** 次の面が開くまでに、ひとつ前の面で続けて思い出せた回数 */
-  var UNLOCK_STREAK = 2;
+  /**
+   * 次の面が開くまでに、ひとつ前の面で続けて思い出せた回数。
+   *
+   * 開いた面が出るのは**次の日から**（その日の予定は始めた時点で決まる）。
+   * 同じ札の「読」を答えた直後に「聞」を出すと、30 秒前に見た答えを聞き返すだけで
+   * 記憶を試したことにならない。日をまたいで初めて本当の聞き取りになる。
+   */
+  var UNLOCK_STREAK = 1;
 
   /** 一覧に出す上限。数千枚あっても画面が固まらないように */
   var LIST_LIMIT = 300;
@@ -204,14 +225,20 @@
     };
   }
 
-  /** 今日出した新しい札の枚数。日が変わっていたら 0 に戻す */
+  /**
+   * 今日ぶんの数え。日が変わっていたら 0 に戻す。
+   *
+   * `done` … 今日カタが付いた面の数（日をまたぐ予定に送れたもの）。
+   *          これを持っておくと、閉じて開き直しても「今日 4 / 10 枚」が続きから出る。
+   */
   function sanitizeDay(raw) {
     var o = (raw && typeof raw === 'object') ? raw : {};
-    if (trim(o.day) !== today()) return { day: today(), introduced: 0, answered: 0 };
+    if (trim(o.day) !== today()) return { day: today(), introduced: 0, answered: 0, done: 0 };
     return {
       day: today(),
       introduced: Math.max(0, Number(o.introduced) || 0),
-      answered: Math.max(0, Number(o.answered) || 0)
+      answered: Math.max(0, Number(o.answered) || 0),
+      done: Math.max(0, Number(o.done) || 0)
     };
   }
 
@@ -248,10 +275,11 @@
   var elListBtn = $('btn-card-list');
   var elSettingsBtn = $('btn-card-settings');
 
-  var elDueR = $('due-r');
-  var elDueL = $('due-l');
-  var elDueS = $('due-s');
-  var elDueNew = $('due-new');
+  var elProgress = $('card-progress');
+  var elProgressLeft = $('progress-left');
+  var elProgressCount = $('progress-count');
+  var elProgressTrack = $('progress-track');
+  var elProgressFill = $('progress-fill');
   var elStatus = $('card-status');
 
   var elStage = $('card-stage');
@@ -398,24 +426,36 @@
     return false;
   }
 
+  /** その面を開く条件になっている、ひとつ前の面（読には無い） */
+  function gateFor(itemId, face) {
+    if (face === 'l') return faceState(itemId, 'r');
+    // 言 … 聞が育ってから。聞を使わない設定なら読から直接
+    return faceUsable('l') ? faceState(itemId, 'l') : faceState(itemId, 'r');
+  }
+
   /**
-   * その面が、この札で開いているか。
-   * 読はいつでも開いている。聞はひとつ前の「読」が続けて 2 回、言は「聞」が続けて 2 回できてから。
-   * 「聞」を切っている（読み上げ非対応など）ときは、言は読の育ち具合で開ける。
+   * その面を開く条件を満たしたか（日は見ない）。
+   * 「明日はどれだけ出るか」を数えるときは、今日はまだ出せないぶんも入れたいのでこちらを使う。
    */
-  function faceUnlocked(itemId, face) {
+  function faceReady(itemId, face) {
     if (!faceUsable(face)) return false;
     if (face === 'r') return true;
+    var gate = gateFor(itemId, face);
+    return gate.streak >= UNLOCK_STREAK && gate.last !== null;
+  }
 
-    var srs = srsPort();
-    if (!srs) return false;
-
-    if (face === 'l') {
-      return faceState(itemId, 'r').streak >= UNLOCK_STREAK;
-    }
-    // 言 … 聞が育ってから。聞を使わない設定なら読から直接
-    var gate = faceUsable('l') ? faceState(itemId, 'l') : faceState(itemId, 'r');
-    return gate.streak >= UNLOCK_STREAK;
+  /**
+   * その面を、**今日**出してよいか。
+   *
+   * 条件を満たしても、満たした当日は出さない。ここを見ないと、いったん閉じて
+   * 開き直しただけで予定が組み直されて新しい面が湧き、「のこり」が増える
+   * （やめ時が分からなくなる）。30 秒前に見た答えを聞き返すのは記憶を試した
+   * ことにもならないので、どのみち日をまたがせるのが正しい。
+   */
+  function faceUnlocked(itemId, face) {
+    if (!faceReady(itemId, face)) return false;
+    if (face === 'r') return true;
+    return dayOf(gateFor(itemId, face).last) !== today();
   }
 
   /** その面で読み上げる英語。例文があれば例文、無ければ語そのもの */
@@ -495,19 +535,72 @@
     return out;
   }
 
-  /** 面ごとの残り枚数（画面の上に出す数） */
-  function countDue() {
-    var counts = { r: 0, l: 0, s: 0, fresh: 0 };
-    for (var i = 0; i < state.queue.length; i++) {
-      var q = state.queue[i];
-      counts[q.face]++;
-      if (faceState(q.itemId, q.face).state === 'new') counts.fresh++;
+  /**
+   * のこりの面の数。予定に入っているもの＋いま出している 1 枚。
+   *
+   * 覚えたての札は答えても予定に戻るので、ここはすぐには減らない。それでいい。
+   * **大事なのは決して増えないこと。** 増えると終わりが見えなくなる。
+   */
+  function remainingUnits() {
+    return state.queue.length + (state.current ? 1 : 0);
+  }
+
+  /** その日の終わり（ミリ秒） */
+  function endOfDay(ms) {
+    var d = new Date(ms);
+    d.setHours(23, 59, 59, 999);
+    return d.getTime();
+  }
+
+  /**
+   * 次に出番が来るのはいつで、だいたい何枚か。
+   *
+   * 「今日はここまで」と言い切るには、**いつ戻ってくればいいか**まで言う必要がある。
+   * ここを出さないと、終わったあとに「もう来なくていいのか」が分からない。
+   *
+   * @returns {{days:number, count:number}|null} 出番が無ければ null
+   */
+  function nextSession() {
+    var list = itemsInDeck();
+    var todayEnd = endOfDay(Date.now());
+
+    var fresh = 0;     // まだ一度も出していない面（今日はもう出せないぶんを含む）
+    var dues = [];     // 日をまたぐ予定に乗っている面
+
+    for (var i = 0; i < list.length; i++) {
+      for (var f = 0; f < FACES.length; f++) {
+        var face = FACES[f];
+        if (!faceReady(list[i].id, face)) continue;
+        var st = faceState(list[i].id, face);
+        if (st.state === 'new') fresh++;
+        else if (st.due !== null) dues.push(st.due);
+      }
     }
-    if (state.current) {
-      counts[state.current.face]++;
-      if (faceState(state.current.itemId, state.current.face).state === 'new') counts.fresh++;
+
+    // 次に開く日の候補 … 新しい札が残っていれば明日、予定の札はいちばん早い日
+    var when = null;
+    if (fresh > 0) when = todayEnd + 1;                    // 明日のはじまり
+    for (var k = 0; k < dues.length; k++) {
+      if (dues[k] <= todayEnd) continue;                   // 今日ぶんはもう終わっている
+      if (when === null || dues[k] < when) when = dues[k];
     }
-    return counts;
+    if (when === null) return null;
+
+    // その日の終わりまでに出るぶんを数える
+    var limit = endOfDay(when);
+    var count = 0;
+    for (var m = 0; m < dues.length; m++) {
+      if (dues[m] > todayEnd && dues[m] <= limit) count++;
+    }
+    if (fresh > 0) count += Math.min(fresh, state.ui.newPerDay);
+
+    var days = Math.round((endOfDay(when) - todayEnd) / 86400000);
+    return { days: Math.max(1, days), count: count };
+  }
+
+  /** 「次は明日」「次は 3 日後」。数の前後に空白を置く書き方に合わせる */
+  function nextLabel(days) {
+    return days <= 1 ? '次は明日' : '次は ' + days + ' 日後';
   }
 
   /* ============================================================
@@ -539,18 +632,31 @@
     state.deckId = elDeckSelect.value;
   }
 
-  function renderCounts() {
-    var c = countDue();
-    if (elDueR) elDueR.textContent = String(c.r);
-    if (elDueL) elDueL.textContent = String(c.l);
-    if (elDueS) elDueS.textContent = String(c.s);
-    if (elDueNew) elDueNew.textContent = String(c.fresh);
+  /**
+   * 今日の進み具合。
+   *
+   * 分母は「今日カタが付いた数＋のこり」。予定は途中で増えないので、
+   * のこりは減る一方になり、**いつ終わるかが最初から見える**。
+   */
+  function renderProgress() {
+    state.day = sanitizeDay(state.day);
+    var left = remainingUnits();
+    var done = state.day.done;
+    var total = done + left;
 
-    // 使わない面の数は出さない（0 が並ぶだけで意味が無い）
-    var li = document.querySelectorAll('#due-counts .due-count[data-face]');
-    for (var i = 0; i < li.length; i++) {
-      var face = li[i].getAttribute('data-face');
-      li[i].hidden = !faceUsable(face);
+    if (elProgress) elProgress.hidden = !total;
+    if (!total) return;
+
+    if (elProgressLeft) {
+      elProgressLeft.textContent = left ? 'のこり ' + left + ' 枚' : 'おしまい';
+    }
+    if (elProgressCount) elProgressCount.textContent = done + ' / ' + total;
+    if (elProgressFill) {
+      elProgressFill.style.width = Math.round(done / total * 100) + '%';
+    }
+    if (elProgressTrack) {
+      elProgressTrack.setAttribute('aria-valuemax', String(total));
+      elProgressTrack.setAttribute('aria-valuenow', String(done));
     }
   }
 
@@ -742,17 +848,41 @@
     if (!elEmpty) return;
 
     elEmpty.hidden = false;
+    elEmpty.textContent = '';
     var total = itemsInDeck().length;
 
     if (!state.items.length) {
       elEmpty.textContent = 'まだカードがありません。「PDF から」か「＋追加」で作ってください。';
-    } else if (!total) {
+      return;
+    }
+    if (!total) {
       elEmpty.textContent = 'このセットにはカードがありません。';
-    } else if (newAllowance() <= 0 && state.day.introduced > 0) {
-      elEmpty.textContent = '今日のぶんはおしまいです。新しい札は明日また ' +
-        state.ui.newPerDay + ' 枚まで出ます。';
-    } else {
-      elEmpty.textContent = '今日出す札はありません。よくできました。';
+      return;
+    }
+
+    // 終わったことをはっきり言う。「まだ何か残っているのでは」と思わせない
+    state.day = sanitizeDay(state.day);
+    var head = document.createElement('strong');
+    head.className = 'card-empty-head';
+    head.textContent = state.day.done
+      ? '今日はここまで。' + state.day.done + ' 枚やりました。'
+      : '今日出す札はありません。';
+    elEmpty.appendChild(head);
+
+    var next = nextSession();
+    var line = document.createElement('span');
+    line.className = 'card-empty-sub';
+    line.textContent = next
+      ? nextLabel(next.days) + '、およそ ' + next.count + ' 枚です。'
+      : 'いまのカードはひととおり終わりました。新しいカードを足すと、また始まります。';
+    elEmpty.appendChild(line);
+
+    // まだ入れていない新しい札があるなら、増やせることだけ伝える（勝手には増やさない）
+    if (newAllowance() <= 0 && state.day.introduced > 0) {
+      var note = document.createElement('span');
+      note.className = 'card-empty-note';
+      note.textContent = '新しい札は 1 日 ' + state.ui.newPerDay + ' 枚までにしてあります（⚙ で変えられます）。';
+      elEmpty.appendChild(note);
     }
   }
 
@@ -773,7 +903,7 @@
     state.current = state.queue.shift() || null;
 
     if (!state.current) {
-      renderCounts();
+      renderProgress();
       renderEmpty();
       return;
     }
@@ -781,7 +911,7 @@
     if (elEmpty) elEmpty.hidden = true;
 
     renderCard();
-    renderCounts();
+    renderProgress();
 
     // 「聞」は表に出た時点で鳴らす。タップの中から同期で呼ぶこと（iOS で無音になる）
     if (state.current.face === 'l') playAudio(1);
@@ -826,39 +956,24 @@
 
     // 今日のうちにまた出す札は、この場のならびに戻す。
     // すぐ後ろに入れると答えを覚えたまま出るので、何枚か先へ置く。
-    if (after.due !== null && after.due - Date.now() <= SAME_SESSION_MIN * 60000) {
+    var again = (after.due !== null && after.due - Date.now() <= SAME_SESSION_MIN * 60000);
+    if (again) {
       var at = Math.min(state.queue.length, grade === 1 ? 3 : 8);
       state.queue.splice(at, 0, { itemId: itemId, face: face, due: after.due });
+    } else {
+      // 戻さなかった＝この 1 面は今日ぶん終わり。「のこり」はこれで必ず減る
+      state.day.done++;
     }
+    saveDay();
 
-    // この 1 枚で次の面が開いたなら、その場で予定に足す（明日まで待たせない）
-    addUnlockedFaces(itemId);
+    // 開いたばかりの面は、その場では足さない。
+    // 途中で予定が増えると「のこり」が戻って、終わりが見えなくなる。
+    // 始めた時点の予定を最後まで動かさないのが、やめ時が分かるということ。
 
     var port = speechPort();
     if (port) port.cancel();
 
     next();
-  }
-
-  /** 「読」が育って「聞」が開いた、のような変化をその場で拾う */
-  function addUnlockedFaces(itemId) {
-    for (var f = 0; f < FACES.length; f++) {
-      var face = FACES[f];
-      if (!faceUnlocked(itemId, face)) continue;
-      if (faceState(itemId, face).state !== 'new') continue;
-      if (inQueue(itemId, face)) continue;
-      if (newAllowance() <= 0) continue;
-      // 開いたばかりの面は、すぐ後ろではなく少し先に置く
-      state.queue.splice(Math.min(state.queue.length, 5), 0, { itemId: itemId, face: face, due: null });
-    }
-  }
-
-  function inQueue(itemId, face) {
-    if (state.current && state.current.itemId === itemId && state.current.face === face) return true;
-    for (var i = 0; i < state.queue.length; i++) {
-      if (state.queue[i].itemId === itemId && state.queue[i].face === face) return true;
-    }
-    return false;
   }
 
   /* ============================================================
@@ -975,7 +1090,7 @@
     if (elDialogStatus) elDialogStatus.textContent = '足しました。続けて入れられます。';
 
     renderDeckSelect();
-    renderCounts();
+    renderProgress();
   }
 
   function deleteCard(itemId) {
@@ -1474,7 +1589,7 @@
       if (elEmpty) elEmpty.hidden = true;
       renderCard();
       if (wasFlipped) flip();
-      renderCounts();
+      renderProgress();
       return;
     }
 
@@ -1511,7 +1626,7 @@
       var seen = {};
       for (var j = 0; j < state.items.length; j++) {
         if (state.items[j].deckId !== deck.id) continue;
-        seen[(state.items[j].en + ' ' + state.items[j].exEn).toLowerCase()] = 1;
+        seen[dupKey(state.items[j].en, state.items[j].exEn)] = 1;
       }
 
       var added = 0, skipped = 0;
@@ -1524,7 +1639,7 @@
         var exJa = trim(raw.exJa);
         if (!en || (!ja && !exJa)) { skipped++; continue; }
 
-        var key = (en + ' ' + exEn).toLowerCase();
+        var key = dupKey(en, exEn);
         if (seen[key]) { skipped++; continue; }
         seen[key] = 1;
 
