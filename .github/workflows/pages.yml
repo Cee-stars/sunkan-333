@@ -28,9 +28,15 @@ jobs:
           node --check assets/app.js
           node --check assets/data.js
           node --check assets/paraphrase.js
+          node --check assets/srs.js
+          node --check assets/cards.js
+          node --check assets/cardimport.js
           node --check assets/inbox.js
+          node --check assets/speech.js
+          node --check assets/update.js
           node --check assets/sync.js
           node --check sw.js
+          # assets/vendor/ は外から持ってきたものなので見ない（手を入れない約束）
 
       - uses: actions/configure-pages@v5
 
