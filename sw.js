@@ -1,11 +1,11 @@
-/* 瞬間英作文 — オフライン用の最小サービスワーカー
+/* Duo — オフライン用の最小サービスワーカー
    方針: 同一オリジンの GET はネットワーク優先。つながるときは必ず最新を出し、
          失敗したときだけキャッシュに逃がす（電波が無くても開ける）。 */
 'use strict';
 
 // 名前を変えると activate で古いキャッシュを丸ごと捨てられる。
 // 配信方法を変えたときは必ず上げること。
-var CACHE = 'sunkan-v28';
+var CACHE = 'sunkan-v29';
 
 var ASSETS = [
   './',
@@ -15,12 +15,18 @@ var ASSETS = [
   './assets/speech.js',
   './assets/data.js',
   './assets/paraphrase.js',
+  './assets/srs.js',
+  './assets/cards.js',
+  './assets/cardimport.js',
   './assets/inbox.js',
   './assets/sync.js',
   './assets/update.js',
   './assets/icon.svg',
   './manifest.webmanifest'
 ];
+
+// pdf.js（assets/vendor/）はここに載せない。1.5MB あり、PDF を取り込むときにしか要らない。
+// 一度使えば fetch のほうでキャッシュに入るので、そのあとはオフラインでも読める。
 
 self.addEventListener('install', function (event) {
   event.waitUntil(

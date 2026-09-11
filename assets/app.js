@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 31 (2026-08-30)';
+  var APP_VERSION = 'build 32 (2026-09-11)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -1300,9 +1300,9 @@
     state.speechOK = !!(port && port.supported());
     if (!port) return;
     // 黙って失敗しないよう、理由は status に出す。
-    // パラフレ帳を開いている間は向こうの status が出るので、こちらは黙る。
+    // ほかのモードを開いている間は向こうの status が出るので、こちらは黙る。
     port.onProblem(function (info) {
-      if (docEl.getAttribute('data-mode') === 'para') return;
+      if (docEl.getAttribute('data-mode') !== 'drill') return;
       state.speakingId = null;
       flashStatus('読み上げ: ' + (info && info.message ? info.message : 'うまくいきませんでした。'));
     });
@@ -2065,8 +2065,8 @@
   function onKeyDown(e) {
     if (e.defaultPrevented) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    // パラフレ帳を開いている間は表が画面に無い。キー操作はそちらに任せる。
-    if (docEl.getAttribute('data-mode') === 'para') return;
+    // ほかのモードを開いている間は表が画面に無い。キー操作はそちらに任せる。
+    if (docEl.getAttribute('data-mode') !== 'drill') return;
 
     var target = e.target;
     var typing = isTypingTarget(target);
