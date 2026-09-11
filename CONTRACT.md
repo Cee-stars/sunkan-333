@@ -10,16 +10,21 @@
 | `assets/style.css` | A | 全スタイル（iPhone / MacBook 対応、ライト/ダーク） |
 | `assets/data.js` | B | 例文データ `window.SUNKAN_DECKS` |
 | `assets/app.js` | C | 瞬間英作文の動作すべて（描画・隠す/表示・検索・取り込み・保存） |
-| `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え |
+| `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え（3 モードぶん） |
+| `assets/srs.js` | I | 忘却曲線（FSRS-5）。予定の計算だけ。DOM も localStorage も触らない |
+| `assets/cards.js` | J | カードの動作すべて（3 つの面・めくり・一覧・設定） |
+| `assets/cardimport.js` | K | カードの取り込み（PDF・テキスト・表・AI への指示） |
+| `assets/vendor/pdf.min.js` | 外 | pdf.js（Mozilla / Apache-2.0）。手を入れない。差し替えは版ごと |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 | `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
 | `assets/speech.js` | G | 読み上げ（Web Speech API の端末ごとの癖をここに閉じ込める） |
 | `assets/update.js` | H | 版ずれの検知と、溜まった古い一式を捨てて読み直す道 |
 | `version.json` | 共通 | 公開されている版。`APP_VERSION` と同じ文字列を入れる |
 
-`app.js` と `paraphrase.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
-`<html data-mode>` と下の `window.SUNKAN_DRILL` だけで、`app.js` は `data-mode="para"` の間
-キー操作を受け取らない（表が画面に無いため）。`inbox.js` は自分の帯（`#inbox-bar`）と
+`app.js` と `paraphrase.js` と `cards.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
+`<html data-mode>` と下の `window.SUNKAN_*` だけで、`app.js` は `data-mode` が `drill` 以外の間
+キー操作を受け取らない（表が画面に無いため）。`cards.js` は `cards` の間だけ受け取る。
+**モードが増えたときに `=== 'para'` と書いてあると新しいモードで二重に効く。必ず `!== 'drill'` で書く。**`inbox.js` は自分の帯（`#inbox-bar`）と
 `sunkan:inbox` しか触らず、文を足すのは `SUNKAN_DRILL.addSentences` 越しに限る。
 `sync.js` は保存データを直に読み書きするが、**書いたあとは必ず `reload()` を呼んで画面を追いつかせる**
 （自分では DOM を作らない）。どこが変わったかは `{drill, para, inbox}` で分けて渡し、
@@ -43,6 +48,46 @@
 | 関数 | 内容 |
 | --- | --- |
 | `reload()` | localStorage を読み直してパラフレ帳を作り直す。見ていたジャンルが消えていたら「すべて」へ戻す |
+
+### `window.SUNKAN_SRS`（srs.js が開けている口）
+
+忘却曲線の計算だけを持つ。**DOM も localStorage も触らない純粋な関数**なので、
+画面なしで確かめられる。FSRS-5 の既定パラメータを使う（自分の記録に合わせた最適化はまだしない）。
+
+1 枚 1 面の記憶は `{s, d, due, last, reps, lapses, streak, step, state}`。
+`state` は `new` / `learning` / `review` / `relearning`。
+
+| 関数 | 内容 |
+| --- | --- |
+| `newState()` | まだ一度も出していない札の状態 |
+| `sanitize(raw)` | 読めない中身を上の形に均す。保存データは何が入っているか分からない |
+| `review(state, g, opts)` | 答えたあとの新しい状態。`g` は 1=もう一度 2=むずかしい 3=できた 4=かんたん。`opts` は `{now, retention, params}`。戻り値に `intervalDays` が付く（0 は「今日のうちにまた出す」） |
+| `preview(state, opts)` | 押す前に、ボタンごとの間隔を先に出す（画面に「2日後」と添えるため） |
+| `isDue(state, now)` / `isNew(state)` | 出す番が来ているか / 新しい札か |
+| `recallChance(state, now)` | いま思い出せる確率 0〜1 |
+| `humanInterval(days)` | 「明日」「5日後」「2か月後」のような短い言い方 |
+
+**`state` は書き換えない。** `review` は新しい物を返すだけ。呼んだ側が保存する。
+
+### `window.SUNKAN_CARDS`（cards.js が開けている口）
+
+| 関数 | 内容 |
+| --- | --- |
+| `onShow()` | カードの画面を開いたときに呼ぶ（`paraphrase.js` の `setMode` から）。ここで予定を組む |
+| `reload()` | localStorage を読み直して作り直す。同期が中身を入れ替えたあとに呼ぶ |
+| `addCards(deckName, items)` | 名前でセットを探し（無ければ作って開き）、`{en, ja, exEn, exJa, note}` を足す。同じ `(en, exEn)` は飛ばす。戻り値は `{added, skipped, deckId, deckName}` |
+| `flash(message)` | 上の帯に短く出す |
+
+`cardimport.js` は**カードを直に保存しない**。足すのは `addCards` 越しに限る。
+
+### `window.SUNKAN_CARD_IMPORT`（cardimport.js が開けている口）
+
+| 関数 | 内容 |
+| --- | --- |
+| `parse(text)` | 書き方を見分けてカードを起こす。`{items, deckName}` |
+| `parseBlocks(text)` / `parseTable(text)` | それぞれの書き方だけを読む（試すため） |
+| `prompt` | AI に渡す指示文 |
+| `template` | 決まった書き方の見本 |
 
 ### `window.SUNKAN_UPDATE`（update.js が開けている口）
 
@@ -244,6 +289,67 @@ window.SUNKAN_DECKS = [
 パラフレ 1 枚は `{ja: 意味, en: 英文}` の並びになる（言い換えに意味が無ければ見出しの意味を使う）。
 送り先は `パラフレ帳（ジャンル名）` というセットで、ジャンルごとに分ける。元のパラフレは消さない。
 
+## カード
+
+### 3 つの面と、開放の順番
+
+1 枚のカード（`items` の 1 件）に、面が 3 つある。面はそれぞれ**別々の記憶**を持つ
+（`sunkan:cards:srs` の `r` / `l` / `s`）。
+
+| 面 | 表 | 裏 | 開く条件 |
+| --- | --- | --- | --- |
+| `r` 読 | 例文（覚える語を強調）。例文が無ければ語そのもの | 意味・例文の訳・メモ | いつでも |
+| `l` 聞 | 🔈 の記号だけ。**文字を出さない**。出た時点で鳴らす | 英文・意味・訳 | `r.streak >= 2` |
+| `s` 言 | 例文の訳（無ければ意味） | 英文 | `l.streak >= 2`（聞を使わない設定なら `r.streak >= 2`） |
+
+**最初から 3 面ぜんぶ出さない。** 新しい札は「読」1 枚ぶんの負担しかかけない。
+3 倍の枚数をいきなり積むと続かないため。
+
+**「読」は外せない。** 設定から消せるのは「聞」「言」だけ。全部消えると復習が成り立たない。
+読み上げが使えない端末では「聞」を出さない（音が鳴らないので答えようがない）。
+
+### 出す順
+
+`buildQueue()` が `[{itemId, face}]` を作る。
+
+1. 今日のうちに出し直す札（`learning` / `relearning`）… 予定の早い順
+2. 日をまたいで戻ってきた札 … **ばらす**（同じ順で覚えてしまうのを防ぐ）
+3. 新しい札 … 1 日の上限まで。**復習のあいだに散らす**
+
+新しい札を頭に固めると「新しいのばかり 20 枚」で疲れて終わる。必ず混ぜる。
+
+答えたあと、次に出るのが 20 分以内なら**その場のならびに戻す**。
+すぐ後ろに入れると答えを覚えたまま出るので、何枚か先へ置く
+（もう一度なら 3 枚先、できたなら 8 枚先）。
+
+### 覚える語を例文の中から見つける
+
+見出しは原形（`take after`）なのに、例文では活用している（`takes after`）ことが多い。
+そのままの文字で探すと見つからず、**どの語の話なのか分からない札**になる。
+
+`findTarget()` は 2 段階で当てる。
+
+1. 語形の揺れを許して当てる（`take` → `takes` / `taking` / `applied` / `studies`）
+2. 先頭が不規則変化のときは、2 語目から当てて左へ 1 語伸ばす（`come up with` → `came up with`）
+
+**それでも見つからなかったときだけ**、表に `take after ＝ ？` の札を添える。
+見つかっているのに添えると、同じものが 2 回出るだけで邪魔になる。
+
+### 取り込み
+
+`cardimport.js` は、どの道を通っても最後は `parseBlocks()` に落とす。
+だから **PDF から直に読んでも、AI に整えさせても、出来上がるカードの形は同じ**。
+
+PDF から拾った文字は 1 つの文が途中で折り返されている。
+**行の頭が「見出し:」でなければ、前の見出しの続きとしてつなげる。ここが要。**
+英語どうしなら空白を挟み、日本語どうしならそのままつなげる。
+
+**空行を 1 枚の区切りにしない。** PDF は段落の間に空行が入りがちで、区切りにすると 1 枚が割れる。
+区切りは `---` の行と、「`EN` が 2 回来たら次の 1 枚」の 2 つだけ。
+
+意味も例文も無い行は表として読まない。ふつうの文書を貼っただけで
+1 行 1 枚のゴミ札が大量にできるため。
+
 ## 受信箱（別アプリから届いたカード）
 
 My Dictionary（別リポジトリの単一 HTML）は、同じ GitHub Pages のドメインにパス違いで置かれる。
@@ -385,6 +491,33 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 持ち、`t > a` のときだけ落とす。`a` を残すのが肝で、消した記録は向こうの端末にも渡っているため、
 足し直したときに記録ごと消すと、次の同期でまた向こうの記録が勝ってしまう。記録は 90 日で捨てる。
 
+消した記録の鍵の頭は、`deck:` `card:` `genre:` `parastar:` のほかに
+**`carddeck:` `carditem:` `cardstar:`**（カード）。`cards.js` が消すときに必ず `recordDelete` を呼ぶ。
+忘れると、もう片方の端末から消したはずのカードが戻ってくる。
+
+### カードの覚えた記録の突き合わせ
+
+`sunkan:cards:srs` だけは、足し算でも「手元が勝ち」でもなく、
+**面ごとに `last`（最後に答えた時刻）が新しいほうを残す**。
+
+- 足し算にすると間隔が伸びすぎる
+- 古いほうを残すと、もう覚えた札が何度も出る
+- 面ごとに比べるのは、「iPhone で聞だけ進めた」が普通に起きるため
+
+消えたカードの記録は連れて戻さない（`liveIds` に無い id は落とす）。
+
+### 項目を足すときに必ず 3 か所そろえる
+
+同期に新しい項目を足すときは、`sync.js` の**次の 3 か所をすべて**直す。
+
+1. `snapshot()` … 送り出す側に足す
+2. `clean()` … **受け取る側に足す**
+3. `KNOWN` … 名前を知っているものとして登録する
+
+**2 を忘れると、届いたぶんが黙って落ちる。** `KNOWN` に載せた項目は `carryUnknown` が写さないので、
+`clean()` に書かないかぎり受け取り側で消える。実際それでカードを復元できなかった
+（書き出したファイルには入っているのに、読み込むと 0 枚になる）。
+
 ### 失敗したとき
 
 **手元のデータには一切手を付けない。** 向こうが読めない（壊れている・1MB 超で途中で切られている）
@@ -404,7 +537,13 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 | `sunkan:stars` | `{ [deckId]: string[] }` … ★を付けた項目の id |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
-| `sunkan:mode` | `drill` / `para` … 最後に開いていたモード |
+| `sunkan:mode` | `drill` / `para` / `cards` … 最後に開いていたモード |
+| `sunkan:cards:decks` | カードのセット `[{id,name,created}]` |
+| `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,created}]` |
+| `sunkan:cards:srs` | 覚えた記録 `{ [itemId]: { r:状態, l:状態, s:状態 } }`（面ごとに別）。**これを落とすと忘却曲線が消える** |
+| `sunkan:cards:stars` | ★を付けたカードの id `string[]` |
+| `sunkan:cards:ui` | `{deckId, faces, newPerDay, retention, autoSpeak}`。**同期しない**（端末ごとの好み） |
+| `sunkan:cards:day` | `{day, introduced, answered}` … 今日出した新しい札の数。日が変わると 0 に戻る。**同期しない** |
 | `sunkan:para:genres` | パラフレ帳のジャンル `[{id,name}]` |
 | `sunkan:para:cards` | パラフレ本体 `[{id,genreId,headEn,headJa,lines}]` |
 | `sunkan:para:stars` | ★を付けたパラフレの id `string[]` |

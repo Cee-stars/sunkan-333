@@ -1,7 +1,7 @@
 @charset "utf-8";
 
 /* =============================================================
-   瞬間英作文 — assets/style.css
+   Duo — assets/style.css
    担当: A（全スタイル）
    方針: 素の CSS のみ。外部フォント・CDN なし。
         すべての色は CSS 変数を経由する。
@@ -20,8 +20,9 @@
      10. 空状態・フッター
      11. ダイアログ
      12. フォーム部品
-     13. モード切り替え（瞬間英作文 / パラフレ帳）
+     13. モード切り替え（瞬間英作文 / パラフレ帳 / カード）
      14. パラフレ帳
+     14b. カード
      15. 画面幅ごとの調整
      16. モーション配慮
      17. 印刷
@@ -1521,12 +1522,17 @@ legend.field-label {
 
 
 /* =============================================================
-   13. モード切り替え（瞬間英作文 / パラフレ帳）
+   13. モード切り替え（瞬間英作文 / パラフレ帳 / カード）
    ============================================================= */
 
-/* 片方のモードの部品はまとめて畳む。JS は <html data-mode> を替えるだけでよい。 */
+/* いま開いていないモードの部品はまとめて畳む。JS は <html data-mode> を替えるだけでよい。
+   モードが増えたら、その名前の行を 3 か所（ここ・下の選択中・index.html のタブ）に足す。 */
 :root[data-mode="drill"] [data-mode-view="para"],
-:root[data-mode="para"]  [data-mode-view="drill"] { display: none !important; }
+:root[data-mode="drill"] [data-mode-view="cards"],
+:root[data-mode="para"]  [data-mode-view="drill"],
+:root[data-mode="para"]  [data-mode-view="cards"],
+:root[data-mode="cards"] [data-mode-view="drill"],
+:root[data-mode="cards"] [data-mode-view="para"] { display: none !important; }
 
 .header-row--modes {
   padding-block: 8px 4px;
@@ -1572,10 +1578,16 @@ legend.field-label {
 
 /* 選ばれている側は data-mode で決める（aria-selected を待たないので初回に瞬かない） */
 :root[data-mode="drill"] #tab-drill,
-:root[data-mode="para"]  #tab-para {
+:root[data-mode="para"]  #tab-para,
+:root[data-mode="cards"] #tab-cards {
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(16, 22, 32, 0.16);
+}
+
+/* タブが 3 つになったぶん、狭い画面では字を詰める */
+@media (max-width: 24rem) {
+  .mode-tab { padding: 0 4px; font-size: 0.8125rem; }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1944,6 +1956,385 @@ legend.field-label {
 
 
 /* =============================================================
+   14b. カード
+   方針: フラッシュカードは見やすさがすべて。
+        表に出すのは 1 行、押せるものは最大 3 つ。
+        「めくる」までは答えに関わるものを一切置かない。
+   ============================================================= */
+
+/* --- 今日の残り --- */
+
+.header-row--due { padding-block: 0 8px; }
+
+.due-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.due-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+}
+
+.due-face { color: var(--text-muted); font-weight: 700; }
+.due-num { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.due-count--new .due-face { color: var(--text-faint); font-weight: 400; }
+
+/* --- 1 枚 --- */
+
+.view--cards {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px var(--cell-pad-x) 32px;
+}
+
+.card-stage {
+  width: 100%;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card-face-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.face-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+/* 面ごとに色を変える。いま何の練習をしているかが一目で分かるように */
+.face-badge[data-face="l"] { background: #e8f4ec; color: #1f7a45; }
+.face-badge[data-face="s"] { background: #fbf0e3; color: #99600f; }
+
+@media (prefers-color-scheme: dark) {
+  .face-badge[data-face="l"] { background: #16291f; color: #7fd3a1; }
+  .face-badge[data-face="s"] { background: #2b2317; color: #e5b566; }
+}
+
+.flashcard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 11rem;
+  padding: 24px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px rgba(16, 22, 32, 0.07);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.flashcard-front,
+.flashcard-back {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* めくったら、表と裏のあいだに線を引く（どこからが答えかを迷わせない） */
+.flashcard-back {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.card-text {
+  margin: 0;
+  font-size: 1.3125rem;
+  line-height: 1.5;
+  font-weight: 500;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.card-text--en { font-family: var(--font-en); }
+.card-text--ja { font-family: var(--font-ui); }
+.card-text--big { font-size: 1.75rem; font-weight: 700; }
+
+/* 「聞」の表は音だけ。文字を出したらリスニングにならない */
+.card-text--audio {
+  font-size: 2.5rem;
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* 例文のなかの覚える語 */
+.card-target {
+  font-weight: 700;
+  color: var(--accent);
+  text-underline-offset: 3px;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+/* 例文の中に見つからなかった語を添える小さな札 */
+.card-target-tag {
+  margin: 0;
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-en);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.card-play {
+  align-self: center;
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.card-answer {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.card-sub {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.card-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* --- ボタン --- */
+
+.card-actions { display: flex; gap: 8px; }
+
+.card-flip {
+  flex: 1 1 auto;
+  min-height: 52px;
+  font-size: 1.0625rem;
+}
+
+.card-actions--grade { gap: 8px; }
+
+.card-grade {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur) var(--ease);
+}
+
+.grade-label { font-size: 0.9375rem; font-weight: 700; line-height: 1.2; }
+.grade-when {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+/* 「できた」を主役にする。いちばん押す回数が多い */
+.card-grade--good {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+.card-grade--good .grade-when { color: var(--accent-contrast); opacity: 0.82; }
+
+.card-grade--again { border-color: var(--danger); color: var(--danger); }
+.card-grade--again .grade-when { color: var(--danger); opacity: 0.75; }
+
+@media (hover: hover) and (pointer: fine) {
+  .card-grade--again:hover { background: var(--danger-soft); }
+  .card-grade--easy:hover { background: var(--hover); }
+  .card-grade--good:hover { background: var(--accent-hover); }
+  .card-play:hover { background: var(--hover); }
+}
+
+/* --- 足もと（記憶の残り具合と、その札への操作） --- */
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--tap);
+}
+
+.card-recall {
+  font-size: 0.8125rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-tools { display: flex; gap: 2px; }
+.card-tools .is-on { color: var(--star); }
+
+.card-empty {
+  margin: 48px 0;
+  padding: 0 16px;
+  max-width: 28rem;
+  text-align: center;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+/* --- 一覧 --- */
+
+.card-list {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  max-height: 22rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.card-list-item + .card-list-item { border-top: 1px solid var(--hairline); }
+
+.card-list-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card-list-main:hover { background: var(--hover); }
+}
+
+.card-list-en {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-en);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-list-ja {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-list-faces { display: flex; gap: 3px; flex: 0 0 auto; }
+
+/* 3 つの面がどこまで開いているか。育ち具合が見えると続けやすい */
+.face-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.face-dot.is-locked { background: var(--surface-sunken); color: var(--text-faint); opacity: 0.5; }
+.face-dot.is-new { background: var(--surface-sunken); color: var(--text-muted); }
+.face-dot.is-live { background: var(--accent-soft); color: var(--accent); }
+
+/* 取り込みダイアログの見本 */
+.dialog-pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --- 狭幅（iPhone 縦） --- */
+@media (max-width: 560px) {
+  .view--cards { padding-top: 10px; }
+  .flashcard { padding: 20px 16px; min-height: 9.5rem; }
+  .card-text { font-size: 1.1875rem; }
+  .card-text--big { font-size: 1.5rem; }
+  .card-answer { font-size: 1.25rem; }
+  .card-list-ja { display: none; }   /* 英語と面の印だけで足りる */
+}
+
+
+/* =============================================================
    15. 画面幅ごとの調整
    ============================================================= */
 
@@ -1981,6 +2372,11 @@ legend.field-label {
   /* ラベルを畳んで記号だけにし、横スクロールを絶対に出さない */
   .btn--ghost .btn-label { display: none; }
   .btn--ghost { padding-inline: 10px; }
+
+  /* ただし「PDF から」だけは字を残す。
+     📄 の記号だけだと、カードをどこから作るのかが分からない。 */
+  #btn-card-import .btn-label { display: inline; }
+  #btn-card-import { padding-inline: 8px; font-size: 0.8125rem; }
 
   .header-row { gap: 6px; }
   .header-row--controls { gap: 6px; }

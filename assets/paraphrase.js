@@ -17,7 +17,7 @@
   var LS_STARS = 'sunkan:para:stars';     // ★を付けたパラフレの id
   var LS_UI = 'sunkan:para:ui';           // { genreId, mask, sort, starredOnly }
 
-  var MODES = ['drill', 'para'];
+  var MODES = ['drill', 'para', 'cards'];
   var SORTS = ['added', 'newest', 'alpha', 'genre'];
 
   var LINE_COUNT = 4;        // 見出しの下に置ける言い換えの数
@@ -197,6 +197,14 @@
   var elTabs = $('mode-tabs');
   var elTabDrill = $('tab-drill');
   var elTabPara = $('tab-para');
+  var elTabCards = $('tab-cards');
+
+  /** モード名 → そのタブ。増えたらここだけ足す */
+  function tabFor(mode) {
+    if (mode === 'para') return elTabPara;
+    if (mode === 'cards') return elTabCards;
+    return elTabDrill;
+  }
 
   var elGenreInput = $('genre-input');
   var elGenreAdd = $('btn-genre-add');
@@ -283,19 +291,24 @@
       if (port) port.cancel();
     }
 
-    if (elTabDrill) {
-      elTabDrill.setAttribute('aria-selected', mode === 'drill' ? 'true' : 'false');
-      elTabDrill.tabIndex = mode === 'drill' ? 0 : -1;
-    }
-    if (elTabPara) {
-      elTabPara.setAttribute('aria-selected', mode === 'para' ? 'true' : 'false');
-      elTabPara.tabIndex = mode === 'para' ? 0 : -1;
+    for (var i = 0; i < MODES.length; i++) {
+      var tab = tabFor(MODES[i]);
+      if (!tab) continue;
+      var on = MODES[i] === mode;
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      tab.tabIndex = on ? 0 : -1;
     }
 
     if (opts.persist !== false) saveMode();
     if (opts.focusTab) {
-      var tab = mode === 'para' ? elTabPara : elTabDrill;
-      if (tab) tab.focus();
+      var focusTab = tabFor(mode);
+      if (focusTab) focusTab.focus();
+    }
+
+    // カードの画面は開いた時点で作る（裏で毎回作り直すと、めくった札が勝手に閉じる）
+    if (moved && mode === 'cards') {
+      var cards = window.SUNKAN_CARDS;
+      if (cards && typeof cards.onShow === 'function') cards.onShow();
     }
   }
 
@@ -1333,7 +1346,11 @@
   function onTabsKeyDown(e) {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
-    setMode(state.mode === 'drill' ? 'para' : 'drill', { focusTab: true });
+    var at = MODES.indexOf(state.mode);
+    if (at < 0) at = 0;
+    var step = (e.key === 'ArrowRight') ? 1 : -1;
+    var next = (at + step + MODES.length) % MODES.length;   // 端で折り返す
+    setMode(MODES[next], { focusTab: true });
   }
 
   /** 言い換えの欄で Enter を押したら、そのまま保存する */
@@ -1347,6 +1364,7 @@
   function bindEvents() {
     if (elTabDrill) elTabDrill.addEventListener('click', function () { setMode('drill'); });
     if (elTabPara) elTabPara.addEventListener('click', function () { setMode('para'); });
+    if (elTabCards) elTabCards.addEventListener('click', function () { setMode('cards'); });
     if (elTabs) elTabs.addEventListener('keydown', onTabsKeyDown);
 
     if (elGenreInput) {
