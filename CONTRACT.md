@@ -330,6 +330,26 @@ window.SUNKAN_DECKS = [
 終わりの画面では `nextSession()` で**次にいつ何枚出るか**まで言う。
 ここを出さないと、終わったあとに「もう来なくていいのか」が分からない。
 
+### 1 日の上限（セットごと）
+
+`newPerDay` は **1 セットにつき** の数。`day.introduced` は `{ [deckId]: n }`。
+
+**ひとつにまとめてはいけない。** まとめると、先に開いたセットで使い切って
+ほかのセットが 1 枚も始められない（3 セット 45 枚あっても 20 枚で打ち止めになっていた）。
+
+上限をかけるのは `collectUnits` の `fresh`（今日から始めるカード）と
+`ladder`（すでに始めたカードで新しく開いた面）だけ。**`due` と `learning` にはかけない。**
+予定が来た復習を止めると、忘却曲線の言うとおりに出せなくなり、曲線を使う意味が無くなる。
+
+`fresh` と `ladder` に上限をかけても曲線は壊れない。どちらもまだ一度も答えていない面で、
+覚え具合の記録がまだ無いから、あとの日に回しても失うものが無い。
+
+`capNew(ladder, fresh)` は **ladder を先に通す**。逆にすると新しいカードに押されて
+「聞」「言」がいつまでも出てこない。始めたものを終わらせるほうが先。
+
+セットを選ぶ欄には `todayTag()` で「（今日 20）」を出す。
+**セットごとに何枚やればいいかが、選ぶ前から分かるようにする。**
+
 ### 出す順
 
 `buildQueue()` が `[{itemId, face}]` を作る。
@@ -570,7 +590,7 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 | `sunkan:cards:srs` | 覚えた記録 `{ [itemId]: { r:状態, l:状態, s:状態 } }`（面ごとに別）。**これを落とすと忘却曲線が消える** |
 | `sunkan:cards:stars` | ★を付けたカードの id `string[]` |
 | `sunkan:cards:ui` | `{deckId, faces, newPerDay, retention, autoSpeak}`。**同期しない**（端末ごとの好み） |
-| `sunkan:cards:day` | `{day, introduced, answered, done}` … 今日の数え。`done` は今日カタが付いた面の数（進み具合の分子）。日が変わると 0 に戻る。**同期しない** |
+| `sunkan:cards:day` | `{day, introduced, answered, done}` … 今日の数え。`introduced` は **セットごと**の `{deckId: n}`、`done` は今日カタが付いた面の数（進み具合の分子）。日が変わると 0 に戻る。**同期しない** |
 | `sunkan:para:genres` | パラフレ帳のジャンル `[{id,name}]` |
 | `sunkan:para:cards` | パラフレ本体 `[{id,genreId,headEn,headJa,lines}]` |
 | `sunkan:para:stars` | ★を付けたパラフレの id `string[]` |

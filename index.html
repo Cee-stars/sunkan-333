@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 33 (2026-09-11)">
+<meta name="sunkan-build" content="build 34 (2026-09-12)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -1011,10 +1011,18 @@ EXJA: 会議を金曜まで延期した。</pre>
     </fieldset>
 
     <fieldset class="field-group">
-      <legend class="field-label">1 日に出す新しい札</legend>
+      <legend class="field-label">1 日に始める新しいカード（セットごと）</legend>
       <input type="range" id="opt-new-per-day" min="0" max="60" step="5" value="20" class="field-range">
       <output for="opt-new-per-day" id="opt-new-per-day-out" class="field-output">20 枚</output>
-      <p class="dialog-hint">増やしすぎると、数日後に復習が雪だるま式に増えます。20 枚前後が続けやすい量です。</p>
+      <p class="dialog-hint">
+        <strong>セットごとの数です。</strong>3 セットあれば 1 日 3 × この数まで始められます。
+        増やしすぎると数日後に復習が雪だるま式に増えるので、20 枚前後が続けやすい量です。
+      </p>
+      <p class="dialog-hint">
+        この上限がかかるのは<strong>今日から始めるカードだけ</strong>です。
+        復習の予定が来た札と、育って開いた「聞」「言」は、上限に関わらず全部出ます
+        （止めると忘却曲線の言うとおりに出せなくなるため）。
+      </p>
     </fieldset>
 
     <fieldset class="field-group">

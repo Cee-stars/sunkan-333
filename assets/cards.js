@@ -233,10 +233,22 @@
    */
   function sanitizeDay(raw) {
     var o = (raw && typeof raw === 'object') ? raw : {};
-    if (trim(o.day) !== today()) return { day: today(), introduced: 0, answered: 0, done: 0 };
+    if (trim(o.day) !== today()) {
+      return { day: today(), introduced: {}, answered: 0, done: 0 };
+    }
+    // introduced はセットごとの数え。古い版は 1 つの数だったので、そのときは捨てる
+    // （捨てても today ぶんの上限が緩むだけで、失われて困る記録ではない）
+    var introduced = {};
+    if (o.introduced && typeof o.introduced === 'object') {
+      for (var id in o.introduced) {
+        if (!Object.prototype.hasOwnProperty.call(o.introduced, id)) continue;
+        var n = Math.max(0, Number(o.introduced[id]) || 0);
+        if (n) introduced[trim(id)] = n;
+      }
+    }
     return {
       day: today(),
-      introduced: Math.max(0, Number(o.introduced) || 0),
+      introduced: introduced,
       answered: Math.max(0, Number(o.answered) || 0),
       done: Math.max(0, Number(o.done) || 0)
     };
@@ -395,14 +407,18 @@
     return null;
   }
 
-  /** いま表示するセットに入っているカード */
-  function itemsInDeck() {
-    if (!state.deckId) return state.items.slice();
+  /** そのセットに入っているカード */
+  function itemsOfDeck(deckId) {
     var out = [];
     for (var i = 0; i < state.items.length; i++) {
-      if (state.items[i].deckId === state.deckId) out.push(state.items[i]);
+      if (state.items[i].deckId === deckId) out.push(state.items[i]);
     }
     return out;
+  }
+
+  /** いま表示するセットに入っているカード（'' なら全部） */
+  function itemsInDeck() {
+    return state.deckId ? itemsOfDeck(state.deckId) : state.items.slice();
   }
 
   /** 1 枚 1 面の記憶の状態。無ければ新品を返す（保存はしない） */
@@ -467,10 +483,33 @@
    * 8. 今日の予定を組む
    * ========================================================== */
 
-  /** 今日あと何枚まで新しい札を出してよいか */
-  function newAllowance() {
+  /**
+   * まだ 1 面も答えていないカードか。
+   *
+   * 1 日の上限は「**今日から始める新しいカード**」の数にかける。
+   * すでに始めたカードの「聞」「言」は、そのカードの予定に沿って出てきたものなので、
+   * 上限で止めない。止めると忘却曲線の言うとおりに出せなくなり、曲線の意味が無くなる。
+   */
+  function isNewCard(itemId) {
+    var per = state.srs[itemId];
+    if (!per) return true;
+    for (var face in per) {
+      if (!Object.prototype.hasOwnProperty.call(per, face)) continue;
+      if (per[face] && per[face].state !== 'new') return false;
+    }
+    return true;
+  }
+
+  /**
+   * そのセットで、今日あと何枚まで新しいカードを始めてよいか。
+   *
+   * **上限はセットごとに別々。** ひとつにまとめると、先に開いたセットで使い切って
+   * ほかのセットが 1 枚も始められなくなる（3 セット 45 枚あっても 20 枚で打ち止めだった）。
+   */
+  function newAllowance(deckId) {
     state.day = sanitizeDay(state.day);
-    return Math.max(0, state.ui.newPerDay - state.day.introduced);
+    var used = state.day.introduced[trim(deckId)] || 0;
+    return Math.max(0, state.ui.newPerDay - used);
   }
 
   /**
@@ -483,16 +522,39 @@
    * 新しい札は最後にまとめず、復習のあいだに散らす。頭に固めると
    * 「新しいのばかり 20 枚」で疲れて終わる。
    */
-  function buildQueue() {
-    var srs = srsPort();
-    if (!srs) return [];
+  /** 今日ここまでに始めたカードの合計（セットぶんを足す） */
+  function introducedTotal() {
+    state.day = sanitizeDay(state.day);
+    var n = 0;
+    for (var id in state.day.introduced) {
+      if (Object.prototype.hasOwnProperty.call(state.day.introduced, id)) n += state.day.introduced[id];
+    }
+    return n;
+  }
 
+  /** いま見ているセットで、1 日の上限に引っかかって今日は出さなかったぶんの数 */
+  function heldByLimit() {
+    var parts = collectUnits(itemsInDeck());
+    var all = parts.ladder.length + parts.fresh.length;
+    return Math.max(0, all - capNew(parts.ladder, parts.fresh).length);
+  }
+
+  /**
+   * カードの並びから、今日出すぶんを 3 つに仕分ける。
+   *
+   *   learning … 今日のうちに出し直す札
+   *   due      … 日をまたいで戻ってきた札。**上限をかけない**（忘却曲線の言うとおりに出す）
+   *   fresh    … 今日から始めるカード。ここだけセットごとの上限にかける
+   *   ladder   … すでに始めたカードで、新しく開いた「聞」「言」。上限をかけない
+   */
+  function collectUnits(list) {
     var now = Date.now();
-    var list = itemsInDeck();
-    var learning = [], due = [], fresh = [];
+    var learning = [], due = [], fresh = [], ladder = [];
 
     for (var i = 0; i < list.length; i++) {
       var item = list[i];
+      var brandNew = isNewCard(item.id);
+
       for (var f = 0; f < FACES.length; f++) {
         var face = FACES[f];
         if (!faceUnlocked(item.id, face)) continue;
@@ -501,23 +563,57 @@
         var entry = { itemId: item.id, face: face, due: st.due };
 
         if (st.state === 'new') {
-          fresh.push(entry);
+          (brandNew ? fresh : ladder).push(entry);
         } else if (st.due !== null && st.due <= now) {
           if (st.state === 'learning' || st.state === 'relearning') learning.push(entry);
           else due.push(entry);
         }
       }
     }
+    return { learning: learning, due: due, fresh: fresh, ladder: ladder };
+  }
 
-    learning.sort(function (a, b) { return (a.due || 0) - (b.due || 0); });
-    shuffle(due);
-
-    // 新しい札は、同じカードの別の面が先に出ないよう、作った順のまま上限まで取る
-    fresh.sort(function (a, b) {
+  /**
+   * 今日「新しく出す」ぶんを、セットごとの上限まで残す。
+   *
+   * **育って開いた面（ladder）を、今日から始めるカード（fresh）より先に通す。**
+   * 始めたものを終わらせるほうが先で、逆にすると新しいカードに押されて
+   * 「聞」「言」がいつまでも出てこない。
+   *
+   * 上限をかけても忘却曲線は壊れない。どちらもまだ一度も答えていない面で、
+   * 覚え具合の記録がまだ無いから、あとの日に回しても失うものが無い。
+   * 止めてはいけないのは「予定が来た復習」のほうで、そちらには一切かけない。
+   */
+  function capNew(ladder, fresh) {
+    var byOrder = fresh.slice().sort(function (a, b) {
       var ia = findItem(a.itemId), ib = findItem(b.itemId);
       return ((ia && ia.created) || 0) - ((ib && ib.created) || 0);
     });
-    fresh = fresh.slice(0, newAllowance());
+
+    var order = ladder.concat(byOrder);
+    var room = {}, kept = [];
+    for (var i = 0; i < order.length; i++) {
+      var item = findItem(order[i].itemId);
+      var deckId = item ? trim(item.deckId) : '';
+      if (room[deckId] === undefined) room[deckId] = newAllowance(deckId);
+      if (room[deckId] <= 0) continue;
+      room[deckId]--;
+      kept.push(order[i]);
+    }
+    return kept;
+  }
+
+  function buildQueue() {
+    var srs = srsPort();
+    if (!srs) return [];
+
+    var parts = collectUnits(itemsInDeck());
+    var learning = parts.learning;
+    var due = parts.due;
+    var fresh = capNew(parts.ladder, parts.fresh);
+
+    learning.sort(function (a, b) { return (a.due || 0) - (b.due || 0); });
+    shuffle(due);
 
     // 復習のあいだに新しい札を散らす
     var mixed = learning.concat(due);
@@ -607,6 +703,18 @@
    * 9. 描画
    * ========================================================== */
 
+  /**
+   * セット名のうしろに付ける「今日ぶん」の札。
+   * セットごとに何枚やればいいかが、選ぶ前から分かるように。
+   */
+  function todayTag(list) {
+    if (!list.length) return '（0）';
+    var parts = collectUnits(list);
+    var n = parts.learning.length + parts.due.length +
+      capNew(parts.ladder, parts.fresh).length;
+    return n ? '（今日 ' + n + '）' : '（済）';
+  }
+
   function renderDeckSelect() {
     if (!elDeckSelect) return;
     var keep = state.deckId;
@@ -614,18 +722,14 @@
 
     var all = document.createElement('option');
     all.value = '';
-    all.textContent = 'すべてのセット';
+    all.textContent = 'すべてのセット' + todayTag(state.items);
     elDeckSelect.appendChild(all);
 
     for (var i = 0; i < state.decks.length; i++) {
       var d = state.decks[i];
-      var n = 0;
-      for (var j = 0; j < state.items.length; j++) {
-        if (state.items[j].deckId === d.id) n++;
-      }
       var opt = document.createElement('option');
       opt.value = d.id;
-      opt.textContent = d.name + '（' + n + '）';
+      opt.textContent = d.name + todayTag(itemsOfDeck(d.id));
       elDeckSelect.appendChild(opt);
     }
     elDeckSelect.value = findDeck(keep) ? keep : '';
@@ -878,10 +982,13 @@
     elEmpty.appendChild(line);
 
     // まだ入れていない新しい札があるなら、増やせることだけ伝える（勝手には増やさない）
-    if (newAllowance() <= 0 && state.day.introduced > 0) {
+    // 上限で止めているぶんがあるときだけ、そう言う（黙って減らさない）
+    var held = heldByLimit();
+    if (held > 0) {
       var note = document.createElement('span');
       note.className = 'card-empty-note';
-      note.textContent = '新しい札は 1 日 ' + state.ui.newPerDay + ' 枚までにしてあります（⚙ で変えられます）。';
+      note.textContent = 'このほかに、まだ始めていないカードが ' + held + ' 枚あります。' +
+        '新しいカードは 1 セットにつき 1 日 ' + state.ui.newPerDay + ' 枚までにしてあります（⚙ で変えられます）。';
       elEmpty.appendChild(note);
     }
   }
@@ -943,14 +1050,20 @@
     var itemId = state.current.itemId;
     var face = state.current.face;
     var before = faceState(itemId, face);
-    var wasNew = before.state === 'new';
+    // 今日「新しく出した」ものは、今日から始めたカードでも、育って開いた面でも、
+    // どちらも 1 つぶん上限を使う（capNew が数えているのと同じ単位にそろえる）。
+    var startedCard = (before.state === 'new');
 
     var after = srs.review(before, grade, { retention: state.ui.retention });
     setFaceState(itemId, face, after);
     saveSrs();
 
     state.day = sanitizeDay(state.day);
-    if (wasNew) state.day.introduced++;
+    if (startedCard) {
+      var item = findItem(itemId);
+      var deckId = item ? trim(item.deckId) : '';
+      state.day.introduced[deckId] = (state.day.introduced[deckId] || 0) + 1;
+    }
     state.day.answered++;
     saveDay();
 
@@ -1314,7 +1427,7 @@
     state.day = sanitizeDay(state.day);
     elStats.textContent = 'カード ' + list.length + ' 枚 / 開いている面 ' + faces +
       '（覚えかけ ' + live + '・未学習 ' + fresh + '）。' +
-      '今日答えたのは ' + state.day.answered + ' 回、新しく出したのは ' + state.day.introduced + ' 枚です。';
+      '今日答えたのは ' + state.day.answered + ' 回、新しく始めたのは ' + introducedTotal() + ' 枚です。';
   }
 
   function resetProgress() {
@@ -1325,7 +1438,7 @@
 
     for (var i = 0; i < list.length; i++) delete state.srs[list[i].id];
     saveSrs();
-    state.day = { day: today(), introduced: 0, answered: 0 };
+    state.day = { day: today(), introduced: {}, answered: 0, done: 0 };
     saveDay();
     render();
     renderSettings();
