@@ -14,6 +14,7 @@
 | `assets/srs.js` | I | 忘却曲線（FSRS-5）。予定の計算だけ。DOM も localStorage も触らない |
 | `assets/cards.js` | J | カードの動作すべて（3 つの面・めくり・一覧・設定） |
 | `assets/import.js` | K | 取り込み（PDF・テキスト・表・AI への指示）。**カードと瞬間英作文の両方**が通る |
+| `assets/media.js` | L | 写真（IndexedDB）。縮めて詰めるのもここ。画面は触らない |
 | `assets/vendor/pdf.min.js` | 外 | pdf.js（Mozilla / Apache-2.0）。手を入れない。差し替えは版ごと |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 | `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
@@ -104,6 +105,32 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 カードの取り込みは import.js が最後まで面倒を見る（`SUNKAN_CARDS.addCards` へ渡す）。
 瞬間英作文のほうは **PDF を文字にして欄へ入れるところまで**で、
 そのあとは `input` を投げて app.js の下読みに拾わせる（二重に解かない）。
+
+### `window.SUNKAN_MEDIA`（media.js が開けている口）
+
+写真だけは **localStorage に置かない**。1 枚 100KB でも 50 枚で上限に当たり、
+**溢れた瞬間にカードや覚えた記録まで保存できなくなる**。IndexedDB（`duo-media`）に分ける。
+
+カード側（`sunkan:cards:items`）が持つのは `img` の **id だけ**。中身（Blob）はこちら。
+この分け方のおかげで、写真が無い端末に同期してもカードは普通に使える（写真が出ないだけ）。
+
+| 関数 | 内容 |
+| --- | --- |
+| `supported()` | この端末で写真を扱えるか |
+| `add(file)` | 1 枚しまう。**縮めて詰めるのはこの中**。`{id, w, h, bytes}` |
+| `remove(id)` | 消す |
+| `url(id)` | 表示用の URL（`blob:`）。作ったものは取り回す |
+| `dropURL(id)` | 表示用の URL を捨てる（消したあとに呼ぶ） |
+| `dump()` | ぜんぶを data URL にして返す（バックアップ用） |
+| `restore(bag)` | バックアップから戻す。**すでにある id は上書きしない** |
+| `usage()` | 何枚・何バイト使っているか |
+| `sweep(keepIds)` | どのカードからも指されていない写真を捨てる |
+
+**必ず縮めてからしまう**（長辺 1000px・WebP・品質 0.82）。カメラの写真は 1 枚 3〜5MB あり、
+そのまま溜めると端末の保存領域を食い潰す。WebP を作れない端末では JPEG に落ちる。
+
+**向きに注意。** iPhone の写真は向きが EXIF に入っていて、`<img>` 経由で canvas に描くと
+横倒しになることがある。`createImageBitmap(file, {imageOrientation:'from-image'})` を先に試す。
 
 ### `window.SUNKAN_UPDATE`（update.js が開けている口）
 
@@ -366,6 +393,28 @@ window.SUNKAN_DECKS = [
 セットを選ぶ欄には `todayTag()` で「（今日 20）」を出す。
 **セットごとに何枚やればいいかが、選ぶ前から分かるようにする。**
 
+### 写真
+
+| 面 | 表 | 裏 |
+| --- | --- | --- |
+| 読 | **出さない**（意味が割れる） | 出す |
+| 聞 | 出さない | 出す |
+| 言 | **出す**（手がかり） | 出す |
+
+「言」の表に出すのが肝。**写真を見て英語を口に出す**のがいちばん強い練習になる。
+ただし答えではなく手がかりなので小さめ（`.card-photo--hint`）。
+
+**1 枚だけ。飾りは入れない。** 多いとかえって邪魔になる。
+
+取り込んだだけで保存しなかった写真は、閉じるときに捨てる（`closeCardDialog`）。
+替えたときの古いほうは保存のときに捨てる。どちらも
+**ほかのカードが使っていないことを確かめてから**（`dropPhotoIfUnused`）。
+
+写真は**同期に載せない**（Gist に数 MB を毎回往復させると遅くなって失敗が増える）。
+**バックアップには載せる**。そちらは `snapshot(media)` に渡して `media` の項目に入れる。
+取り出しは非同期なので、`exportBackup` は**先に `dump()` してから**書き出す。
+ここを飛ばすと、写真だけ入っていないファイルができる。
+
 ### 出す順
 
 `buildQueue()` が `[{itemId, face}]` を作る。
@@ -626,7 +675,7 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
 | `sunkan:mode` | `drill` / `para` / `cards` … 最後に開いていたモード |
 | `sunkan:cards:decks` | カードのセット `[{id,name,created}]` |
-| `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,created}]` |
+| `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,img,created}]`。`img` は写真の **id だけ**（中身は IndexedDB） |
 | `sunkan:cards:srs` | 覚えた記録 `{ [itemId]: { r:状態, l:状態, s:状態 } }`（面ごとに別）。**これを落とすと忘却曲線が消える** |
 | `sunkan:cards:stars` | ★を付けたカードの id `string[]` |
 | `sunkan:cards:ui` | `{deckId, faces, newPerDay, retention, autoSpeak}`。**同期しない**（端末ごとの好み） |

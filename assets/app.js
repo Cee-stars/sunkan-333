@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 37 (2026-09-16)';
+  var APP_VERSION = 'build 38 (2026-09-16)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -1807,16 +1807,37 @@
       setDataStatus('この画面では書き出せません。', true);
       return;
     }
+
+    // 写真は IndexedDB にあり、取り出すのが非同期。**先にまとめてから**書き出す。
+    // ここを飛ばすと、書き出したファイルに写真だけ入っていない状態になる。
+    var media = window.SUNKAN_MEDIA;
+    if (media && typeof media.dump === 'function' && media.supported()) {
+      setDataStatus('写真をまとめています…', false);
+      media.dump().then(finishExport, function () { finishExport(null); });
+      return;
+    }
+    finishExport(null);
+  }
+
+  function finishExport(mediaBag) {
+    var sync = window.SUNKAN_SYNC;
     var text, name;
     try {
-      text = sync.backupText();
+      text = sync.backupText(mediaBag);
       name = sync.backupName();
     } catch (e) {
       setDataStatus('書き出せませんでした（' + (e && e.message ? e.message : '理由不明') + '）。', true);
       return;
     }
+
+    var photos = 0;
+    if (mediaBag) {
+      for (var k in mediaBag) { if (Object.prototype.hasOwnProperty.call(mediaBag, k)) photos++; }
+    }
     if (downloadText(name, text, 'application/json')) {
-      setDataStatus(name + ' を書き出しました。新しい端末で「バックアップを読み込む」を押してください。', false);
+      setDataStatus(name + ' を書き出しました' +
+        (photos ? '（写真 ' + photos + ' 枚を含む）' : '') +
+        '。新しい端末で「バックアップを読み込む」を押してください。', false);
     } else {
       setDataStatus('書き出せませんでした。', true);
     }
@@ -1851,6 +1872,24 @@
     }
     var r = sync.takeBackupText(text);
     setDataStatus(r.message, !r.ok);
+
+    // 写真は IndexedDB へ。時間がかかるので、済んだら言い足す
+    var media = window.SUNKAN_MEDIA;
+    var bag = r.media;
+    if (!bag || !media || typeof media.restore !== 'function' || !media.supported()) return;
+
+    var want = 0;
+    for (var k in bag) { if (Object.prototype.hasOwnProperty.call(bag, k)) want++; }
+    if (!want) return;
+
+    setDataStatus(r.message + '\n写真 ' + want + ' 枚を戻しています…', !r.ok);
+    media.restore(bag).then(function (put) {
+      setDataStatus(r.message + '\n写真を ' + put + ' 枚戻しました。', !r.ok);
+      var cards = window.SUNKAN_CARDS;
+      if (cards && typeof cards.reload === 'function') cards.reload();
+    }, function () {
+      setDataStatus(r.message + '\n⚠ 写真は戻せませんでした。', true);
+    });
   }
 
   /**

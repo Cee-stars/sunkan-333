@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 37 (2026-09-16)">
+<meta name="sunkan-build" content="build 38 (2026-09-16)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -242,6 +242,8 @@
 
       <div class="flashcard" id="flashcard">
         <div class="flashcard-front">
+          <!-- 「言」の面だけ、表に写真を出す。写真を見て英語を口に出す練習になる -->
+          <img class="card-photo card-photo--hint" id="card-photo-front" alt="" hidden>
           <p class="card-text" id="card-front-text"></p>
           <!-- 例文の中に覚える語が見つからなかったときだけ出す（どの語の話かを迷わせない） -->
           <p class="card-target-tag" id="card-target-tag" hidden></p>
@@ -253,6 +255,7 @@
         <div class="flashcard-back" id="card-back" hidden>
           <p class="card-answer" id="card-answer"></p>
           <p class="card-sub" id="card-sub" hidden></p>
+          <img class="card-photo" id="card-photo-back" alt="" hidden>
           <p class="card-note" id="card-note" hidden></p>
         </div>
       </div>
@@ -920,6 +923,26 @@ MEMO: take after = 〜に似ている</pre>
         placeholder="つまずきやすい所があれば">
     </label>
 
+    <fieldset class="field-group" id="card-photo-field">
+      <legend class="field-label">写真（任意）</legend>
+      <p class="dialog-hint">
+        写真があると、文字だけより思い出しやすくなります。
+        <strong>「言」の面では、表に小さく出ます</strong>（写真を見て英語を口に出す練習になります）。
+      </p>
+
+      <div class="photo-row">
+        <div class="photo-preview" id="card-photo-preview" hidden>
+          <img id="card-photo-img" alt="このカードの写真">
+        </div>
+        <div class="photo-actions">
+          <button type="button" id="btn-card-photo" class="btn btn--ghost">写真を選ぶ</button>
+          <button type="button" id="btn-card-photo-clear" class="btn btn--ghost" hidden>外す</button>
+        </div>
+      </div>
+      <input type="file" id="card-photo-file" accept="image/*" hidden>
+      <p class="dialog-hint" id="card-photo-status" role="status" aria-live="polite"></p>
+    </fieldset>
+
     <p class="dialog-note" id="card-dialog-status" role="status" aria-live="polite"></p>
 
     <div class="dialog-actions dialog-actions--wrap">
@@ -1113,6 +1136,7 @@ EXJA: 会議を金曜まで延期した。</pre>
 <script src="assets/data.js"></script>
 <script src="assets/app.js"></script>
 <script src="assets/paraphrase.js"></script>
+<script src="assets/media.js"></script>
 <script src="assets/srs.js"></script>
 <script src="assets/cards.js"></script>
 <script src="assets/import.js"></script>

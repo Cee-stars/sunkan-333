@@ -50,6 +50,7 @@
     try { return lsSet(key, JSON.stringify(value)); } catch (e) { return false; }
   }
 
+  function mediaPort() { return window.SUNKAN_MEDIA || null; }
   function srsPort() { return window.SUNKAN_SRS || null; }
   function speechPort() { return window.SUNKAN_SPEECH || null; }
 
@@ -170,6 +171,7 @@
         exEn: trim(c.exEn),
         exJa: trim(c.exJa),
         note: trim(c.note),
+        img: trim(c.img),        // 写真の id。中身は media.js（IndexedDB）にある
         created: Number(c.created) || 0
       });
     }
@@ -271,6 +273,8 @@
     current: null,       // いま出している {itemId, face}
     flipped: false,      // 裏を出しているか
     editingId: null,     // 編集中のカード id（新規は null）
+    editingImg: '',      // 編集中に選んでいる写真の id
+    editingImgWas: '',   // 開いたときに付いていた写真の id（捨てるかの判断に使う）
     listQuery: '',
     speechOK: false,
     started: false,      // 一度でも画面を作ったか
@@ -334,6 +338,15 @@
   var elSaveBtn = $('btn-card-save');
   var elCancelBtn = $('btn-card-cancel');
   var elDeleteBtn = $('btn-card-delete');
+  var elPhotoField = $('card-photo-field');
+  var elPhotoBtn = $('btn-card-photo');
+  var elPhotoClear = $('btn-card-photo-clear');
+  var elPhotoFile = $('card-photo-file');
+  var elPhotoPreview = $('card-photo-preview');
+  var elPhotoImg = $('card-photo-img');
+  var elPhotoStatus = $('card-photo-status');
+  var elPhotoFront = $('card-photo-front');
+  var elPhotoBack = $('card-photo-back');
   var elNewDeckInput = $('card-new-deck');
   var elNewDeckBtn = $('btn-card-new-deck');
 
@@ -833,6 +846,37 @@
     return { node: out, matched: true };
   }
 
+  /**
+   * 写真を出す。
+   *
+   *   読 … 裏だけ（表に出すと意味が割れる）
+   *   聞 … 裏だけ
+   *   言 … **表にも小さく出す**。写真を見て英語を口に出すのがいちばん強い練習になる
+   */
+  function renderPhoto(item, face) {
+    var media = mediaPort();
+    var id = trim(item.img);
+
+    function put(el, show) {
+      if (!el) return;
+      if (!show || !id || !media) {
+        el.hidden = true;
+        el.removeAttribute('src');
+        return;
+      }
+      media.url(id).then(function (url) {
+        // 待っているあいだに次の札へ進んでいたら貼らない
+        if (!state.current || state.current.itemId !== item.id) return;
+        if (!url) { el.hidden = true; return; }
+        el.src = url;
+        el.hidden = false;
+      });
+    }
+
+    put(elPhotoFront, face === 's');
+    put(elPhotoBack, true);
+  }
+
   /** 「どの語の話か」を表に添える。空文字なら消す */
   function showTargetTag(text) {
     if (!elTargetTag) return;
@@ -906,6 +950,7 @@
       setText(elSub, item.exEn ? item.en : item.ja);
     }
     setText(elNote, item.note);
+    renderPhoto(item, face);
 
     if (elStarBtn) {
       var starred = state.stars.indexOf(item.id) >= 0;
@@ -1123,6 +1168,72 @@
     }
   }
 
+  /* ---- 写真 ---- */
+
+  /** ダイアログの写真の見た目を、いまの state.editingImg に合わせる */
+  function renderPhotoField() {
+    var media = mediaPort();
+    if (elPhotoField) elPhotoField.hidden = !(media && media.supported());
+
+    var has = !!trim(state.editingImg);
+    if (elPhotoClear) elPhotoClear.hidden = !has;
+    if (elPhotoBtn) elPhotoBtn.textContent = has ? '写真を替える' : '写真を選ぶ';
+    if (elPhotoPreview) elPhotoPreview.hidden = !has;
+
+    if (!has) {
+      if (elPhotoImg) elPhotoImg.removeAttribute('src');
+      return;
+    }
+    if (!media || !elPhotoImg) return;
+    var want = state.editingImg;
+    media.url(want).then(function (url) {
+      // 待っているあいだに別の写真へ替わっていたら、古いほうを貼らない
+      if (state.editingImg !== want || !elPhotoImg) return;
+      if (url) elPhotoImg.src = url;
+    });
+  }
+
+  function photoStatus(message) {
+    if (elPhotoStatus) elPhotoStatus.textContent = str(message);
+  }
+
+  /**
+   * 選ばれたファイルを、縮めてしまう。
+   *
+   * **入れ替えたぶんはすぐには消さない。** 「閉じる」で取り消すかもしれないので、
+   * 保存するときに要らなくなったほうを捨てる（closeCardDialog / submitCard）。
+   */
+  function takePhoto(file) {
+    var media = mediaPort();
+    if (!media || !file) return;
+
+    photoStatus('写真を取り込んでいます…');
+    if (elPhotoBtn) elPhotoBtn.disabled = true;
+
+    media.add(file).then(function (info) {
+      if (elPhotoBtn) elPhotoBtn.disabled = false;
+      state.editingImg = info.id;
+      renderPhotoField();
+      photoStatus('取り込みました（' + media.humanBytes(info.bytes) + '）。');
+    }).catch(function (err) {
+      if (elPhotoBtn) elPhotoBtn.disabled = false;
+      photoStatus('取り込めませんでした（' + ((err && err.message) || '理由は分かりません') + '）。');
+    });
+  }
+
+  /** 使われなくなった写真を捨てる。いま使っている id は残す */
+  function dropPhotoIfUnused(id, keepId) {
+    var media = mediaPort();
+    var target = trim(id);
+    if (!media || !target || target === trim(keepId)) return;
+
+    // ほかのカードが使っていれば消さない
+    for (var i = 0; i < state.items.length; i++) {
+      if (state.items[i].img === target) return;
+    }
+    media.remove(target);
+  }
+
   function openCardDialog(itemId) {
     state.editingId = itemId || null;
     var item = itemId ? findItem(itemId) : null;
@@ -1138,8 +1249,25 @@
     if (elFieldExJa) elFieldExJa.value = item ? item.exJa : '';
     if (elFieldNote) elFieldNote.value = item ? item.note : '';
 
+    state.editingImg = item ? trim(item.img) : '';
+    state.editingImgWas = state.editingImg;
+    photoStatus('');
+    renderPhotoField();
+
     openDialog(elDialog);
     if (elFieldEn) elFieldEn.focus();
+  }
+
+  /**
+   * ダイアログを閉じる（取り消し）。
+   * 取り込んだだけで保存しなかった写真は、ここで捨てる。溜めると保存領域を食う。
+   */
+  function closeCardDialog() {
+    dropPhotoIfUnused(state.editingImg, state.editingImgWas);
+    state.editingImg = '';
+    state.editingImgWas = '';
+    closeDialog(elDialog);
+    state.editingId = null;
   }
 
   /** 追加先のセット。選んでいなければ作る（「すべて」のまま足せないと不便） */
@@ -1175,9 +1303,14 @@
     if (state.editingId) {
       var item = findItem(state.editingId);
       if (item) {
+        var oldImg = trim(item.img);
         item.en = en; item.ja = ja; item.exEn = exEn; item.exJa = exJa; item.note = note;
+        item.img = trim(state.editingImg);
         saveItems();
+        dropPhotoIfUnused(oldImg, item.img);   // 替えたなら、古いほうは要らない
       }
+      state.editingImg = '';
+      state.editingImgWas = '';
       closeDialog(elDialog);
       state.editingId = null;
       render();
@@ -1189,9 +1322,15 @@
       id: makeId('card'),
       deckId: targetDeckId(),
       en: en, ja: ja, exEn: exEn, exJa: exJa, note: note,
+      img: trim(state.editingImg),
       created: Date.now()
     });
     saveItems();
+    // 続けて次の 1 枚を入れられるように、写真も外す（同じ写真が全部に付かないように）
+    state.editingImg = '';
+    state.editingImgWas = '';
+    renderPhotoField();
+    photoStatus('');
 
     // 欄を空にして、続けて次の 1 枚を入れられるようにする
     if (elFieldEn) elFieldEn.value = '';
@@ -1219,8 +1358,11 @@
     var at = state.stars.indexOf(itemId);
     if (at >= 0) state.stars.splice(at, 1);
     recordDelete('carditem:', itemId);
+    dropPhotoIfUnused(item.img, '');   // この 1 枚しか使っていなければ写真も捨てる
 
     saveItems(); saveSrs(); saveStars();
+    state.editingImg = '';
+    state.editingImgWas = '';
     closeDialog(elDialog);
     state.editingId = null;
     render();
@@ -1425,9 +1567,19 @@
       }
     }
     state.day = sanitizeDay(state.day);
-    elStats.textContent = 'カード ' + list.length + ' 枚 / 開いている面 ' + faces +
+    var base = 'カード ' + list.length + ' 枚 / 開いている面 ' + faces +
       '（覚えかけ ' + live + '・未学習 ' + fresh + '）。' +
       '今日答えたのは ' + state.day.answered + ' 回、新しく始めたのは ' + introducedTotal() + ' 枚です。';
+    elStats.textContent = base;
+
+    // 写真がどれだけ場所を取っているかも出す（取れたら言い足す）
+    var media = mediaPort();
+    if (media && media.supported()) {
+      media.usage().then(function (u) {
+        if (!elStats || !u.count) return;
+        elStats.textContent = base + ' 写真は ' + u.count + ' 枚（' + media.humanBytes(u.bytes) + '）です。';
+      });
+    }
   }
 
   function resetProgress() {
@@ -1519,9 +1671,40 @@
     if (elSaveBtn) elSaveBtn.addEventListener('click', submitCard);
     if (elCancelBtn) {
       elCancelBtn.addEventListener('click', function () {
-        closeDialog(elDialog);
-        state.editingId = null;
+        closeCardDialog();
         render();
+      });
+    }
+    if (elPhotoBtn) {
+      elPhotoBtn.addEventListener('click', function () {
+        if (elPhotoFile) elPhotoFile.click();
+      });
+    }
+    if (elPhotoFile) {
+      elPhotoFile.addEventListener('change', function () {
+        var f = elPhotoFile.files && elPhotoFile.files[0];
+        elPhotoFile.value = '';        // 同じ写真を選び直せるように
+        if (f) takePhoto(f);
+      });
+    }
+    if (elPhotoClear) {
+      elPhotoClear.addEventListener('click', function () {
+        dropPhotoIfUnused(state.editingImg, state.editingImgWas);
+        state.editingImg = '';
+        renderPhotoField();
+        photoStatus('');
+      });
+    }
+    // 貼り付けでも入れられるようにする（MacBook では選ぶより速い）
+    if (elDialog) {
+      elDialog.addEventListener('paste', function (e) {
+        var items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (var i = 0; i < items.length; i++) {
+          if (items[i].kind !== 'file') continue;
+          var f = items[i].getAsFile();
+          if (f && /^image\//.test(str(f.type))) { e.preventDefault(); takePhoto(f); return; }
+        }
       });
     }
     if (elDeleteBtn) {

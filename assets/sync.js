@@ -202,8 +202,14 @@
    * 4. いまの中身を取り出す / 書き戻す
    * ========================================================== */
 
-  function snapshot() {
-    return {
+  /**
+   * いまの中身を 1 つにまとめる。
+   *
+   * `media` は**バックアップのときだけ**載せる（写真の中身そのもの）。
+   * 同期には載せない。Gist に数 MB の画像を毎回往復させると、ただ遅くなって失敗が増える。
+   */
+  function snapshot(media) {
+    var out = {
       app: 'sunkan',
       v: 1,
       at: Date.now(),
@@ -225,6 +231,12 @@
       inbox: isArray(readJSON(LS_INBOX, [])) ? readJSON(LS_INBOX, []) : [],
       tombs: readTombs()
     };
+    if (media && typeof media === 'object') {
+      var n = 0;
+      for (var k in media) { if (Object.prototype.hasOwnProperty.call(media, k)) n++; }
+      if (n) out.media = media;
+    }
+    return out;
   }
 
   /** 古い版が書き出したぶんには cards が無い。読むときはここを通して形を揃える */
@@ -243,7 +255,7 @@
   // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
   // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
   // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'cards', 'inbox', 'tombs', 'handed'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'cards', 'media', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -281,6 +293,8 @@
       // KNOWN に載せた項目は carryUnknown が写さない。ここに書き忘れると、
       // 届いたぶんが黙って落ちる（実際それでカードが復元できなかった）。
       cards: cardsPart(d),
+      // 写真の中身。バックアップにだけ入っている（同期には載せない）
+      media: isObject(d.media) ? d.media : {},
       inbox: isArray(d.inbox) ? d.inbox : [],
       tombs: isArray(d.tombs) ? d.tombs : []
     });
@@ -1725,7 +1739,7 @@
     /** 収録の文への上書き 1 件の鍵。「元に戻す」を記録するのに使う */
     editKey: editKey,
     /** バックアップの中身（JSON 文字列）。設定から書き出すのに使う */
-    backupText: function () { return JSON.stringify(snapshot(), null, 2); },
+    backupText: function (media) { return JSON.stringify(snapshot(media), null, 2); },
     /** バックアップのファイル名。日付が入るので、どれが新しいか分かる */
     backupName: function () { return 'sunkan-' + fileStamp() + '.json'; },
     /**
@@ -1739,9 +1753,10 @@
       if (!isObject(parsed) || parsed.app !== 'sunkan') {
         return { ok: false, message: '瞬間英作文の書き出しファイルではないようです。' };
       }
-      var changed;
+      var changed, tidy;
       try {
-        changed = takeIn(clean(parsed));
+        tidy = clean(parsed);
+        changed = takeIn(tidy);
       } catch (e2) {
         return { ok: false, message: '読み込めませんでした（' + (e2 && e2.message ? e2.message : '理由不明') + '）。' };
       }
@@ -1751,8 +1766,11 @@
       var msg = changed
         ? '読み込みました。書き出したときのぶんを取り込みました。'
         : '読み込みました（新しいものはありませんでした）。';
-      if (note) return { ok: false, message: msg + '\n⚠ ' + note };
-      return { ok: true, message: msg };
+      // 写真は localStorage ではなく IndexedDB へ入れる。時間がかかるので、
+      // 中身だけ返して、入れるのと画面への報告は呼んだ側に任せる。
+      var out = { ok: !note, message: note ? msg + '\n⚠ ' + note : msg };
+      if (isObject(tidy.media)) out.media = tidy.media;
+      return out;
     }
   };
 
