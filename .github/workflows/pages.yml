@@ -30,7 +30,7 @@ jobs:
           node --check assets/paraphrase.js
           node --check assets/srs.js
           node --check assets/cards.js
-          node --check assets/cardimport.js
+          node --check assets/import.js
           node --check assets/inbox.js
           node --check assets/speech.js
           node --check assets/update.js

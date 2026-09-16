@@ -13,7 +13,7 @@
 | `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え（3 モードぶん） |
 | `assets/srs.js` | I | 忘却曲線（FSRS-5）。予定の計算だけ。DOM も localStorage も触らない |
 | `assets/cards.js` | J | カードの動作すべて（3 つの面・めくり・一覧・設定） |
-| `assets/cardimport.js` | K | カードの取り込み（PDF・テキスト・表・AI への指示） |
+| `assets/import.js` | K | 取り込み（PDF・テキスト・表・AI への指示）。**カードと瞬間英作文の両方**が通る |
 | `assets/vendor/pdf.min.js` | 外 | pdf.js（Mozilla / Apache-2.0）。手を入れない。差し替えは版ごと |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 | `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
@@ -78,16 +78,30 @@
 | `addCards(deckName, items)` | 名前でセットを探し（無ければ作って開き）、`{en, ja, exEn, exJa, note}` を足す。同じ `(en, exEn)` は飛ばす。戻り値は `{added, skipped, deckId, deckName}` |
 | `flash(message)` | 上の帯に短く出す |
 
-`cardimport.js` は**カードを直に保存しない**。足すのは `addCards` 越しに限る。
+`import.js` は**カードを直に保存しない**。足すのは `addCards` 越しに限る。
 
-### `window.SUNKAN_CARD_IMPORT`（cardimport.js が開けている口）
+### `window.SUNKAN_IMPORT`（import.js が開けている口）
+
+**カードと瞬間英作文の両方**がここを通る。解いた中身を保存することはしない。
 
 | 関数 | 内容 |
 | --- | --- |
-| `parse(text)` | 書き方を見分けてカードを起こす。`{items, deckName}` |
-| `parseBlocks(text)` / `parseTable(text)` | それぞれの書き方だけを読む（試すため） |
-| `prompt` | AI に渡す指示文 |
-| `template` | 決まった書き方の見本 |
+| `parse(text)` | 書き方を見分けて起こす。`{items, deckName}` |
+| `parseBlocks(text)` / `parseTable(text)` | それぞれの書き方だけを読む |
+| `looksBlock(text)` | 「見出し:」の形で書かれているか。**表として読むかの分かれ目** |
+| `toDrillPairs(items)` | 瞬間英作文の `{ja,en,note}` に直す。`{items, fromExample}` |
+| `pdfToText(file, onProgress)` | PDF のファイルから文字を取り出す |
+| `cardPrompt` / `drillPrompt` | AI に渡す指示文（モードごとに別） |
+| `cardTemplate` / `drillTemplate` | 決まった書き方の見本（モードごとに別） |
+
+**表はモードごとに列の並びが違う。** カードは `英語 / 意味 / 例文 / 訳 / メモ`、
+瞬間英作文は `日本語 / 英語 / メモ`。**1 列目が逆**なので、`parseTable` を
+瞬間英作文に使ってはいけない（日本語と英語が入れ替わる）。
+app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は自分で解く。
+
+カードの取り込みは import.js が最後まで面倒を見る（`SUNKAN_CARDS.addCards` へ渡す）。
+瞬間英作文のほうは **PDF を文字にして欄へ入れるところまで**で、
+そのあとは `input` を投げて app.js の下読みに拾わせる（二重に解かない）。
 
 ### `window.SUNKAN_UPDATE`（update.js が開けている口）
 
@@ -384,8 +398,13 @@ FSRS は初めて「できた」札の安定度を約 3.2 日と見ており、�
 
 ### 取り込み
 
-`cardimport.js` は、どの道を通っても最後は `parseBlocks()` に落とす。
-だから **PDF から直に読んでも、AI に整えさせても、出来上がるカードの形は同じ**。
+`import.js` は、どの道を通っても最後は `parseBlocks()` に落とす。
+だから **PDF から直に読んでも、AI に整えさせても、出来上がる形は同じ**。
+
+**同じ PDF が両方のモードで使える。** カード用の書き方（`EN / JA / EX / EXJA`）を
+瞬間英作文に入れると、`toDrillPairs` が**例文のほうを出題に回す**
+（瞬間英作文は文を口に出す練習なので、語そのものでは出題にならない）。
+そのとき見出しの語は `note` に入れて、答え合わせのときに出す。
 
 PDF から拾った文字は 1 つの文が途中で折り返されている。
 **行の頭が「見出し:」でなければ、前の見出しの続きとしてつなげる。ここが要。**

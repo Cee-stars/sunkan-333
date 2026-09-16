@@ -1,16 +1,19 @@
-/* Duo — カードの取り込み（PDF・テキスト・表）
+/* Duo — 取り込み（PDF・テキスト・表）
  *
- * 「どんな PDF でも同じカードになる」を 2 本立てで満たす。
+ * **カードと瞬間英作文の両方**がここを通る。
+ *
+ * 「どんな PDF でも同じ形になる」を 2 本立てで満たす。
  *
  *   A. 決まった書き方の PDF … そのまま読む。AI も通信も要らない
  *   B. バラバラな PDF      … 「AI への指示」をコピーして AI に整えさせ、
  *                            返ってきた文字を貼り付ける
  *
- * どちらの道も、最後は同じパーサ（parseBlocks）を通る。だから出来上がるカードの形は完全に同じ。
+ * どちらの道も、最後は同じパーサ（parseBlocks）を通る。だから出来上がる形は完全に同じ。
  * ブラウザだけで任意の PDF を正しく読み解くことはできないので、そこは正直に AI に投げて、
  * 代わりに「出口の形」を 1 つに固定することで揃えている。
  *
- * カードを足すのは window.SUNKAN_CARDS.addCards 越しに限る（cards.js の保存に手を出さない）。
+ * 保存には手を出さない。足すのは window.SUNKAN_CARDS.addCards と
+ * window.SUNKAN_DRILL.addSentences 越しに限る。
  */
 'use strict';
 
@@ -101,7 +104,7 @@
   /** セット名の指定（# セット: 〜） */
   var DECK_LINE = /^\s*#+\s*(?:セット名?|deck|set)\s*[:：]\s*(.+)$/i;
 
-  var PROMPT = [
+  var CARD_PROMPT = [
     'この PDF（資料）から、英語学習用のフラッシュカードを作ってください。',
     '',
     '出力は下の形式の文字だけを、そのまま返してください。',
@@ -134,7 +137,7 @@
     '---'
   ].join('\n');
 
-  var TEMPLATE = [
+  var CARD_TEMPLATE = [
     '# セット: サンプル',
     '',
     '# この形で書いた PDF・テキストは、Duo がそのまま読み込めます。',
@@ -158,6 +161,62 @@
     'JA: 思いつく',
     'EX: She came up with a clever way to cut the cost.',
     'EXJA: 彼女は費用を減らす賢いやり方を思いついた。',
+    '---'
+  ].join('\n');
+
+  /* --- 瞬間英作文（日本語の文 → 英文）用 --- */
+
+  var DRILL_PROMPT = [
+    'この PDF（資料）から、瞬間英作文の練習に使う「日本語の文 → 英文」の組を作ってください。',
+    '',
+    '出力は下の形式の文字だけを、そのまま返してください。',
+    'コードブロック・前置き・説明・通し番号・箇条書きは一切付けないでください。',
+    '',
+    'JA: 日本語の文',
+    'EN: その英訳',
+    'MEMO: つまずきやすい所が 1 つだけあれば 20 字以内で。無ければこの行ごと省く',
+    '---',
+    '',
+    'ルール:',
+    '- 1 組につき上の形で書き、そのあとに --- を必ず入れる',
+    '- JA と EN は必ず埋める。空にしない',
+    '- **必ず文にする。単語や句だけにしない**（瞬間英作文は文を口に出す練習なので、',
+    '  「late」のような単語だけだと出題できない）',
+    '- 英文は 8〜15 語程度の自然な 1 文にする',
+    '- 日本語は、そのまま口に出せる自然な言い方にする（直訳調にしない）',
+    '- 資料に出てくる語や表現を使った文にする。勝手に関係のない話を足さない',
+    '- 同じ文を 2 つ作らない',
+    '- 1 組を 1 行にまとめず、上のとおり 1 項目 1 行で書く',
+    '- 最大 100 組まで',
+    '',
+    '例:',
+    'JA: 私は毎朝コーヒーを飲みます。',
+    'EN: I drink coffee every morning.',
+    '---',
+    'JA: 彼女は見た目も気性も母親に似ている。',
+    'EN: She takes after her mother in both looks and temper.',
+    'MEMO: take after = 〜に似ている',
+    '---'
+  ].join('\n');
+
+  var DRILL_TEMPLATE = [
+    '# セット: サンプル',
+    '',
+    '# この形で書いた PDF・テキストは、瞬間英作文がそのまま読み込めます。',
+    '# 使う見出しは JA / EN / MEMO の 3 つだけ。',
+    '# 日本語: 英語: メモ: と書いてもかまいません。',
+    '# --- が 1 組の区切りです。MEMO は空でも通ります。',
+    '# 長い文が途中で折り返されていても、続きとしてつなげて読みます。',
+    '',
+    'JA: 私は毎朝コーヒーを飲みます。',
+    'EN: I drink coffee every morning.',
+    '---',
+    'JA: 彼は今どこにいますか。',
+    'EN: Where is he now?',
+    '---',
+    'JA: 彼女は見た目も気性も母親に似ている。',
+    'EN: She takes after her mother in both looks and temper.',
+    'MEMO: take after = 〜に似ている',
     '---'
   ].join('\n');
 
@@ -260,18 +319,66 @@
   }
 
   /**
-   * どちらの書き方かを見分けて読む。
-   * 「見出し:」の行がひとつでもあればブロック、無ければ表として扱う。
+   * 「見出し:」の形で書かれているか。
+   *
+   * 表として読むか、ブロックとして読むかの分かれ目。瞬間英作文は表の列の並びが
+   * こちらと逆（1 列目が日本語）なので、**表はあちらに任せて、こちらはブロックだけ**を見る。
+   * その判定にこれを使う。
    */
-  function parseAny(text) {
+  function looksBlock(text) {
     var lines = str(text).split(/\r\n|\r|\n/);
     var keyed = 0;
     for (var i = 0; i < lines.length; i++) {
       var hit = trim(lines[i]).match(KEY_LINE);
       if (hit && KEYS[hit[1].toLowerCase()]) keyed++;
-      if (keyed >= 2) break;
+      if (keyed >= 2) return true;
     }
-    if (keyed >= 2) return parseBlocks(text);
+    return false;
+  }
+
+  /**
+   * 読み取った中身を、瞬間英作文の {ja, en, note} に直す。
+   *
+   * **単語カードの形（EX / EXJA がある）で書かれていても使えるようにする。**
+   * 瞬間英作文は文を口に出す練習なので、語そのものではなく**例文のほうを出題に回す**。
+   * カード用に作った PDF がそのまま瞬間英作文でも使える、ということ。
+   * そのとき、見出しの語は答え合わせのときのメモに入れておく。
+   *
+   * @returns {{items:Array, fromExample:number}}
+   */
+  function toDrillPairs(items) {
+    var out = [], fromExample = 0;
+    var list = items || [];
+
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i] || {};
+      var ja, en, note;
+
+      if (trim(it.exEn) && trim(it.exJa)) {
+        // 単語カードの形 … 例文を出題に、見出しの語はメモへ
+        ja = trim(it.exJa);
+        en = trim(it.exEn);
+        var head = trim(it.en);
+        if (head && trim(it.ja)) head += '（' + trim(it.ja) + '）';
+        note = [head, trim(it.note)].filter(Boolean).join(' / ');
+        fromExample++;
+      } else {
+        ja = trim(it.ja);
+        en = trim(it.en);
+        note = trim(it.note);
+      }
+      if (!ja || !en) continue;
+      out.push({ ja: ja, en: en, note: note });
+    }
+    return { items: out, fromExample: fromExample };
+  }
+
+  /**
+   * どちらの書き方かを見分けて読む。
+   * 「見出し:」の行がひとつでもあればブロック、無ければ表として扱う。
+   */
+  function parseAny(text) {
+    if (looksBlock(text)) return parseBlocks(text);
 
     var table = parseTable(text);
     if (table.items.length) return table;
@@ -533,7 +640,7 @@
   }
 
   function copyPrompt() {
-    copyText(PROMPT, function (ok) {
+    copyText(CARD_PROMPT, function (ok) {
       if (!elPromptStatus) return;
       elPromptStatus.textContent = ok
         ? 'コピーしました。PDF といっしょに AI へ渡してください。'
@@ -543,7 +650,7 @@
 
   function downloadTemplate() {
     try {
-      var blob = new Blob(['﻿' + TEMPLATE], { type: 'text/plain;charset=utf-8' });
+      var blob = new Blob(['﻿' + CARD_TEMPLATE], { type: 'text/plain;charset=utf-8' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
@@ -555,7 +662,7 @@
       if (elPdfStatus) elPdfStatus.textContent = '見本を書き出しました。この形で書けば、そのまま読み込めます。';
     } catch (e) {
       // 書き出せない端末では、欄に入れてしまうほうが早い
-      if (elText) elText.value = TEMPLATE;
+      if (elText) elText.value = CARD_TEMPLATE;
       preview();
       if (elPdfStatus) elPdfStatus.textContent = '見本を下の欄に入れました。';
     }
@@ -577,21 +684,169 @@
     if (elPdfFile) elPdfFile.addEventListener('change', onFile);
     if (elPromptBtn) elPromptBtn.addEventListener('click', copyPrompt);
     if (elTemplateBtn) elTemplateBtn.addEventListener('click', downloadTemplate);
+
+    bindDrill();
   }
 
   /* ============================================================
-   * 6. 外に出す口（試すため／ほかから使うため）
+   * 6. 瞬間英作文のがわ
+   *
+   * 中身を解いて保存するのは app.js（parseImportText → 「読み込む」）。
+   * こちらは **PDF を文字にして欄へ入れるところまで**と、AI への指示・見本だけを持つ。
+   * 欄へ入れたあとは input を投げて、向こうの下読みに拾わせる（二重に解かない）。
    * ========================================================== */
 
-  window.SUNKAN_CARD_IMPORT = {
-    /** 文字からカードの配列を起こす。{items, deckName} */
+  var elDrillText = $('import-text');
+  var elDrillName = $('import-name');
+  var elDrillPdfBtn = $('btn-drill-pdf');
+  var elDrillPdfFile = $('drill-pdf-file');
+  var elDrillPdfStatus = $('drill-pdf-status');
+  var elDrillPromptBtn = $('btn-drill-prompt');
+  var elDrillTemplateBtn = $('btn-drill-template');
+  var elDrillPromptStatus = $('drill-prompt-status');
+
+  var drillNameAuto = false;
+
+  function drillNotify() {
+    if (!elDrillText) return;
+    // app.js の下読みは input で動く。値を入れただけでは動かない
+    try {
+      elDrillText.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (e) {
+      var ev = document.createEvent('Event');
+      ev.initEvent('input', true, true);
+      elDrillText.dispatchEvent(ev);
+    }
+  }
+
+  function drillFillName(value) {
+    if (!elDrillName) return;
+    var name = trim(value);
+    if (!name) return;
+    if (trim(elDrillName.value) && !drillNameAuto) return;
+    elDrillName.value = name;
+    drillNameAuto = true;
+  }
+
+  function onDrillFile() {
+    if (!elDrillPdfFile || !elDrillPdfFile.files || !elDrillPdfFile.files.length) return;
+    var file = elDrillPdfFile.files[0];
+    var isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+
+    drillFillName(file.name.replace(/\.(pdf|txt|md)$/i, ''));
+
+    if (!isPdf) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        if (elDrillText) elDrillText.value = str(reader.result);
+        drillFillName(parseAny(str(reader.result)).deckName);
+        if (elDrillPdfStatus) elDrillPdfStatus.textContent = file.name + ' を読みました。';
+        drillNotify();
+      };
+      reader.onerror = function () {
+        if (elDrillPdfStatus) elDrillPdfStatus.textContent = 'ファイルを読めませんでした。';
+      };
+      reader.readAsText(file);
+      elDrillPdfFile.value = '';
+      return;
+    }
+
+    if (elDrillPdfStatus) elDrillPdfStatus.textContent = 'PDF を読んでいます…';
+    if (elDrillPdfBtn) elDrillPdfBtn.disabled = true;
+
+    pdfToText(file, function (page, total) {
+      if (elDrillPdfStatus) {
+        elDrillPdfStatus.textContent = 'PDF を読んでいます… ' + page + ' / ' + total + ' ページ';
+      }
+    }).then(function (text) {
+      if (elDrillText) elDrillText.value = text;
+      if (elDrillPdfBtn) elDrillPdfBtn.disabled = false;
+      drillFillName(parseAny(text).deckName);
+
+      if (elDrillPdfStatus) {
+        elDrillPdfStatus.textContent = looksBlock(text)
+          ? file.name + ' を読みました。'
+          : file.name + ' の文字は取れましたが、決まった書き方ではありませんでした。' +
+            '下の「AI への指示をコピー」を使って整えてから貼り付けてください。';
+      }
+      drillNotify();
+    }).catch(function (err) {
+      if (elDrillPdfBtn) elDrillPdfBtn.disabled = false;
+      if (elDrillPdfStatus) {
+        elDrillPdfStatus.textContent = 'PDF を読めませんでした（' +
+          ((err && err.message) || '理由は分かりません') + '）。' +
+          '文字ではなく画像として取り込まれた PDF は読めません。その場合は AI への指示を使ってください。';
+      }
+    });
+
+    elDrillPdfFile.value = '';   // 同じファイルをもう一度選べるように
+  }
+
+  function bindDrill() {
+    if (elDrillPdfBtn) {
+      elDrillPdfBtn.addEventListener('click', function () {
+        if (elDrillPdfFile) elDrillPdfFile.click();
+      });
+    }
+    if (elDrillPdfFile) elDrillPdfFile.addEventListener('change', onDrillFile);
+    if (elDrillName) {
+      elDrillName.addEventListener('input', function () { drillNameAuto = false; });
+    }
+    if (elDrillPromptBtn) {
+      elDrillPromptBtn.addEventListener('click', function () {
+        copyText(DRILL_PROMPT, function (ok) {
+          if (!elDrillPromptStatus) return;
+          elDrillPromptStatus.textContent = ok
+            ? 'コピーしました。PDF といっしょに AI へ渡してください。'
+            : 'コピーできませんでした。長押しで選んでコピーしてください。';
+        });
+      });
+    }
+    if (elDrillTemplateBtn) {
+      elDrillTemplateBtn.addEventListener('click', function () {
+        try {
+          var blob = new Blob(['﻿' + DRILL_TEMPLATE], { type: 'text/plain;charset=utf-8' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'duo-瞬間英作文の書き方.txt';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+          if (elDrillPdfStatus) {
+            elDrillPdfStatus.textContent = '見本を書き出しました。この形で書けば、そのまま読み込めます。';
+          }
+        } catch (e) {
+          if (elDrillText) elDrillText.value = DRILL_TEMPLATE;
+          drillNotify();
+          if (elDrillPdfStatus) elDrillPdfStatus.textContent = '見本を下の欄に入れました。';
+        }
+      });
+    }
+  }
+
+  /* ============================================================
+   * 7. 外に出す口（app.js / cards.js / 試すため）
+   * ========================================================== */
+
+  window.SUNKAN_IMPORT = {
+    /** 文字から中身を起こす（書き方は自動で見分ける）。{items, deckName} */
     parse: parseAny,
     parseBlocks: parseBlocks,
     parseTable: parseTable,
+    /** 「見出し:」の形で書かれているか。表として読むかの分かれ目 */
+    looksBlock: looksBlock,
+    /** 読み取った中身を瞬間英作文の {ja,en,note} に直す。{items, fromExample} */
+    toDrillPairs: toDrillPairs,
+    /** PDF のファイルから文字を取り出す */
+    pdfToText: pdfToText,
     /** AI に渡す指示文 */
-    prompt: PROMPT,
+    cardPrompt: CARD_PROMPT,
+    drillPrompt: DRILL_PROMPT,
     /** 決まった書き方の見本 */
-    template: TEMPLATE
+    cardTemplate: CARD_TEMPLATE,
+    drillTemplate: DRILL_TEMPLATE
   };
 
   if (document.readyState === 'loading') {

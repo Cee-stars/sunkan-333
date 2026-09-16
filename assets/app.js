@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 34 (2026-09-12)';
+  var APP_VERSION = 'build 35 (2026-09-16)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -429,10 +429,28 @@
       items: [],
       delimiter: '\t',
       skipped: 0,
-      headerDropped: false
+      headerDropped: false,
+      format: 'table',     // 'table' \u2026 \u5217\u3067\u4E26\u3079\u305F\u8868 / 'block' \u2026 \u300CJA: \u301C\u300D\u306E\u66F8\u304D\u65B9
+      deckName: '',        // \u4E2D\u8EAB\u306B\u300C# \u30BB\u30C3\u30C8: \u301C\u300D\u304C\u3042\u308C\u3070
+      fromExample: 0       // \u5358\u8A9E\u30AB\u30FC\u30C9\u306E\u5F62\u304B\u3089\u3001\u4F8B\u6587\u3092\u51FA\u984C\u306B\u56DE\u3057\u305F\u3076\u3093
     };
     var src = str(text).replace(/^\uFEFF/, '');
     if (!trim(src)) return result;
+
+    // \u300CJA: \u301C\u300D\u306E\u66F8\u304D\u65B9\uFF08PDF\u30FBAI \u304B\u3089\u6765\u305F\u3076\u3093\uFF09\u306F import.js \u306B\u89E3\u304B\u305B\u308B\u3002
+    // **\u8868\u306F\u3053\u3061\u3089\u3067\u89E3\u304F\u3002** \u3042\u3061\u3089\u306E\u8868\u306F 1 \u5217\u76EE\u304C\u82F1\u8A9E\u3067\u3001\u3053\u3061\u3089\u3068\u306F\u4E26\u3073\u304C\u9006\u306A\u306E\u3067
+    // \u4EFB\u305B\u308B\u3068\u65E5\u672C\u8A9E\u3068\u82F1\u8A9E\u304C\u5165\u308C\u66FF\u308F\u308B\u3002\u5206\u304B\u308C\u76EE\u306F looksBlock \u3060\u3051\u3002
+    var imp = window.SUNKAN_IMPORT;
+    if (imp && typeof imp.looksBlock === 'function' && imp.looksBlock(src)) {
+      var parsed = imp.parseBlocks(src);
+      var pairs = imp.toDrillPairs(parsed.items);
+      result.format = 'block';
+      result.deckName = trim(parsed.deckName);
+      result.items = pairs.items;
+      result.fromExample = pairs.fromExample;
+      result.skipped = Math.max(0, parsed.items.length - pairs.items.length);
+      return result;
+    }
 
     var delim = detectDelimiter(src);
     result.delimiter = delim;
@@ -2189,20 +2207,34 @@
     lastParsed = parsed;
 
     if (!parsed.items.length) {
-      elImportPreview.textContent =
-        '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。';
+      elImportPreview.textContent = parsed.format === 'block'
+        ? '読み込める組がありません。JA: と EN: の両方が埋まっているか確認してください。'
+        : '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。';
       return;
+    }
+
+    // 中身に「# セット: 〜」があれば、名前の欄に入れておく
+    if (parsed.deckName && elImportName && !trim(elImportName.value)) {
+      elImportName.value = parsed.deckName;
     }
 
     var first = parsed.items[0];
     var head = first.ja + ' / ' + first.en;
     if (head.length > 40) head = head.slice(0, 40) + '…';
 
-    var msg = parsed.items.length + ' 行を読み込めます（最初の1行: ' + head + '）';
+    var unit = parsed.format === 'block' ? ' 組' : ' 行';
+    var msg = parsed.items.length + unit + 'を読み込めます（最初の1文: ' + head + '）';
     var extra = [];
-    extra.push(parsed.delimiter === '\t' ? 'タブ区切り' : 'カンマ区切り');
-    if (parsed.headerDropped) extra.push('見出し行は除外');
-    if (parsed.skipped) extra.push(parsed.skipped + ' 行は列が足りないため除外');
+    if (parsed.format === 'block') {
+      extra.push('JA: EN: の書き方');
+      // 単語カードの PDF をそのまま入れたときは、何が起きたのかを言う
+      if (parsed.fromExample) extra.push(parsed.fromExample + ' 組は例文を出題に使用');
+      if (parsed.skipped) extra.push(parsed.skipped + ' 組は文がそろわないため除外');
+    } else {
+      extra.push(parsed.delimiter === '\t' ? 'タブ区切り' : 'カンマ区切り');
+      if (parsed.headerDropped) extra.push('見出し行は除外');
+      if (parsed.skipped) extra.push(parsed.skipped + ' 行は列が足りないため除外');
+    }
     msg += '［' + extra.join(' / ') + '］';
     elImportPreview.textContent = msg;
   }
@@ -2231,13 +2263,14 @@
       // 貼った中身があるのに 1 行も読めなかったときは、空のセットを作って
       // 閉じてはいけない。貼ったものが黙って捨てられたように見える。
       if (elImportPreview) {
-        elImportPreview.textContent =
-          '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。'
+        elImportPreview.textContent = (parsed.format === 'block'
+          ? '読み込める組がありません。JA: と EN: の両方が埋まっているか確認してください。'
+          : '読み込める行がありません。1 列目に日本語、2 列目に英語（タブまたはカンマ区切り）になっているか確認してください。')
           + ' 空のセットを作りたいときは、貼り付けた文字を消してから、上の「セット名」に名前を入れて「読み込む」を押してください。';
       }
       return;
     }
-    var name = typedName;
+    var name = typedName || trim(parsed.deckName);
     if (!name) name = defaultDeckName();
 
     var deck = {

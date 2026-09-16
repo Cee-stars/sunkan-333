@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 34 (2026-09-12)">
+<meta name="sunkan-build" content="build 35 (2026-09-16)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -509,8 +509,9 @@
   <form method="dialog" class="dialog-inner">
     <h2 id="data-dialog-title" class="dialog-title">自分のデータを読み込む</h2>
     <p class="dialog-desc">
-      Google スプレッドシートで「左に日本語・右に英語」の2列を選んでコピーし、そのまま下に貼り付けてください。
-      タブ区切り・カンマ区切りのどちらでも読み込めます。
+      <strong>PDF からも、表の貼り付けからも作れます。</strong>
+      Google スプレッドシートで「左に日本語・右に英語」の2列を選んでコピーして貼り付けるか、
+      決まった書き方の PDF を選んでください。
     </p>
 
     <label class="field">
@@ -518,8 +519,17 @@
       <input type="text" id="import-name" class="field-input" placeholder="例：中1レベル 100本ノック" autocomplete="off">
     </label>
 
+    <h3 class="dialog-subtitle">1. PDF を選ぶ</h3>
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-drill-pdf" class="btn btn--primary">PDF を選ぶ</button>
+      <button type="button" id="btn-drill-template" class="btn btn--ghost">書き方の見本をダウンロード</button>
+    </div>
+    <input type="file" id="drill-pdf-file" accept=".pdf,.txt,.md,application/pdf,text/plain" hidden>
+    <p class="dialog-hint" id="drill-pdf-status" role="status" aria-live="polite"></p>
+
+    <h3 class="dialog-subtitle">2. または、貼り付ける</h3>
     <label class="field">
-      <span class="field-label">貼り付け</span>
+      <span class="visually-hidden">貼り付け</span>
       <textarea id="import-text" class="field-input field-textarea" rows="10"
         placeholder="私は毎朝コーヒーを飲みます。&#9;I drink coffee every morning.&#10;彼は今どこにいますか。&#9;Where is he now?"></textarea>
     </label>
@@ -534,6 +544,32 @@
     <hr class="dialog-sep">
 
     <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">どんな PDF でも同じ形にする</h3>
+      <p class="dialog-hint">
+        下のボタンで指示文をコピーして、ChatGPT や Claude に <strong>PDF といっしょに</strong>渡してください。
+        返ってきた文字をそのまま上の欄に貼り付ければ、そのまま読み込めます。
+      </p>
+      <button type="button" id="btn-drill-prompt" class="btn btn--ghost">AI への指示をコピー</button>
+      <p class="dialog-hint" id="drill-prompt-status" role="status" aria-live="polite"></p>
+
+      <h3 class="dialog-subtitle">読み込める書き方</h3>
+      <pre class="dialog-pre">JA: 私は毎朝コーヒーを飲みます。
+EN: I drink coffee every morning.
+---
+JA: 彼女は見た目も気性も母親に似ている。
+EN: She takes after her mother in both looks and temper.
+MEMO: take after = 〜に似ている</pre>
+      <p class="dialog-hint">
+        <code>JA EN MEMO</code> の 3 つだけです（<code>日本語: 英語: メモ:</code> でも通ります）。
+        <code>---</code> が 1 組の区切り。<code>MEMO</code> は空でもかまいません。
+        <strong>カード用に作った PDF（<code>EN / JA / EX / EXJA</code>）もそのまま読み込めます。</strong>
+        そのときは<strong>例文のほうを出題に回し</strong>、見出しの語はメモに入れます。
+      </p>
+      <p class="dialog-hint">
+        表で貼り付けるときは、これまでどおり <strong>1 列目に日本語、2 列目に英語</strong>
+        （3 列目はメモ）。タブ区切り・カンマ区切りのどちらでも読み込めます。
+      </p>
+
       <h3 class="dialog-subtitle">保存済みの自作セット</h3>
       <ul class="deck-manage-list" id="deck-manage-list"></ul>
       <button type="button" id="btn-export" class="btn btn--ghost">今のセットをコピー（TSV）</button>
@@ -1063,7 +1099,7 @@ EXJA: 会議を金曜まで延期した。</pre>
 <script src="assets/paraphrase.js"></script>
 <script src="assets/srs.js"></script>
 <script src="assets/cards.js"></script>
-<script src="assets/cardimport.js"></script>
+<script src="assets/import.js"></script>
 <script src="assets/inbox.js"></script>
 <script src="assets/sync.js"></script>
 <script src="assets/update.js"></script>
