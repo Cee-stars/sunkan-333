@@ -2407,9 +2407,11 @@ legend.field-label {
   .btn--ghost { padding-inline: 10px; }
 
   /* ただし「PDF から」だけは字を残す。
-     📄 の記号だけだと、カードをどこから作るのかが分からない。 */
-  #btn-card-import .btn-label { display: inline; }
-  #btn-card-import { padding-inline: 8px; font-size: 0.8125rem; }
+     📄 の記号だけだと、どこから作るのかが分からない。 */
+  #btn-card-import .btn-label,
+  #btn-drill-import .btn-label { display: inline; }
+  #btn-card-import,
+  #btn-drill-import { padding-inline: 8px; font-size: 0.8125rem; }
 
   .header-row { gap: 6px; }
   .header-row--controls { gap: 6px; }

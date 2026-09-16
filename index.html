@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 35 (2026-09-16)">
+<meta name="sunkan-build" content="build 36 (2026-09-16)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -62,6 +62,12 @@
 
     <button type="button" id="btn-add" class="btn btn--ghost" aria-haspopup="dialog">
       <span aria-hidden="true">＋</span><span class="btn-label">追加</span>
+    </button>
+
+    <!-- カードと同じ場所・同じ言葉にする。
+         ＋追加 の中に埋めていたら「PDF から作れる」ことに気づけなかった。 -->
+    <button type="button" id="btn-drill-import" class="btn btn--ghost" aria-haspopup="dialog">
+      <span aria-hidden="true">📄</span><span class="btn-label">PDF から</span>
     </button>
   </div>
 

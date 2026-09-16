@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 35 (2026-09-16)';
+  var APP_VERSION = 'build 36 (2026-09-16)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -575,6 +575,7 @@
   var elToggleAllLabel = $('btn-toggle-all-label');
   var elShuffle = $('btn-shuffle');
   var elBtnData = $('btn-data');
+  var elBtnDrillImport = $('btn-drill-import');
   var elBtnSettings = $('btn-settings');
 
   var elBtnAdd = $('btn-add');
@@ -2620,13 +2621,25 @@
     }
 
     // --- データダイアログ ---
+    function openDataDialog(from) {
+      closeDialog(elAddDialog);   // 追加ダイアログの中から開かれることもある
+      renderDeckManageList();
+      updateImportPreview();
+      openDialog(elDataDialog, from);
+    }
+
     if (elBtnData) {
       elBtnData.addEventListener('click', function () {
-        closeDialog(elAddDialog);   // 追加ダイアログの中から開くので、先に閉じる
-        renderDeckManageList();
-        updateImportPreview();
-        openDialog(elDataDialog, elBtnData);
+        openDataDialog(elBtnData);
         if (elImportText) elImportText.focus();
+      });
+    }
+    // ヘッダーからも直に開ける。カードでは「PDF から」が最初の画面に出ているのに、
+    // こちらだけ ＋追加 の 2 階層下にあると、同じ機能があると気づけない。
+    if (elBtnDrillImport) {
+      elBtnDrillImport.addEventListener('click', function () {
+        openDataDialog(elBtnDrillImport);
+        if (elImportName) elImportName.focus();
       });
     }
     if (elImportCancel) {
