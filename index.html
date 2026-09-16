@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 36 (2026-09-16)">
+<meta name="sunkan-build" content="build 37 (2026-09-16)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -521,7 +521,12 @@
     </p>
 
     <label class="field">
-      <span class="field-label">セット名</span>
+      <span class="field-label">入れ先</span>
+      <select id="import-target" class="deck-select"></select>
+    </label>
+
+    <label class="field" id="import-name-field">
+      <span class="field-label">新しいセットの名前</span>
       <input type="text" id="import-name" class="field-input" placeholder="例：中1レベル 100本ノック" autocomplete="off">
     </label>
 
@@ -978,7 +983,12 @@ MEMO: take after = 〜に似ている</pre>
     </p>
 
     <label class="field">
-      <span class="field-label">セット名</span>
+      <span class="field-label">入れ先</span>
+      <select id="card-import-target" class="deck-select"></select>
+    </label>
+
+    <label class="field" id="card-import-name-field">
+      <span class="field-label">新しいセットの名前</span>
       <input type="text" id="card-import-name" class="field-input"
         placeholder="例：英検準1級 動詞" autocomplete="off">
     </label>

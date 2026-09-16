@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 36 (2026-09-16)';
+  var APP_VERSION = 'build 37 (2026-09-16)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -576,6 +576,8 @@
   var elShuffle = $('btn-shuffle');
   var elBtnData = $('btn-data');
   var elBtnDrillImport = $('btn-drill-import');
+  var elImportTarget = $('import-target');
+  var elImportNameField = $('import-name-field');
   var elBtnSettings = $('btn-settings');
 
   var elBtnAdd = $('btn-add');
@@ -670,6 +672,14 @@
       if (list[i].id === id) return list[i];
     }
     return null;
+  }
+
+  /** 自分で作った（取り込んだ）セットか。収録セットなら false */
+  function isUserDeck(id) {
+    for (var i = 0; i < state.userDecks.length; i++) {
+      if (state.userDecks[i].id === id) return true;
+    }
+    return false;
   }
 
   function makeUserDeckId() {
@@ -2214,8 +2224,11 @@
       return;
     }
 
-    // 中身に「# セット: 〜」があれば、名前の欄に入れておく
-    if (parsed.deckName && elImportName && !trim(elImportName.value)) {
+    var targetId = elImportTarget ? trim(elImportTarget.value) : '';
+    var targetDeck = targetId ? findDeck(targetId) : null;
+
+    // 中身に「# セット: 〜」があれば、名前の欄に入れておく（新しく作るときだけ）
+    if (!targetDeck && parsed.deckName && elImportName && !trim(elImportName.value)) {
       elImportName.value = parsed.deckName;
     }
 
@@ -2224,7 +2237,9 @@
     if (head.length > 40) head = head.slice(0, 40) + '…';
 
     var unit = parsed.format === 'block' ? ' 組' : ' 行';
-    var msg = parsed.items.length + unit + 'を読み込めます（最初の1文: ' + head + '）';
+    // どこに入るのかを先に言う。押すまで分からないのがいちばん困る
+    var where = targetDeck ? '「' + targetDeck.name + '」に ' : '';
+    var msg = where + parsed.items.length + unit + 'を読み込めます（最初の1文: ' + head + '）';
     var extra = [];
     if (parsed.format === 'block') {
       extra.push('JA: EN: の書き方');
@@ -2244,6 +2259,52 @@
 
   function defaultDeckName() {
     return '自作セット ' + (state.userDecks.length + 1);
+  }
+
+  /**
+   * 「入れ先」の選択肢を作る。
+   *
+   * **いま開いているセットを初期値にする。** 毎回 新しいセットを作らせると、
+   * 少し足したいだけでもセットが増えていって続かない。
+   */
+  function renderImportTarget() {
+    if (!elImportTarget) return;
+    var keep = elImportTarget.value;
+    while (elImportTarget.firstChild) elImportTarget.removeChild(elImportTarget.firstChild);
+
+    var fresh = document.createElement('option');
+    fresh.value = '';
+    fresh.textContent = '＋ 新しいセットを作る';
+    elImportTarget.appendChild(fresh);
+
+    function addGroup(label, decks) {
+      if (!decks.length) return;
+      var group = document.createElement('optgroup');
+      group.label = label;
+      for (var i = 0; i < decks.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = decks[i].id;
+        opt.textContent = decks[i].name;   // textContent で XSS を避ける
+        group.appendChild(opt);
+      }
+      elImportTarget.appendChild(group);
+    }
+    addGroup('自作セット', state.userDecks);
+    addGroup('収録セット', state.builtinDecks);
+
+    // 前に選んでいたものが残っていればそのまま、無ければいま開いているセット。
+    // ただし**収録セットは初期値にしない**。読み込んだものが収録の 360 文に
+    // 混ざるのは、まず望んだ動きではない（選べばもちろん足せる）。
+    var want = (keep && findDeck(keep)) ? keep : currentDeckId();
+    elImportTarget.value = isUserDeck(want) ? want : '';
+    syncImportTargetField();
+  }
+
+  /** 新しいセットを選んだときだけ、名前の欄を出す */
+  function syncImportTargetField() {
+    if (!elImportNameField) return;
+    var makingNew = !(elImportTarget && elImportTarget.value);
+    elImportNameField.hidden = !makingNew;
   }
 
   function saveImportedDeck() {
@@ -2271,6 +2332,21 @@
       }
       return;
     }
+
+    // --- すでにあるセットに足す ---
+    var targetId = elImportTarget ? trim(elImportTarget.value) : '';
+    if (targetId && findDeck(targetId)) {
+      var r = addSentencesToDeckId(targetId, parsed.items);
+      selectDeck(targetId);
+      if (elImportText) elImportText.value = '';
+      if (elImportPreview) elImportPreview.textContent = '';
+      closeDialog(elDataDialog);
+      flashStatus('「' + r.deckName + '」に ' + r.added + ' 文足しました' +
+        (r.skipped ? '（' + r.skipped + ' 文は同じものなので飛ばしました）' : '') + '。');
+      return;
+    }
+
+    // --- 新しいセットを作る ---
     var name = typedName || trim(parsed.deckName);
     if (!name) name = defaultDeckName();
 
@@ -2624,22 +2700,28 @@
     function openDataDialog(from) {
       closeDialog(elAddDialog);   // 追加ダイアログの中から開かれることもある
       renderDeckManageList();
+      renderImportTarget();       // セットは増えているかもしれないので毎回作り直す
       updateImportPreview();
       openDialog(elDataDialog, from);
+
+      // いちばん上（入れ先）から見せる。中ほどの欄に焦点を当てると、
+      // ダイアログがそこまでスクロールした状態で開き、**入れ先を見落とす**。
+      if (elDataDialog) elDataDialog.scrollTop = 0;
+      if (elImportTarget) elImportTarget.focus();
     }
 
     if (elBtnData) {
-      elBtnData.addEventListener('click', function () {
-        openDataDialog(elBtnData);
-        if (elImportText) elImportText.focus();
-      });
+      elBtnData.addEventListener('click', function () { openDataDialog(elBtnData); });
     }
     // ヘッダーからも直に開ける。カードでは「PDF から」が最初の画面に出ているのに、
     // こちらだけ ＋追加 の 2 階層下にあると、同じ機能があると気づけない。
     if (elBtnDrillImport) {
-      elBtnDrillImport.addEventListener('click', function () {
-        openDataDialog(elBtnDrillImport);
-        if (elImportName) elImportName.focus();
+      elBtnDrillImport.addEventListener('click', function () { openDataDialog(elBtnDrillImport); });
+    }
+    if (elImportTarget) {
+      elImportTarget.addEventListener('change', function () {
+        syncImportTargetField();
+        updateImportPreview();     // 「どこに入るか」の言い方が変わる
       });
     }
     if (elImportCancel) {
@@ -2786,20 +2868,20 @@
    * 名前でセットを探し（無ければ作って開き）、{ja,en,note} を足す。
    * 足し方は「＋追加」と同じ（sunkan:added 行き）なので、元データは無傷のまま。
    */
-  function addSentencesToNamedDeck(deckName, items) {
+  /**
+   * すでにあるセットに足す。**収録セットにも足せる**
+   * （`sunkan:added` に積むだけなので、元データは無傷のまま）。
+   */
+  function addSentencesToDeckId(deckId, items) {
     var result = { added: 0, skipped: 0, deckId: '', deckName: '' };
-    var name = trim(deckName) || 'パラフレ帳';
-    var deck = null, i;
+    var deck = findDeck(deckId);
+    if (!deck) return result;
 
-    for (i = 0; i < state.userDecks.length; i++) {
-      if (state.userDecks[i].name === name) { deck = state.userDecks[i]; break; }
-    }
-    if (!deck) deck = createEmptyDeck(name);   // 作ったセットはそのまま開く
     result.deckId = deck.id;
     result.deckName = deck.name;
 
     items = items || [];
-    for (i = 0; i < items.length; i++) {
+    for (var i = 0; i < items.length; i++) {
       var ja = trim(items[i].ja);
       var en = trim(items[i].en);
       if (!ja || !en) { result.skipped++; continue; }
@@ -2814,6 +2896,17 @@
       updateStatusBar();
     }
     return result;
+  }
+
+  function addSentencesToNamedDeck(deckName, items) {
+    var name = trim(deckName) || 'パラフレ帳';
+    var deck = null, i;
+
+    for (i = 0; i < state.userDecks.length; i++) {
+      if (state.userDecks[i].name === name) { deck = state.userDecks[i]; break; }
+    }
+    if (!deck) deck = createEmptyDeck(name);   // 作ったセットはそのまま開く
+    return addSentencesToDeckId(deck.id, items);
   }
 
   /** 貼り付けテキストを行×列に割る（TSV / CSV 自動判定。空行は落とす） */

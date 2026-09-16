@@ -493,9 +493,58 @@
   var elTemplateBtn = $('btn-card-template');
   var elPromptBtn = $('btn-card-prompt');
   var elPromptStatus = $('card-prompt-status');
+  var elTarget = $('card-import-target');
+  var elNameField = $('card-import-name-field');
 
   /** セット名を、こちらが勝手に入れたものか（人が打ったものは上書きしない） */
   var nameAuto = false;
+
+  /**
+   * 「入れ先」の選択肢を作る。
+   *
+   * **いま開いているセットを初期値にする。** 毎回 新しいセットを作らせると、
+   * 少し足したいだけでもセットが増えていって続かない。
+   */
+  function renderTarget() {
+    if (!elTarget) return;
+    var api = window.SUNKAN_CARDS;
+    var decks = (api && typeof api.decks === 'function') ? api.decks() : [];
+    var keep = elTarget.value;
+
+    while (elTarget.firstChild) elTarget.removeChild(elTarget.firstChild);
+
+    var fresh = document.createElement('option');
+    fresh.value = '';
+    fresh.textContent = '＋ 新しいセットを作る';
+    elTarget.appendChild(fresh);
+
+    var known = {};
+    for (var i = 0; i < decks.length; i++) {
+      known[decks[i].id] = true;
+      var opt = document.createElement('option');
+      opt.value = decks[i].id;
+      opt.textContent = decks[i].name + '（' + decks[i].count + '）';
+      elTarget.appendChild(opt);
+    }
+
+    var current = (api && typeof api.currentDeckId === 'function') ? api.currentDeckId() : '';
+    var want = known[keep] ? keep : current;
+    elTarget.value = known[want] ? want : '';
+    syncTargetField();
+  }
+
+  /** 新しいセットを選んだときだけ、名前の欄を出す */
+  function syncTargetField() {
+    if (!elNameField) return;
+    elNameField.hidden = !!(elTarget && elTarget.value);
+  }
+
+  /** いま選ばれている入れ先の名前（新しく作るときは空） */
+  function targetName() {
+    if (!elTarget || !elTarget.value) return '';
+    var opt = elTarget.options[elTarget.selectedIndex];
+    return opt ? opt.textContent.replace(/（\d+）$/, '') : '';
+  }
 
   /**
    * セット名を自動で埋める。
@@ -516,12 +565,16 @@
     if (elPreview) elPreview.textContent = '';
     if (elPdfStatus) elPdfStatus.textContent = '';
     if (elPromptStatus) elPromptStatus.textContent = '';
+    renderTarget();   // セットは増えているかもしれないので毎回作り直す
     if (typeof elDialog.showModal === 'function') {
       if (!elDialog.open) elDialog.showModal();
     } else {
       elDialog.setAttribute('open', 'open');
     }
-    if (elName) elName.focus();
+    // いちばん上（入れ先）から見せる。中ほどの欄に焦点を当てると、
+    // ダイアログがそこまでスクロールした状態で開き、**入れ先を見落とす**。
+    elDialog.scrollTop = 0;
+    if (elTarget) elTarget.focus();
   }
 
   function closeDialog() {
@@ -549,11 +602,14 @@
     for (var i = 0; i < parsed.items.length; i++) {
       if (trim(parsed.items[i].exEn)) withEx++;
     }
-    elPreview.textContent = parsed.items.length + ' 枚ぶん読めました' +
+    // どこに入るのかを先に言う。押すまで分からないのがいちばん困る
+    var into = targetName();
+    elPreview.textContent = (into ? '「' + into + '」に ' : '') +
+      parsed.items.length + ' 枚ぶん読めました' +
       '（うち例文つき ' + withEx + ' 枚）。' +
       (withEx < parsed.items.length ? '例文の無い札は「聞く」「言う」の面が弱くなります。' : '');
 
-    autofillName(parsed.deckName);
+    if (!targetName()) autofillName(parsed.deckName);   // 新しく作るときだけ
   }
 
   function save() {
@@ -567,8 +623,9 @@
       if (elPreview) elPreview.textContent = '読み込めるカードがありませんでした。';
       return;
     }
+    var targetId = elTarget ? trim(elTarget.value) : '';
     var name = trim(elName && elName.value) || parsed.deckName || '取り込んだカード';
-    var result = api.addCards(name, parsed.items);
+    var result = api.addCards(name, parsed.items, targetId);
 
     closeDialog();
     if (elText) elText.value = '';
@@ -679,6 +736,12 @@
     if (elName) {
       // 人が打ったら、こちらからは触らない
       elName.addEventListener('input', function () { nameAuto = false; });
+    }
+    if (elTarget) {
+      elTarget.addEventListener('change', function () {
+        syncTargetField();
+        preview();     // 「どこに入るか」の言い方が変わる
+      });
     }
     if (elPdfBtn) elPdfBtn.addEventListener('click', pickFile);
     if (elPdfFile) elPdfFile.addEventListener('change', onFile);

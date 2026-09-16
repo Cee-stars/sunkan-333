@@ -38,7 +38,7 @@
 
 | 関数 | 内容 |
 | --- | --- |
-| `addSentences(deckName, items)` | 名前でセットを探し（無ければ作って開き）、`{ja,en,note}` を足す。戻り値は `{added, skipped, deckId, deckName}`。足し方は「＋追加」と同じ（`sunkan:added` 行き）なので元データは無傷 |
+| `addSentences(deckName, items)` | 名前で自作セットを探し（無ければ作って開き）、`{ja,en,note}` を足す。戻り値は `{added, skipped, deckId, deckName}`。足し方は「＋追加」と同じ（`sunkan:added` 行き）なので元データは無傷。画面から入れ先を選んだときは、中で `addSentencesToDeckId` を使う（**収録セットにも足せる**） |
 | `splitTable(text)` | 貼り付けテキストを行×列に割る（TSV / CSV 自動判定）。戻り値は `{rows, delimiter}` |
 | `copyText(text, done)` | クリップボードへ。非同期なので結果は `done(ok)` で返す |
 | `reload()` | localStorage を読み直して表を作り直す。同期が中身を入れ替えたあとに呼ぶ。開いていたセットは、まだ在ればそのまま |
@@ -75,7 +75,9 @@
 | --- | --- |
 | `onShow()` | カードの画面を開いたときに呼ぶ（`paraphrase.js` の `setMode` から）。ここで予定を組む |
 | `reload()` | localStorage を読み直して作り直す。同期が中身を入れ替えたあとに呼ぶ |
-| `addCards(deckName, items)` | 名前でセットを探し（無ければ作って開き）、`{en, ja, exEn, exJa, note}` を足す。同じ `(en, exEn)` は飛ばす。戻り値は `{added, skipped, deckId, deckName}` |
+| `addCards(deckName, items, deckId)` | `deckId` があればそのセットへ、無ければ名前で探し（無ければ作って開き）足す。同じ `(en, exEn)` は飛ばす。戻り値は `{added, skipped, deckId, deckName}` |
+| `decks()` | 取り込みの「入れ先」を作るための一覧 `[{id, name, count}]` |
+| `currentDeckId()` | いま開いているセットの id（`''` は「すべてのセット」） |
 | `flash(message)` | 上の帯に短く出す |
 
 `import.js` は**カードを直に保存しない**。足すのは `addCards` 越しに限る。
@@ -395,6 +397,25 @@ FSRS は初めて「できた」札の安定度を約 3.2 日と見ており、�
 
 **それでも見つからなかったときだけ**、表に `take after ＝ ？` の札を添える。
 見つかっているのに添えると、同じものが 2 回出るだけで邪魔になる。
+
+### 入れ先（どのセットに足すか）
+
+取り込みの画面のいちばん上は「入れ先」の `<select>`。
+**初期値はいま開いているセット。** 毎回 新しいセットを作らせると、
+少し足したいだけでもセットが増えていって続かない。
+
+- 「＋ 新しいセットを作る」を選んだときだけ、名前の欄（`*-name-field`）を出す
+- 瞬間英作文では**収録セットも選べる**（`sunkan:added` に積むだけなので元データは無傷）。
+  ただし**収録セットを初期値にはしない**。読み込んだものが収録の 360 文に混ざるのは、
+  まず望んだ動きではない
+- 下読みに「**「日常」に 2 組を読み込めます**」と、どこに入るかを先に出す。
+  押すまで分からないのがいちばん困る
+- ダイアログは `scrollTop = 0` にして入れ先に焦点を当てる。中ほどの欄に焦点を当てると
+  そこまでスクロールした状態で開き、**入れ先を見落とす**
+
+足す先は id で渡す（`addSentencesToDeckId` / `addCards(name, items, deckId)`）。
+名前で探す道も残してあるが、同じ名前のセットが 2 つあると当たらないので、
+画面から選んだときは必ず id を使う。
 
 ### 取り込み
 

@@ -1717,22 +1717,43 @@
     /** 同期が中身を入れ替えたあとに呼ぶ */
     reload: reloadFromStorage,
 
+    /** 取り込みの「入れ先」を作るための一覧。`[{id, name, count}]` */
+    decks: function () {
+      var out = [];
+      for (var i = 0; i < state.decks.length; i++) {
+        out.push({
+          id: state.decks[i].id,
+          name: state.decks[i].name,
+          count: itemsOfDeck(state.decks[i].id).length
+        });
+      }
+      return out;
+    },
+
+    /** いま開いているセットの id（'' は「すべてのセット」） */
+    currentDeckId: function () { return state.deckId; },
+
     /**
      * 取り込みから使う口。セットを名前で探し（無ければ作って開き）、カードを足す。
      * items は {en, ja, exEn, exJa, note} の配列。
      * 同じ (en, exEn) の組がすでにあるものは飛ばす。
      * @returns {{added:number, skipped:number, deckId:string, deckName:string}}
      */
-    addCards: function (deckName, items) {
-      var name = trim(deckName) || '取り込んだカード';
-      var deck = null;
-      for (var i = 0; i < state.decks.length; i++) {
-        if (state.decks[i].name.toLowerCase() === name.toLowerCase()) { deck = state.decks[i]; break; }
-      }
+    addCards: function (deckName, items, deckId) {
+      // 入れ先が id で指定されていればそれに足す（画面で選んだセット）。
+      // 指定が無ければ名前で探し、無ければ作る。
+      var deck = trim(deckId) ? findDeck(trim(deckId)) : null;
+
       if (!deck) {
-        deck = { id: makeId('deck'), name: name, created: Date.now() };
-        state.decks.push(deck);
-        saveDecks();
+        var name = trim(deckName) || '取り込んだカード';
+        for (var i = 0; i < state.decks.length; i++) {
+          if (state.decks[i].name.toLowerCase() === name.toLowerCase()) { deck = state.decks[i]; break; }
+        }
+        if (!deck) {
+          deck = { id: makeId('deck'), name: name, created: Date.now() };
+          state.decks.push(deck);
+          saveDecks();
+        }
       }
 
       // すでに入っているものの見分けに使う鍵
