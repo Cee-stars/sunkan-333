@@ -31,6 +31,9 @@
   var LS_LAST = 'sunkan:sync:last';
   var LS_ERR = 'sunkan:sync:error';   // 最後に失敗した理由。黙って止まらないよう残す
   var LS_TOMBS = 'sunkan:sync:tombs';
+  var LS_DEVICE = 'sunkan:sync:device';   // この入れ物の名札。保存先に誰が書いているかを見るため
+  var LS_PEERS = 'sunkan:sync:peers';     // 保存先に書いている端末の控え（表示用）
+  var LS_STRIPPED = 'sunkan:sync:stripped';  // 古い版に項目を消された印
 
   var GIST_FILE = 'sunkan-data.json';   // My Dictionary と同じ Gist に同居できるよう名前を分ける
   /* My Dictionary が送ったカードの置き場。本体とは別ファイルにして、
@@ -47,6 +50,10 @@
   var BUSY_MAX_MS = 60000;     // 「同期中」が居座ったら諦めて次を受け付ける
   var WATCH_MS = 3000;    // 変更を見に行く間隔
   var DEBOUNCE_MS = 2000; // 変更が止まってから送るまで
+
+  var MAX_PEERS = 20;                              // 端末の控えは増やしすぎない
+  var PEER_MAX_AGE = 60 * 24 * 60 * 60 * 1000;     // 60 日書き込みが無い端末は忘れる
+  var PEER_FRESH_MS = 14 * 24 * 60 * 60 * 1000;    // これより古い端末は版を比べない（使っていない端末のため）
 
   /* ============================================================
    * 2. localStorage（プライベートモードでは例外が飛ぶ）
@@ -178,6 +185,156 @@
   }
 
   /* ============================================================
+   * 3.5 どの端末が、いつ、どの版で書いたか
+   *
+   * 「同期しました」と出ていても、もう片方が古い版だと書き込みが通らず
+   * （更新に public を混ぜていた頃の版は毎回 422 で弾かれる）、
+   * 新しい版が足した項目は古い版に落とされる。それでも画面は「自動」のままで、
+   * 揃っていないことに気付けなかった。
+   *
+   * 保存先に「書いた端末の名札・版・時刻」を残し、そのまま見せる。
+   * 相手が一度も現れない／版が違う、をこちらから言えるようにするため。
+   * ========================================================== */
+
+  /** この入れ物の名札。iOS はホーム画面とブラウザで保存領域が分かれるので入れ物ごとに付く */
+  function deviceId() {
+    var id = trim(lsGet(LS_DEVICE));
+    if (id) return id;
+    id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    lsSet(LS_DEVICE, id);
+    return id;
+  }
+
+  /** 画面に出す名前。どの入れ物かを見分けられればよい */
+  function deviceName() {
+    var ua = str(window.navigator && window.navigator.userAgent);
+    var base = /iPhone/.test(ua) ? 'iPhone'
+      : /iPad/.test(ua) ? 'iPad'
+      : /Android/.test(ua) ? 'Android'
+      : /Macintosh|Mac OS X/.test(ua) ? 'Mac'
+      : /Windows/.test(ua) ? 'Windows'
+      : '端末';
+    var standalone = false;
+    try {
+      standalone = (window.navigator.standalone === true) ||
+        !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    } catch (e) { standalone = false; }
+    return base + (standalone ? '・ホーム画面' : '・ブラウザ');
+  }
+
+  /** 動いている版。update.js と同じく画面に出ているものを読む */
+  function runningBuild() {
+    var el = $('app-version');
+    return el ? trim(el.textContent) : '';
+  }
+
+  function readPeers() {
+    var v = readJSON(LS_PEERS, {});
+    return isObject(v) ? v : {};
+  }
+
+  /** 1 件は { n: 名前, b: 版, at: 書いた時刻 }。古いものは忘れ、多すぎれば新しい順に切る */
+  function cleanPeers(peers) {
+    var cutoff = Date.now() - PEER_MAX_AGE;
+    var ids = [], id, out = {};
+    for (id in peers) {
+      if (!Object.prototype.hasOwnProperty.call(peers, id)) continue;
+      if (!isObject(peers[id])) continue;
+      if ((peers[id].at || 0) < cutoff) continue;
+      ids.push(id);
+    }
+    ids.sort(function (a, b) { return (peers[b].at || 0) - (peers[a].at || 0); });
+    ids = ids.slice(0, MAX_PEERS);
+    for (var i = 0; i < ids.length; i++) {
+      out[ids[i]] = {
+        n: trim(peers[ids[i]].n),
+        b: trim(peers[ids[i]].b),
+        at: peers[ids[i]].at || 0
+      };
+    }
+    return out;
+  }
+
+  /** 端末ごとに新しいほうを採る */
+  function mergePeers(mine, theirs) {
+    var out = {}, id;
+    function take(src) {
+      for (id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!isObject(src[id])) continue;
+        if (out[id] && (out[id].at || 0) >= (src[id].at || 0)) continue;
+        out[id] = src[id];
+      }
+    }
+    take(mine);
+    take(theirs);
+    return cleanPeers(out);
+  }
+
+  /** 送るときに、この端末の名札を今の時刻で押す */
+  function stampSelf(peers) {
+    var out = {}, id;
+    for (id in peers) {
+      if (Object.prototype.hasOwnProperty.call(peers, id)) out[id] = peers[id];
+    }
+    out[deviceId()] = { n: deviceName(), b: runningBuild(), at: Date.now() };
+    return cleanPeers(out);
+  }
+
+  function ago(ms) {
+    var d = Date.now() - ms;
+    if (!ms || d < 0) return '';
+    if (d < 90 * 1000) return 'たった今';
+    if (d < 60 * 60 * 1000) return Math.round(d / 60000) + ' 分前';
+    if (d < 24 * 60 * 60 * 1000) return Math.round(d / 3600000) + ' 時間前';
+    return Math.round(d / 86400000) + ' 日前';
+  }
+
+  /**
+   * 保存先を使っている端末の一覧と、気付いてほしいこと。
+   * { lines: [...], warn: [...] }
+   */
+  function peerReport() {
+    var peers = readPeers(), me = deviceId(), mine = runningBuild();
+    var ids = [], id, lines = [], warn = [], others = 0;
+
+    for (id in peers) {
+      if (Object.prototype.hasOwnProperty.call(peers, id)) ids.push(id);
+    }
+    ids.sort(function (a, b) { return (peers[b].at || 0) - (peers[a].at || 0); });
+
+    for (var i = 0; i < ids.length; i++) {
+      var p = peers[ids[i]], self = ids[i] === me;
+      var when = ago(p.at);
+      lines.push('・' + (p.n || '端末') + (p.b ? ' … ' + p.b : '') +
+        (when ? ' ・' + when : '') + (self ? '（この端末）' : ''));
+      if (self) continue;
+      others++;
+      // しばらく使っていない端末の版を責めても仕方ないので、最近書いたものだけ比べる
+      if (mine && p.b && p.b !== mine && Date.now() - (p.at || 0) < PEER_FRESH_MS) {
+        warn.push('⚠ 版が違います（' + (p.n || '端末') + ' は ' + p.b + '、この端末は ' + mine +
+          '）。古いほうの端末で更新してください。揃うまで中身は行き来しません。');
+      }
+    }
+
+    if (lines.length) lines.unshift('この保存先に書いている端末');
+    if (ready() && !others) {
+      warn.push('⚠ ほかの端末からの書き込みがまだありません。もう片方が古い版のままか、'
+        + '別の保存先を見ている可能性があります（保存先の末尾6文字を見比べてください）。');
+    }
+    if (lsGet(LS_STRIPPED) === '1') {
+      warn.push('⚠ 古い版の端末が同じ保存先に書いています（こちらが書いた項目が消されました）。'
+        + 'あちらを更新してください。');
+    }
+    return { lines: lines, warn: warn };
+  }
+
+  /** 札に出すほどの困りごとがあるか */
+  function peerTrouble() {
+    return ready() && peerReport().warn.length > 0;
+  }
+
+  /* ============================================================
    * 4. いまの中身を取り出す / 書き戻す
    * ========================================================== */
 
@@ -196,13 +353,14 @@
         stars: isArray(readJSON(LS_PARA_STARS, [])) ? readJSON(LS_PARA_STARS, []) : []
       },
       inbox: isArray(readJSON(LS_INBOX, [])) ? readJSON(LS_INBOX, []) : [],
-      tombs: readTombs()
+      tombs: readTombs(),
+      peers: readPeers()
     };
   }
 
   /** 受け取った中身を均す。向こうが壊れていても落ちないように */
   // ここで名前を知っている項目。これ以外は「新しい版が足したもの」とみなして持ち越す
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'inbox', 'tombs'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'inbox', 'tombs', 'peers'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -238,7 +396,8 @@
         stars: isArray(para.stars) ? para.stars : []
       },
       inbox: isArray(d.inbox) ? d.inbox : [],
-      tombs: isArray(d.tombs) ? d.tombs : []
+      tombs: isArray(d.tombs) ? d.tombs : [],
+      peers: isObject(d.peers) ? d.peers : {}
     });
   }
 
@@ -267,6 +426,8 @@
     put(LS_PARA_STARS, merged.para.stars, [], 'para');
     put(LS_INBOX, merged.inbox, [], 'inbox');
     writeTombs(merged.tombs);
+    // 端末の控えは表示用。ここが動いただけで画面を作り直す必要はない
+    writeJSON(LS_PEERS, cleanPeers(merged.peers || {}));
     return hit;
   }
 
@@ -481,7 +642,8 @@
       // こちらの受信箱からカードが消え、帯が二度と出なくなる。
       // 取り込み済みの文は addSentences が同じ (ja,en) を弾くので二重にはならない。
       inbox: dropAlreadyHave(mergeInbox(mine.inbox, theirs.inbox, tombMap(mine.tombs)), addedOut),
-      tombs: tombs
+      tombs: tombs,
+      peers: mergePeers(mine.peers || {}, theirs.peers || {})
     }));
   }
 
@@ -958,7 +1120,7 @@
    * 「つながりません」だけでは、電波・トークン・保存先のどれが悪いのか分からない。
    */
   function diagnose() {
-    var tk = token(), id = gistId(), lines = [];
+    var tk = token(), id = gistId(), lines = [], remote = null;
 
     function head() {
       return { 'Authorization': 'token ' + tk, 'Accept': 'application/vnd.github+json' };
@@ -993,7 +1155,8 @@
           lines.push('③ 保存先 … ' + (r.ok ? '読めました'
             : r.status === 404 ? '見つかりません（Gist ID を確かめてください）'
             : '読めません（' + r.status + '）'));
-          return r.ok ? r.json() : null;
+          if (!r.ok) return null;
+          return r.json().then(function (j) { remote = j; return j; });
         },
         function (e) { lines.push('③ 保存先 … 試せません（' + why(e) + '）'); return null; }
       );
@@ -1013,10 +1176,39 @@
         function (e) { lines.push('④ 書き込み … できません（' + why(e) + '）'); }
       );
     }).then(function () {
+      // 通信が全部通っていても、もう片方が書いていなければ揃わない。
+      // 控えではなく保存先そのものを見て、誰が書いているかを出す。
+      lines.push('⑤ ' + remotePeerText(remote));
+    }).then(function () {
       lines.push('この端末 … ' + (window.navigator.onLine === false ? 'オフライン' : 'オンライン')
+        + ' / ' + deviceName() + ' / ' + (runningBuild() || '版不明')
         + ' / トークン ' + tk.length + ' 文字 / Gist ID ' + id.length + ' 文字');
       setStatus(lines.join('\n'), false);
     });
+  }
+
+  /** 保存先に入っている名札をそのまま読む（手元の控えではなく、置いてあるほう） */
+  function remotePeerText(json) {
+    var f = json && json.files && json.files[GIST_FILE];
+    if (!f) return '書いている端末 … このアプリのぶんがまだありません';
+    if (f.truncated) return '書いている端末 … 中身が大きくて読めませんでした';
+    var parsed;
+    try { parsed = JSON.parse(str(f.content)); } catch (e) { return '書いている端末 … 中身を読めませんでした'; }
+    var peers = isObject(parsed) && isObject(parsed.peers) ? parsed.peers : null;
+    if (!peers) {
+      return '書いている端末 … 記録がありません（古い版の端末が書いている可能性があります）';
+    }
+    var me = deviceId(), out = [], others = 0, id;
+    for (id in peers) {
+      if (!Object.prototype.hasOwnProperty.call(peers, id)) continue;
+      if (!isObject(peers[id])) continue;
+      if (id !== me) others++;
+      out.push((trim(peers[id].n) || '端末') + (trim(peers[id].b) ? '／' + trim(peers[id].b) : '')
+        + (peers[id].at ? '／' + ago(peers[id].at) : '') + (id === me ? '（この端末）' : ''));
+    }
+    if (!out.length) return '書いている端末 … 記録がありません';
+    return '書いている端末 … ' + out.join('、')
+      + (others ? '' : '\n⚠ この端末しか書いていません。もう片方は別の保存先を見ているか、古い版のままです。');
   }
 
   /* ============================================================
@@ -1103,7 +1295,13 @@
     if (!silent) setStatus('同期しています…', false);
 
     var id = gistId(), tk = token();
+    var stamped = readPeers()[deviceId()];
     return gistGet(id, tk).then(function (theirs) {
+      // 一度書いた名札が保存先から消えている＝古い版が上書きしている。
+      // 古い版は知らない項目を落として送り返すので、こちらの新しい項目も道連れになる。
+      var gone = !!(stamped && stamped.at) && !(theirs.peers || {})[deviceId()];
+      if (gone) lsSet(LS_STRIPPED, '1'); else lsRemove(LS_STRIPPED);
+
       var handedCount = theirs.handed || 0;
       var before = countAdded(snapshot().added);
       state.handedNote = handedCount
@@ -1205,6 +1403,9 @@
       out.at = Date.now();
       out.inbox = inboxFor(step);
       out.tombs = tombsFor(step);
+      // 誰がいつ書いたかは、送った時点の時刻でなければ意味がない
+      merged.peers = stampSelf(merged.peers || {});
+      out.peers = merged.peers;
       return out;
     }
 
@@ -1213,6 +1414,7 @@
     function attempt(step) {
       return gistUpdate(id, token, payload(step)).then(function (r) {
         used = step;
+        writeJSON(LS_PEERS, merged.peers);   // 送れたぶんだけ控えに残す
         if (step >= 1) {
           // 送れた形に手元も合わせる。次の同期でまた膨らませないため
           writeTombs(tombsFor(step));
@@ -1328,6 +1530,13 @@
     if (err) {
       text += '\n⚠ ' + (err.at ? stamp(err.at) + ' に' : '') + '同期できませんでした: ' + err.why;
     }
+    if (ready()) {
+      // 「同期しました」だけでは、相手に届いているかが分からない。
+      // 誰がいつどの版で書いたかをそのまま出す
+      var pr = peerReport();
+      if (pr.lines.length) text += '\n' + pr.lines.join('\n');
+      if (pr.warn.length) text += '\n' + pr.warn.join('\n');
+    }
     return text;
   }
 
@@ -1335,15 +1544,16 @@
     if (!elStateLabel) return;
     if (!ready()) { elStateLabel.textContent = '未設定'; elStateLabel.classList.remove('is-error'); return; }
     var err = lastError();
-    elStateLabel.textContent = err ? '⚠ エラー' : (autoOn() ? '自動' : '手動');
-    elStateLabel.classList.toggle('is-error', !!err);
+    var trouble = !err && peerTrouble();
+    elStateLabel.textContent = err ? '⚠ エラー' : trouble ? '⚠ 要確認' : (autoOn() ? '自動' : '手動');
+    elStateLabel.classList.toggle('is-error', !!err || trouble);
   }
 
   function openSync() {
     if (elToken) elToken.value = token();
     if (elGist) elGist.value = gistId();
     if (elAuto) elAuto.checked = autoOn();
-    setStatus(whenText(), !!lastError());
+    setStatus(whenText(), !!lastError() || peerTrouble());
     if (elSettingsDialog && elSettingsDialog.open) elSettingsDialog.close();
     if (elDialog && !elDialog.open) elDialog.showModal();
   }
@@ -1512,6 +1722,8 @@
       lsRemove(LS_TOKEN);
       lsRemove(LS_GIST);
       lsRemove(LS_ERR);
+      lsRemove(LS_PEERS);
+      lsRemove(LS_STRIPPED);
       lsSet(LS_AUTO, '0');
       if (elToken) elToken.value = '';
       if (elGist) elGist.value = '';
