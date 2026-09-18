@@ -110,12 +110,24 @@
    */
   function writeTombs(list) {
     var cutoff = Date.now() - TOMB_MAX_AGE;
-    var out = [], i, rec;
+    var out = [], index = {}, i, rec, cur;
     for (i = 0; i < list.length; i++) {
       rec = list[i];
       if (!rec || !rec.k) continue;
       if (Math.max(rec.t || 0, rec.a || 0) < cutoff) continue;
-      out.push(rec);
+      cur = index[rec.k];
+      if (cur) {
+        // 同じ鍵は 1 件にまとめ、新しいほうの時刻を採る。
+        // 突き合わせは手元と相手の記録をつなげて渡してくるので、まとめないと
+        // 同期のたびに件数が倍になり、上限に当たって本物の記録が押し出される
+        // （＝消したものが相手から戻ってくる）。
+        if ((rec.t || 0) > cur.t) cur.t = rec.t || 0;
+        if ((rec.a || 0) > cur.a) cur.a = rec.a || 0;
+        continue;
+      }
+      cur = { k: rec.k, t: rec.t || 0, a: rec.a || 0 };
+      index[rec.k] = cur;
+      out.push(cur);
     }
     if (out.length > MAX_TOMBS) {
       out.sort(function (a, b) { return Math.max(b.t || 0, b.a || 0) - Math.max(a.t || 0, a.a || 0); });
