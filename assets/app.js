@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 38 (2026-09-16)';
+  var APP_VERSION = 'build 39 (2026-09-21)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -632,6 +632,7 @@
   var elBackupFile = $('backup-file');
   var elCsvOut = $('btn-csv-out');
   var elCsvHint = $('csv-hint');
+  var elBackupOutHint = $('backup-out-hint');
   var elDataStatus = $('data-status');
   var elVoiceOpen = $('btn-voice');
   var elVoiceNow = $('voice-now');
@@ -1792,7 +1793,7 @@
    */
   function safeName(name) {
     var t = str(name).replace(/[^A-Za-z0-9 _-]+/g, ' ').replace(/\s+/g, ' ').replace(/^ | $/g, '');
-    return t ? t.replace(/ /g, '-') : 'sunkan';
+    return t ? t.replace(/ /g, '-') : '';   // 使えるものが無ければ空。代わりは呼ぶ側で決める
   }
 
   function todayStamp() {
@@ -1837,7 +1838,7 @@
     if (downloadText(name, text, 'application/json')) {
       setDataStatus(name + ' を書き出しました' +
         (photos ? '（写真 ' + photos + ' 枚を含む）' : '') +
-        '。新しい端末で「バックアップを読み込む」を押してください。', false);
+        '。新しい端末で「読み込む」を押してください。', false);
     } else {
       setDataStatus('書き出せませんでした。', true);
     }
@@ -1929,8 +1930,24 @@
   /** メニューを開くたびに、右側の補足をいまの状態に合わせる */
   function refreshMenuHints() {
     renderVoiceNow();
+
+    // 「ぜんぶ」が何を指すのかを、実際の数で言う。
+    // 数を出さないと「このセットだけでは？」と迷わせる（実際そう聞かれた）。
+    if (elBackupOutHint) {
+      var parts = [];
+      var decks = state.userDecks.length;
+      if (decks) parts.push('自作セット ' + decks);
+      try {
+        var cards = JSON.parse(window.localStorage.getItem('sunkan:cards:items') || '[]');
+        if (cards.length) parts.push('カード ' + cards.length);
+        var para = JSON.parse(window.localStorage.getItem('sunkan:para:cards') || '[]');
+        if (para.length) parts.push('パラフレ ' + para.length);
+      } catch (e) { /* 読めなければ数は出さない */ }
+      elBackupOutHint.textContent = parts.length ? parts.join('・') + ' など ぜんぶ' : 'ぜんぶ';
+    }
+
     if (elCsvHint) {
-      elCsvHint.textContent = state.deck ? '「' + state.deck.name + '」' : 'Excel などで開ける';
+      elCsvHint.textContent = state.deck ? '「' + state.deck.name + '」だけ' : 'Excel などで開ける';
     }
     if (elMenuSyncHint) {
       var on = false, set = false;
@@ -1948,7 +1965,18 @@
       setDataStatus('書き出せるセットがありません。', true);
       return;
     }
-    var name = 'sunkan-' + safeName(state.deck.name) + '-' + todayStamp() + '.csv';
+    // セット名が日本語だけだと safeName は空になる。そのときは並び順で番号を振る。
+    // 以前は 'sunkan' を返していたので、**日本語名のセットが全部 sunkan-sunkan-日付.csv** になり、
+    // 2 つ書き出すとどちらがどちらか分からなかった。
+    var slug = safeName(state.deck.name);
+    if (!slug) {
+      var all = allDecks(), at = 0;
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].id === state.deck.id) { at = i + 1; break; }
+      }
+      slug = 'set' + (at || 1);
+    }
+    var name = 'sunkan-' + slug + '-' + todayStamp() + '.csv';
     if (downloadText(name, deckToCSV(state.records), 'text/csv;charset=utf-8')) {
       setDataStatus('「' + state.deck.name + '」を ' + state.records.length + ' 行、'
         + name + ' に書き出しました。', false);

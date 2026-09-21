@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 38 (2026-09-16)">
+<meta name="sunkan-build" content="build 39 (2026-09-21)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -447,22 +447,24 @@
     <h2 id="menu-dialog-title" class="dialog-title">メニュー</h2>
 
     <ul class="sheet-list">
+      <!-- 「ぜんぶ」なのか「このセットだけ」なのかを、押す前に必ず言う。
+           右の注記に頼らず、見出しそのものに入れる。 -->
       <li class="sheet-item">
         <button type="button" id="btn-backup-out" class="sheet-btn">
-          <span class="sheet-label">バックアップを書き出す</span>
-          <span class="sheet-hint">JSON ファイル</span>
-        </button>
-      </li>
-      <li class="sheet-item">
-        <button type="button" id="btn-backup-in" class="sheet-btn">
-          <span class="sheet-label">バックアップを読み込む</span>
-          <span class="sheet-hint">JSON / CSV</span>
+          <span class="sheet-label">ぜんぶ書き出す（機種変更用）</span>
+          <span class="sheet-hint" id="backup-out-hint">JSON ファイル</span>
         </button>
       </li>
       <li class="sheet-item">
         <button type="button" id="btn-csv-out" class="sheet-btn">
-          <span class="sheet-label">CSV で書き出す</span>
+          <span class="sheet-label">このセットだけ書き出す</span>
           <span class="sheet-hint" id="csv-hint">Excel などで開ける</span>
+        </button>
+      </li>
+      <li class="sheet-item">
+        <button type="button" id="btn-backup-in" class="sheet-btn">
+          <span class="sheet-label">読み込む</span>
+          <span class="sheet-hint">JSON / CSV のどちらでも</span>
         </button>
       </li>
       <li class="sheet-item">
@@ -486,7 +488,11 @@
       <button type="button" id="btn-menu-close" class="btn btn--primary sheet-close">閉じる</button>
     </div>
 
-    <p class="dialog-hint sheet-foot">機種変更のときは書き出し → 新しい端末で読み込み</p>
+    <p class="dialog-hint sheet-foot">
+      <strong>「ぜんぶ」</strong>は 3 つのモードぜんぶ（瞬間英作文・パラフレ帳・カード）と写真・覚えた記録。<br>
+      <strong>「このセットだけ」</strong>は、いま開いているセットの 日本語 / 英語 / メモ だけ。<br>
+      機種変更のときは「ぜんぶ」で書き出して、新しい端末で読み込んでください。
+    </p>
   </form>
 </dialog>
 
