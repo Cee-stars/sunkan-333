@@ -17,7 +17,7 @@
   var LS_STARS = 'sunkan:para:stars';     // ★を付けたパラフレの id
   var LS_UI = 'sunkan:para:ui';           // { genreId, mask, sort, starredOnly }
 
-  var MODES = ['drill', 'para', 'cards'];
+  var MODES = ['drill', 'para', 'cards', 'shadow'];
   var SORTS = ['added', 'newest', 'alpha', 'genre'];
 
   var LINE_COUNT = 4;        // 見出しの下に置ける言い換えの数
@@ -198,11 +198,13 @@
   var elTabDrill = $('tab-drill');
   var elTabPara = $('tab-para');
   var elTabCards = $('tab-cards');
+  var elTabShadow = $('tab-shadow');
 
   /** モード名 → そのタブ。増えたらここだけ足す */
   function tabFor(mode) {
     if (mode === 'para') return elTabPara;
     if (mode === 'cards') return elTabCards;
+    if (mode === 'shadow') return elTabShadow;
     return elTabDrill;
   }
 
@@ -309,6 +311,15 @@
     if (moved && mode === 'cards') {
       var cards = window.SUNKAN_CARDS;
       if (cards && typeof cards.onShow === 'function') cards.onShow();
+    }
+    // シャドーイングは音を出しっぱなしにできない。離れたら必ず黙らせる
+    var shadow = window.SUNKAN_SHADOW;
+    if (moved && shadow) {
+      if (mode === 'shadow') {
+        if (typeof shadow.onShow === 'function') shadow.onShow();
+      } else if (typeof shadow.onHide === 'function') {
+        shadow.onHide();
+      }
     }
   }
 
@@ -1365,6 +1376,7 @@
     if (elTabDrill) elTabDrill.addEventListener('click', function () { setMode('drill'); });
     if (elTabPara) elTabPara.addEventListener('click', function () { setMode('para'); });
     if (elTabCards) elTabCards.addEventListener('click', function () { setMode('cards'); });
+    if (elTabShadow) elTabShadow.addEventListener('click', function () { setMode('shadow'); });
     if (elTabs) elTabs.addEventListener('keydown', onTabsKeyDown);
 
     if (elGenreInput) {

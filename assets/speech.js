@@ -260,6 +260,14 @@
     if (run.watchdog) { window.clearTimeout(run.watchdog); run.watchdog = null; }
     active = null;
     stopKeepAlive();
+
+    // 最後まで鳴り終わったときだけ知らせる。
+    // **cancel() や次の speak() で差し替えられたぶんでは呼ばない**
+    // （上の active !== run で弾いている）。ここを緩めると、止めたのに
+    // シャドーイングが次の文へ進んでしまう。
+    if (run.req && run.req.onend) {
+      try { run.req.onend(); } catch (e) { /* 受け手の落ちは持ち込まない */ }
+    }
   }
 
   function onError(run, ev) {
@@ -339,7 +347,8 @@
       chunks: splitText(clean),
       lang: opts.lang || 'en-US',
       rate: (typeof opts.rate === 'number' && opts.rate > 0) ? opts.rate : 1,
-      onerror: (typeof opts.onerror === 'function') ? opts.onerror : null
+      onerror: (typeof opts.onerror === 'function') ? opts.onerror : null,
+      onend: (typeof opts.onend === 'function') ? opts.onend : null
     };
     dropActive();
 
@@ -426,7 +435,11 @@
   window.SUNKAN_SPEECH = {
     /** 読み上げが使えるか */
     supported: function () { return supported; },
-    /** 英語を読み上げる。前の発話は止めて、最後に頼まれた 1 つだけ鳴らす */
+    /**
+     * 英語を読み上げる。前の発話は止めて、最後に頼まれた 1 つだけ鳴らす。
+     * `opts.onend` は**最後まで鳴り終わったときだけ**呼ばれる（止めたぶんでは呼ばれない）。
+     * 続けて読み上げる（シャドーイング）ときは、これで次へつなぐ。
+     */
     speak: speak,
     /** 鳴っているものを止める */
     cancel: cancel,

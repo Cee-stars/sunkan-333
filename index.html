@@ -11,8 +11,8 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 39 (2026-09-21)">
-<meta name="description" content="瞬間英作文・パラフレ帳・カードの 3 つ。カードは PDF から作れて、忘却曲線で出し直します。">
+<meta name="sunkan-build" content="build 40 (2026-09-23)">
+<meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
@@ -25,7 +25,7 @@
   var mode = 'drill';
   try {
     var saved = window.localStorage.getItem('sunkan:mode');
-    if (saved === 'para' || saved === 'cards') { mode = saved; }
+    if (saved === 'para' || saved === 'cards' || saved === 'shadow') { mode = saved; }
   } catch (e) { /* プライベートモードなどでは既定のまま */ }
   document.documentElement.setAttribute('data-mode', mode);
 })();
@@ -42,6 +42,7 @@
       <span data-mode-view="drill">瞬間英作文</span>
       <span data-mode-view="para">パラフレ帳</span>
       <span data-mode-view="cards">カード</span>
+      <span data-mode-view="shadow">シャドーイング</span>
     </h1>
 
     <div class="mode-tabs" id="mode-tabs" role="tablist" aria-label="モード">
@@ -51,6 +52,8 @@
         aria-selected="false" aria-controls="view-para" tabindex="-1">パラフレ帳</button>
       <button type="button" class="mode-tab" id="tab-cards" role="tab"
         aria-selected="false" aria-controls="view-cards" tabindex="-1">カード</button>
+      <button type="button" class="mode-tab" id="tab-shadow" role="tab"
+        aria-selected="false" aria-controls="view-shadow" tabindex="-1">シャドー</button>
     </div>
   </div>
 
@@ -169,6 +172,25 @@
     </div>
   </div>
 
+  <!-- ===== シャドーイングの操作列 ===== -->
+  <div class="header-row header-row--main" data-mode-view="shadow">
+    <div class="deck-picker">
+      <label class="visually-hidden" for="shadow-deck-select">セット</label>
+      <select id="shadow-deck-select" class="deck-select"></select>
+    </div>
+
+    <button type="button" id="btn-shadow-add" class="btn btn--ghost" aria-haspopup="dialog">
+      <span aria-hidden="true">＋</span><span class="btn-label">追加</span>
+    </button>
+
+    <button type="button" id="btn-shadow-pull" class="btn btn--ghost" aria-haspopup="dialog">
+      <span aria-hidden="true">📥</span><span class="btn-label">瞬間英作文から</span>
+    </button>
+
+    <button type="button" id="btn-shadow-list" class="btn btn--icon" aria-label="文の一覧" aria-haspopup="dialog">☰</button>
+    <button type="button" id="btn-shadow-settings" class="btn btn--icon" aria-label="音声の設定" aria-haspopup="dialog">⚙</button>
+  </div>
+
   <!-- ===== 受信箱（同じドメインの別アプリから届いたカード。どちらのモードでも出す） ===== -->
   <div class="header-row inbox-bar" id="inbox-bar" hidden>
     <div class="inbox-box">
@@ -194,6 +216,7 @@
   <p class="status-bar" id="status-bar" data-mode-view="drill" role="status" aria-live="polite"></p>
   <p class="status-bar" id="para-status" data-mode-view="para" role="status" aria-live="polite"></p>
   <p class="status-bar" id="card-status" data-mode-view="cards" role="status" aria-live="polite"></p>
+  <p class="status-bar" id="shadow-status" data-mode-view="shadow" role="status" aria-live="polite"></p>
 </header>
 
 <main class="app-main">
@@ -289,6 +312,54 @@
 
     <p class="card-empty" id="card-empty" hidden></p>
   </section>
+
+  <!-- ===== シャドーイング（続けて流す。1 文ずつ押させない） ===== -->
+  <section class="view view--shadow" id="view-shadow" data-mode-view="shadow"
+    role="tabpanel" aria-labelledby="tab-shadow" tabindex="-1">
+
+    <div class="shadow-stage" id="shadow-stage" hidden>
+      <div class="progress">
+        <div class="progress-line">
+          <span class="progress-left" id="shadow-count">0 文</span>
+          <span class="progress-count">聞きながら、少し遅れて言う</span>
+        </div>
+        <div class="progress-track" role="progressbar" id="shadow-track"
+          aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-label="どこまで流したか">
+          <div class="progress-fill" id="shadow-fill"></div>
+        </div>
+      </div>
+
+      <div class="shadow-card">
+        <p class="shadow-en" id="shadow-en"></p>
+        <p class="shadow-ja" id="shadow-ja" hidden></p>
+      </div>
+
+      <div class="shadow-actions">
+        <!-- aria-pressed は付けない。.btn--primary[aria-pressed="false"] が
+             「押していないトグル」の見た目（中抜き）にしてしまい、主ボタンに見えなくなる。
+             状態は ▶はじめる / ■とめる というラベルそのもので伝える。 -->
+        <button type="button" id="btn-shadow-play" class="btn btn--primary shadow-play">
+          <span id="shadow-play-label">▶ はじめる</span>
+        </button>
+        <button type="button" id="btn-shadow-again" class="btn btn--ghost">はじめから</button>
+      </div>
+
+      <div class="shadow-opts">
+        <div class="shadow-opt">
+          <span class="shadow-opt-label">速さ</span>
+          <div class="chip-row" id="shadow-rates"></div>
+        </div>
+        <div class="shadow-opt">
+          <span class="shadow-opt-label">くり返し</span>
+          <div class="chip-row" id="shadow-repeats"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="opt-shadow-hide"> 流している間は英文を隠す（耳だけで追う）</label>
+        <label class="check"><input type="checkbox" id="opt-shadow-loop"> 最後まで行ったら、はじめに戻る</label>
+      </div>
+    </div>
+
+    <p class="card-empty" id="shadow-empty" hidden></p>
+  </section>
 </main>
 
 <footer class="app-footer">
@@ -297,6 +368,8 @@
   <p class="hint" data-mode-view="para">見出しの英文が元の1文、その下が言い換えです。「言い換えを隠す」を押すと、見出しをタップするまで伏せられます。</p>
   <p class="hint hint--desktop" data-mode-view="cards">Space・Enter めくる／1 もう一度／2 できた／3 かんたん／R もう一度きく</p>
   <p class="hint hint--mobile" data-mode-view="cards">カードをタップしてもめくれます</p>
+  <p class="hint hint--desktop" data-mode-view="shadow">Space・Enter はじめる／とめる　R はじめから</p>
+  <p class="hint hint--mobile" data-mode-view="shadow">音が流れたら、少し遅れて重ねて言います</p>
 </footer>
 
 <!-- ===== 行テンプレート（JS からクローンして使う） ===== -->
@@ -1142,9 +1215,100 @@ EXJA: 会議を金曜まで延期した。</pre>
 <script src="assets/data.js"></script>
 <script src="assets/app.js"></script>
 <script src="assets/paraphrase.js"></script>
+<!-- ===== シャドーイング：文の追加・編集 ===== -->
+<dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="shadow-dialog-title" class="dialog-title">文を追加</h2>
+    <p class="dialog-desc">
+      追った英文を 1 文ずつ入れます。<strong>日本語は無くてもかまいません</strong>
+      （あると、いま何を言っているか見失いません）。
+    </p>
+
+    <label class="field">
+      <span class="field-label">英文</span>
+      <input type="text" id="shadow-en-input" class="field-input" autocomplete="off"
+        enterkeyhint="next" placeholder="例：I drink coffee every morning.">
+    </label>
+
+    <label class="field">
+      <span class="field-label">日本語（任意）</span>
+      <input type="text" id="shadow-ja-input" class="field-input" autocomplete="off"
+        enterkeyhint="done" placeholder="例：私は毎朝コーヒーを飲みます。">
+    </label>
+
+    <p class="dialog-note" id="shadow-dialog-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-shadow-cancel" class="btn btn--ghost">閉じる</button>
+      <button type="button" id="btn-shadow-delete" class="btn btn--ghost" hidden>削除する</button>
+      <button type="button" id="btn-shadow-save" class="btn btn--primary">追加する</button>
+    </div>
+
+    <hr class="dialog-sep">
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">新しいセットを作る</h3>
+      <p class="dialog-hint">題材ごとに分けておくと、続けて流すときに扱いやすくなります。</p>
+      <div class="new-deck-row">
+        <label class="visually-hidden" for="shadow-new-deck">新しいセットの名前</label>
+        <input type="text" id="shadow-new-deck" class="field-input" autocomplete="off"
+          enterkeyhint="done" placeholder="例：オンライン英会話">
+        <button type="button" id="btn-shadow-new-deck" class="btn btn--ghost">作る</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== シャドーイング：文の一覧 ===== -->
+<dialog id="shadow-list-dialog" class="dialog" aria-labelledby="shadow-list-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="shadow-list-dialog-title" class="dialog-title">文の一覧</h2>
+    <p class="dialog-desc" id="shadow-list-desc"></p>
+
+    <ul class="card-list" id="shadow-list"></ul>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-shadow-list-close" class="btn btn--primary">閉じる</button>
+    </div>
+
+    <hr class="dialog-sep">
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">セット</h3>
+      <ul class="deck-manage-list" id="shadow-deck-manage-list"></ul>
+      <p class="dialog-hint">セットを消すと、その中の文もいっしょに消えます。</p>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== シャドーイング：瞬間英作文から持ってくる ===== -->
+<dialog id="shadow-pull-dialog" class="dialog" aria-labelledby="shadow-pull-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="shadow-pull-title" class="dialog-title">瞬間英作文から持ってくる</h2>
+    <p class="dialog-desc">
+      向こうのセットの英文を、そのままシャドーイングに入れます。
+      <strong>PDF から作ったセットも、もう一度入れ直す必要はありません。</strong>
+      同じ名前のセットがあればそこに足し、同じ英文は飛ばします。元のセットはそのまま残ります。
+    </p>
+
+    <label class="field">
+      <span class="field-label">どのセットから</span>
+      <select id="shadow-pull-select" class="deck-select"></select>
+    </label>
+
+    <p class="dialog-note" id="shadow-pull-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-shadow-pull-cancel" class="btn btn--ghost">キャンセル</button>
+      <button type="button" id="btn-shadow-pull-do" class="btn btn--primary">持ってくる</button>
+    </div>
+  </form>
+</dialog>
+
 <script src="assets/media.js"></script>
 <script src="assets/srs.js"></script>
 <script src="assets/cards.js"></script>
+<script src="assets/shadow.js"></script>
 <script src="assets/import.js"></script>
 <script src="assets/inbox.js"></script>
 <script src="assets/sync.js"></script>

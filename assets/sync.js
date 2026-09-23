@@ -31,6 +31,10 @@
   var LS_CARD_SRS = 'sunkan:cards:srs';   // 覚えた記録。これを落とすと忘却曲線が消える
   var LS_CARD_STARS = 'sunkan:cards:stars';
 
+  // シャドーイング。速さ・くり返しなどの好みは端末ごとなので揃えない
+  var LS_SHADOW_DECKS = 'sunkan:shadow:decks';
+  var LS_SHADOW_ITEMS = 'sunkan:shadow:items';
+
   var LS_TOKEN = 'sunkan:sync:token';
   var LS_GIST = 'sunkan:sync:gistId';
   var LS_AUTO = 'sunkan:sync:auto';
@@ -228,6 +232,10 @@
         srs: isObject(readJSON(LS_CARD_SRS, {})) ? readJSON(LS_CARD_SRS, {}) : {},
         stars: isArray(readJSON(LS_CARD_STARS, [])) ? readJSON(LS_CARD_STARS, []) : []
       },
+      shadow: {
+        decks: isArray(readJSON(LS_SHADOW_DECKS, [])) ? readJSON(LS_SHADOW_DECKS, []) : [],
+        items: isArray(readJSON(LS_SHADOW_ITEMS, [])) ? readJSON(LS_SHADOW_ITEMS, []) : []
+      },
       inbox: isArray(readJSON(LS_INBOX, [])) ? readJSON(LS_INBOX, []) : [],
       tombs: readTombs()
     };
@@ -237,6 +245,15 @@
       if (n) out.media = media;
     }
     return out;
+  }
+
+  /** 古い版が書き出したぶんには shadow が無い。読むときはここを通して形を揃える */
+  function shadowPart(snap) {
+    var c = (snap && isObject(snap.shadow)) ? snap.shadow : {};
+    return {
+      decks: isArray(c.decks) ? c.decks : [],
+      items: isArray(c.items) ? c.items : []
+    };
   }
 
   /** 古い版が書き出したぶんには cards が無い。読むときはここを通して形を揃える */
@@ -255,7 +272,7 @@
   // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
   // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
   // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'cards', 'media', 'inbox', 'tombs', 'handed'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'stars', 'para', 'cards', 'shadow', 'media', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -293,6 +310,7 @@
       // KNOWN に載せた項目は carryUnknown が写さない。ここに書き忘れると、
       // 届いたぶんが黙って落ちる（実際それでカードが復元できなかった）。
       cards: cardsPart(d),
+      shadow: shadowPart(d),
       // 写真の中身。バックアップにだけ入っている（同期には載せない）
       media: isObject(d.media) ? d.media : {},
       inbox: isArray(d.inbox) ? d.inbox : [],
@@ -309,7 +327,7 @@
   function apply(merged) {
     // failed … この端末に書けなかったもの。保存領域がいっぱいだと起きる。
     // 黙って通すと「同期しました」と言いながら相手のぶんがどこにも無い、になる
-    var hit = { drill: false, para: false, cards: false, inbox: false, failed: [] };
+    var hit = { drill: false, para: false, cards: false, shadow: false, inbox: false, failed: [] };
 
     function put(key, value, empty, group, label) {
       var next = JSON.stringify(value);
@@ -331,6 +349,9 @@
     put(LS_CARD_ITEMS, mc.items, [], 'cards', 'カード');
     put(LS_CARD_SRS, mc.srs, {}, 'cards', 'カードの覚えた記録');
     put(LS_CARD_STARS, mc.stars, [], 'cards', 'カードの★');
+    var ms = shadowPart(merged);
+    put(LS_SHADOW_DECKS, ms.decks, [], 'shadow', 'シャドーイングのセット');
+    put(LS_SHADOW_ITEMS, ms.items, [], 'shadow', 'シャドーイングの文');
     put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
@@ -618,6 +639,19 @@
           })
         };
       })(),
+      shadow: (function () {
+        var mi = shadowPart(mine), ti = shadowPart(theirs);
+        var sDecks = mergeById(mi.decks, ti.decks, map, 'shadowdeck:');
+        var live = {}, n;
+        for (n = 0; n < sDecks.length; n++) live[trim(sDecks[n].id)] = true;
+        var sItems = mergeById(mi.items, ti.items, map, 'shadowline:');
+        var keep = [];
+        for (n = 0; n < sItems.length; n++) {
+          // 消えたセットの文は連れて戻さない
+          if (live[trim(sItems[n].deckId)]) keep.push(sItems[n]);
+        }
+        return { decks: sDecks, items: keep };
+      })(),
       // 受信箱だけは自分の記録で判断する。
       // 合併した記録を使うと、別の入れ物のアプリが取り込んだというだけで
       // こちらの受信箱からカードが消え、帯が二度と出なくなる。
@@ -705,7 +739,7 @@
     var hit = apply(merged);
     refreshViews(hit);
     state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
-    return hit.drill || hit.para || hit.cards || hit.inbox;
+    return hit.drill || hit.para || hit.cards || hit.shadow || hit.inbox;
   }
 
   function handoffLink() {
@@ -1258,6 +1292,8 @@
     if (hit.drill && drill && typeof drill.reload === 'function') drill.reload();
     if (hit.para && para && typeof para.reload === 'function') para.reload();
     if (hit.cards && cards && typeof cards.reload === 'function') cards.reload();
+    var shadow = window.SUNKAN_SHADOW;
+    if (hit.shadow && shadow && typeof shadow.reload === 'function') shadow.reload();
     if (hit.inbox && inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
@@ -1296,7 +1332,7 @@
         : '';
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.inbox;
+      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.inbox;
       refreshViews(hit);
       // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
       // 「同期しました」で流すと、届いていないのに届いた気になる

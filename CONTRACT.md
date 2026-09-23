@@ -15,6 +15,7 @@
 | `assets/cards.js` | J | カードの動作すべて（3 つの面・めくり・一覧・設定） |
 | `assets/import.js` | K | 取り込み（PDF・テキスト・表・AI への指示）。**カードと瞬間英作文の両方**が通る |
 | `assets/media.js` | L | 写真（IndexedDB）。縮めて詰めるのもここ。画面は触らない |
+| `assets/shadow.js` | M | シャドーイング（続けて流す・速さ・くり返し・隠す） |
 | `assets/vendor/pdf.min.js` | 外 | pdf.js（Mozilla / Apache-2.0）。手を入れない。差し替えは版ごと |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 | `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
@@ -105,6 +106,28 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 カードの取り込みは import.js が最後まで面倒を見る（`SUNKAN_CARDS.addCards` へ渡す）。
 瞬間英作文のほうは **PDF を文字にして欄へ入れるところまで**で、
 そのあとは `input` を投げて app.js の下読みに拾わせる（二重に解かない）。
+
+### `window.SUNKAN_SHADOW`（shadow.js が開けている口）
+
+| 関数 | 内容 |
+| --- | --- |
+| `onShow()` | 画面を開いたときに呼ぶ（`paraphrase.js` の `setMode` から） |
+| `onHide()` | **ほかの画面へ移ったときに必ず呼ぶ。** 鳴らしっぱなしにしない |
+| `reload()` | localStorage を読み直して作り直す。同期のあとに呼ぶ |
+
+**1 文ずつ「次へ」を押させない。** 押すたびに追いかけが切れて、シャドーイングにならない。
+`speak` の `onend` で次へつなぎ、最後まで勝手に流す。
+
+`onend` は**最後まで鳴り終わったときだけ**呼ばれる（`speech.js` の `onEnd` が
+`active !== run` で弾く）。ここを緩めると、止めたのに次の文へ進む。
+こちら側でも `if (!state.playing) return;` でもう一度見る。
+
+**画面を離れたら黙らせる。** モード切り替え・`pagehide`・`visibilitychange` の 3 か所。
+どれか 1 つでも抜けると、裏で鳴り続ける。
+
+主ボタン（はじめる／とめる）に **`aria-pressed` を付けない**。
+`.btn--primary[aria-pressed="false"]` が「押していないトグル」の中抜きの見た目にしてしまい、
+主ボタンに見えなくなる。状態はラベル（▶はじめる／■とめる）そのもので伝える。
 
 ### `window.SUNKAN_MEDIA`（media.js が開けている口）
 
@@ -206,6 +229,8 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 | `editKey(deckId, itemId)` | 収録の文への上書き 1 件の鍵。「元に戻す」を記録するのに使う |
 | `backupText()` / `backupName()` | バックアップの中身（JSON）とファイル名 |
 | `takeBackupText(text)` | 書き出したファイルを取り込む。`{ok, message}` を返す（画面に出すのは呼んだ側） |
+
+シャドーイングの鍵の頭は `shadowdeck:` / `shadowline:`。
 
 鍵の形は `deck:<deckId>` / `card:<cardId>` / `genre:<genreId>` /
 `added:<deckId>\n<ja>\n<en>` / `star:<deckId>:<itemId>` / `parastar:<cardId>` /
@@ -673,7 +698,10 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 | `sunkan:stars` | `{ [deckId]: string[] }` … ★を付けた項目の id |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
-| `sunkan:mode` | `drill` / `para` / `cards` … 最後に開いていたモード |
+| `sunkan:mode` | `drill` / `para` / `cards` / `shadow` … 最後に開いていたモード |
+| `sunkan:shadow:decks` | シャドーイングのセット `[{id,name,created}]` |
+| `sunkan:shadow:items` | シャドーイングの文 `[{id,deckId,en,ja,created}]` |
+| `sunkan:shadow:ui` | `{deckId, rate, repeat, hideText, loop}`。**同期しない**（端末ごとの好み） |
 | `sunkan:cards:decks` | カードのセット `[{id,name,created}]` |
 | `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,img,created}]`。`img` は写真の **id だけ**（中身は IndexedDB） |
 | `sunkan:cards:srs` | 覚えた記録 `{ [itemId]: { r:状態, l:状態, s:状態 } }`（面ごとに別）。**これを落とすと忘却曲線が消える** |

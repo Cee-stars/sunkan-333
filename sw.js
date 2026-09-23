@@ -5,7 +5,7 @@
 
 // 名前を変えると activate で古いキャッシュを丸ごと捨てられる。
 // 配信方法を変えたときは必ず上げること。
-var CACHE = 'sunkan-v36';
+var CACHE = 'sunkan-v37';
 
 var ASSETS = [
   './',
@@ -18,6 +18,7 @@ var ASSETS = [
   './assets/media.js',
   './assets/srs.js',
   './assets/cards.js',
+  './assets/shadow.js',
   './assets/import.js',
   './assets/inbox.js',
   './assets/sync.js',

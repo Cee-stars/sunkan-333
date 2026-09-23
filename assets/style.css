@@ -20,9 +20,10 @@
      10. 空状態・フッター
      11. ダイアログ
      12. フォーム部品
-     13. モード切り替え（瞬間英作文 / パラフレ帳 / カード）
+     13. モード切り替え（瞬間英作文 / パラフレ帳 / カード / シャドーイング）
      14. パラフレ帳
      14b. カード
+     14c. シャドーイング
      15. 画面幅ごとの調整
      16. モーション配慮
      17. 印刷
@@ -1527,12 +1528,18 @@ legend.field-label {
 
 /* いま開いていないモードの部品はまとめて畳む。JS は <html data-mode> を替えるだけでよい。
    モードが増えたら、その名前の行を 3 か所（ここ・下の選択中・index.html のタブ）に足す。 */
-:root[data-mode="drill"] [data-mode-view="para"],
-:root[data-mode="drill"] [data-mode-view="cards"],
-:root[data-mode="para"]  [data-mode-view="drill"],
-:root[data-mode="para"]  [data-mode-view="cards"],
-:root[data-mode="cards"] [data-mode-view="drill"],
-:root[data-mode="cards"] [data-mode-view="para"] { display: none !important; }
+:root[data-mode="drill"]  [data-mode-view="para"],
+:root[data-mode="drill"]  [data-mode-view="cards"],
+:root[data-mode="drill"]  [data-mode-view="shadow"],
+:root[data-mode="para"]   [data-mode-view="drill"],
+:root[data-mode="para"]   [data-mode-view="cards"],
+:root[data-mode="para"]   [data-mode-view="shadow"],
+:root[data-mode="cards"]  [data-mode-view="drill"],
+:root[data-mode="cards"]  [data-mode-view="para"],
+:root[data-mode="cards"]  [data-mode-view="shadow"],
+:root[data-mode="shadow"] [data-mode-view="drill"],
+:root[data-mode="shadow"] [data-mode-view="para"],
+:root[data-mode="shadow"] [data-mode-view="cards"] { display: none !important; }
 
 .header-row--modes {
   padding-block: 8px 4px;
@@ -1577,17 +1584,21 @@ legend.field-label {
 }
 
 /* 選ばれている側は data-mode で決める（aria-selected を待たないので初回に瞬かない） */
-:root[data-mode="drill"] #tab-drill,
-:root[data-mode="para"]  #tab-para,
-:root[data-mode="cards"] #tab-cards {
+:root[data-mode="drill"]  #tab-drill,
+:root[data-mode="para"]   #tab-para,
+:root[data-mode="cards"]  #tab-cards,
+:root[data-mode="shadow"] #tab-shadow {
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(16, 22, 32, 0.16);
 }
 
-/* タブが 3 つになったぶん、狭い画面では字を詰める */
-@media (max-width: 24rem) {
+/* タブが 4 つになったぶん、狭い画面では字を詰める */
+@media (max-width: 30rem) {
   .mode-tab { padding: 0 4px; font-size: 0.8125rem; }
+}
+@media (max-width: 22rem) {
+  .mode-tab { padding: 0 2px; font-size: 0.75rem; }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2422,6 +2433,139 @@ legend.field-label {
 
 
 /* =============================================================
+   14c. シャドーイング
+   方針: 流している間は画面を触らせない。押すのは「はじめる／とめる」だけ。
+        1 文ずつ押させると追いかけが切れて、シャドーイングにならない。
+   ============================================================= */
+
+.view--shadow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px var(--cell-pad-x) 32px;
+}
+
+.shadow-stage {
+  width: 100%;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.shadow-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 9rem;
+  padding: 24px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px rgba(16, 22, 32, 0.07);
+}
+
+.shadow-en {
+  margin: 0;
+  font-family: var(--font-en);
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  transition: filter var(--dur) var(--ease);
+}
+
+.shadow-ja {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  transition: filter var(--dur) var(--ease);
+}
+
+/* 流している間だけ伏せる。目で読める間は耳を使わない */
+.shadow-en.is-masked,
+.shadow-ja.is-masked {
+  filter: blur(var(--mask-blur));
+  user-select: none;
+}
+
+.shadow-actions { display: flex; gap: 8px; }
+
+.shadow-play {
+  flex: 1 1 auto;
+  min-height: 56px;
+  font-size: 1.0625rem;
+}
+
+.shadow-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shadow-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.shadow-opt-label {
+  flex: 0 0 3.5rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.chip {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.chip.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chip:not(.is-on):hover { background: var(--hover); color: var(--text); }
+}
+
+/* 一覧の通し番号（流れる順が分かるように） */
+.shadow-list-num {
+  flex: 0 0 auto;
+  min-width: 1.5rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+@media (max-width: 560px) {
+  .view--shadow { padding-top: 10px; }
+  .shadow-card { padding: 20px 16px; min-height: 8rem; }
+  .shadow-en { font-size: 1.25rem; }
+}
+
+
+/* =============================================================
    15. 画面幅ごとの調整
    ============================================================= */
 
@@ -2463,9 +2607,11 @@ legend.field-label {
   /* ただし「PDF から」だけは字を残す。
      📄 の記号だけだと、どこから作るのかが分からない。 */
   #btn-card-import .btn-label,
-  #btn-drill-import .btn-label { display: inline; }
+  #btn-drill-import .btn-label,
+  #btn-shadow-pull .btn-label { display: inline; }
   #btn-card-import,
-  #btn-drill-import { padding-inline: 8px; font-size: 0.8125rem; }
+  #btn-drill-import,
+  #btn-shadow-pull { padding-inline: 8px; font-size: 0.8125rem; }
 
   .header-row { gap: 6px; }
   .header-row--controls { gap: 6px; }

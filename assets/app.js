@@ -24,7 +24,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 39 (2026-09-21)';
+  var APP_VERSION = 'build 40 (2026-09-23)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -3023,6 +3023,31 @@
   window.SUNKAN_DRILL = {
     addSentences: addSentencesToNamedDeck,
     splitTable: splitTable,
+
+    /** セットの一覧 `[{id, name, count}]`。シャドーイングの「持ってくる」元に使う */
+    decks: function () {
+      var list = allDecks(), out = [];
+      for (var i = 0; i < list.length; i++) {
+        out.push({
+          id: list[i].id,
+          name: list[i].name,
+          count: buildRecords(list[i]).length
+        });
+      }
+      return out;
+    },
+
+    /** そのセットの文 `{name, items:[{ja,en,note}]}`（足した文・直した文を当てたあと） */
+    sentencesOf: function (deckId) {
+      var deck = findDeck(deckId);
+      if (!deck) return { name: '', items: [] };
+      var recs = buildRecords(deck), out = [];
+      for (var i = 0; i < recs.length; i++) {
+        out.push({ ja: recs[i].ja, en: recs[i].en, note: recs[i].note || '' });
+      }
+      return { name: deck.name, items: out };
+    },
+
     /** 同期が中身を入れ替えたあとに呼ぶ */
     reload: reloadFromStorage,
     /** クリップボードへ。非同期なので結果は done(ok) で返す */
