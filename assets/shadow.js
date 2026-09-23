@@ -141,6 +141,7 @@
     deckId: '',
 
     playing: false,
+    single: false,  // いまの 1 文だけ流している（次へ進まない）
     at: 0,          // いま読んでいる文の位置
     round: 0,       // その文を何回読んだか
     timer: null,
@@ -168,6 +169,7 @@
   var elJa = $('shadow-ja');
   var elPlayBtn = $('btn-shadow-play');
   var elPlayLabel = $('shadow-play-label');
+  var elOneBtn = $('btn-shadow-one');
   var elAgainBtn = $('btn-shadow-again');
 
   var elRateRow = $('shadow-rates');
@@ -293,16 +295,16 @@
       onend: function () {
         if (!state.playing) return;        // 止めたあとに来たぶんは捨てる
         state.round++;
-        var gap;
         if (state.round < state.ui.repeat) {
-          gap = REPEAT_GAP_MS;             // 同じ文をもう一度
-        } else {
-          state.round = 0;
-          state.at++;
-          gap = GAP_MS;                    // 次の文へ。息を継ぐ間を置く
+          clearTimer();                    // 同じ文をもう一度（くり返しの設定ぶん）
+          state.timer = window.setTimeout(playCurrent, REPEAT_GAP_MS);
+          return;
         }
+        state.round = 0;
+        if (state.single) { stopOne(); return; }   // 1 文だけ。次へは進まない
+        state.at++;
         clearTimer();
-        state.timer = window.setTimeout(playCurrent, gap);
+        state.timer = window.setTimeout(playCurrent, GAP_MS);   // 次の文へ。息を継ぐ間を置く
       },
       onerror: function (info) {
         stop();
@@ -321,13 +323,48 @@
     if (!list.length) return;
 
     if (fromTop || state.at >= list.length) { state.at = 0; state.round = 0; }
+    state.single = false;
     state.playing = true;
     renderControls();
     playCurrent();
   }
 
+  /**
+   * いま出ている 1 文だけ流す。
+   *
+   * 聞き取れなかった文をその場で確かめたいときに、頭から流し直させない。
+   * 速さもくり返しの回数も、通しで流すときと同じ設定をそのまま使う。
+   * 終わっても次へは進まないので、続けて押せば同じ文を何度でも聞ける。
+   */
+  function startOne() {
+    if (!speechOK()) {
+      flashStatus('この端末では読み上げが使えないので、読み上げられません。');
+      return;
+    }
+    var list = playlist();
+    if (!list.length) return;
+
+    // 流している最中だけ止める。鳴っていないのに cancel() を挟むと、
+    // 次の speak() が「空くのを待つ」道に入り、iOS ではタップから離れて無音になる
+    if (state.playing) stop(); else clearTimer();
+
+    if (state.at >= list.length) state.at = 0;
+    state.round = 0;
+    state.single = true;
+    state.playing = true;
+    renderControls();
+    playCurrent();
+  }
+
+  /** 1 文だけのぶんが鳴り終わった。位置はそのまま（同じ文をまた押せる） */
+  function stopOne() {
+    stop();
+    renderNow(playlist()[state.at] || null, playlist().length);
+  }
+
   function stop() {
     state.playing = false;
+    state.single = false;
     clearTimer();
     var port = speechPort();
     if (port) port.cancel();
@@ -398,12 +435,17 @@
   }
 
   function renderControls() {
+    var empty = !playlist().length;
     if (elPlayLabel) elPlayLabel.textContent = state.playing ? '■ とめる' : '▶ はじめる';
-    if (elAgainBtn) elAgainBtn.disabled = !playlist().length;
+    if (elAgainBtn) elAgainBtn.disabled = empty;
+    if (elOneBtn) elOneBtn.disabled = empty;
 
-    // 流している間は文字を隠せる。目で読める間は耳を使わないので、慣れたら隠す
-    if (elEn) elEn.classList.toggle('is-masked', state.ui.hideText && state.playing);
-    if (elJa) elJa.classList.toggle('is-masked', state.ui.hideText && state.playing);
+    // 流している間は文字を隠せる。目で読める間は耳を使わないので、慣れたら隠す。
+    // **1 文だけのときは隠さない** — 聞き取れなかった文を確かめるための再生なので、
+    // そこで字が消えると用を成さない。
+    var mask = state.ui.hideText && state.playing && !state.single;
+    if (elEn) elEn.classList.toggle('is-masked', mask);
+    if (elJa) elJa.classList.toggle('is-masked', mask);
   }
 
   function renderChoices() {
@@ -792,6 +834,7 @@
 
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); }
     else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); stop(); start(true); }
+    else if (e.key === '1') { e.preventDefault(); startOne(); }
   }
 
   /* ============================================================
@@ -810,6 +853,7 @@
     }
 
     if (elPlayBtn) elPlayBtn.addEventListener('click', toggle);
+    if (elOneBtn) elOneBtn.addEventListener('click', startOne);
     if (elAgainBtn) {
       elAgainBtn.addEventListener('click', function () { stop(); start(true); });
     }
