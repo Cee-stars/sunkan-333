@@ -860,19 +860,27 @@
     var conf = null;
     try { conf = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))); }
     catch (e) { conf = null; }
-    if (!isObject(conf) || !trim(conf.t) || !trim(conf.g)) {
+    var tk = conf ? normalizeToken(conf.t) : '';
+    var id = conf ? normalizeGistId(conf.g) : '';
+    if (!isObject(conf) || !tk || !id) {
       setStatus('つなぐリンクとして読めませんでした。', true);
       return;
     }
-    lsSet(LS_TOKEN, trim(conf.t));
-    lsSet(LS_GIST, trim(conf.g));
+    lsSet(LS_TOKEN, tk);
+    lsSet(LS_GIST, id);
     lsSet(LS_AUTO, '1');
-    if (elToken) elToken.value = trim(conf.t);
-    if (elGist) elGist.value = trim(conf.g);
+    if (elToken) elToken.value = tk;
+    if (elGist) elGist.value = id;
     if (elAuto) elAuto.checked = true;
     renderState();
     setStatus('つながりました。いま揃えています…', false);
-    sync(false);
+    // 渡された設定そのものが通らないことがある。理由は sync が出すが、
+    // この端末を疑っても直らない。どちらを直せばよいのかだけ足しておく。
+    sync(false).then(function (ok) {
+      if (ok) return;
+      addStatusLine('この設定はもう片方の端末から渡されたものです。'
+        + '直すなら、渡した側の端末で「うまくいかないとき」を押してください。');
+    });
   }
 
   function report(changed) {
@@ -926,7 +934,8 @@
   function errorText(status, body) {
     var base =
       status === 401 ? 'トークンが違うようです' :
-      status === 404 ? 'Gist ID が見つかりません' :
+      // GitHub は「見られない場所」も 404 で返す。番号だけを疑わせると遠回りになる
+      status === 404 ? 'Gist ID が見つかりません（番号が違うか、消えたか、そのトークンでは見られない場所です）' :
       status === 403 ? '断られました（権限に gist が無いか、回数制限）' :
       status === 422 ? '送った中身を GitHub が受け付けませんでした' :
       '通信できませんでした（' + status + '）';
@@ -1152,6 +1161,9 @@
     if (tk && /[^\x21-\x7e]/.test(tk)) {
       lines.push('⚠ トークンに使えない文字（空白や改行）が混じっています。貼り付け直してください。');
     }
+    // 種類が違うと、下の ③ は必ず「見つかりません」になる。先に名指ししておく
+    var warn = tokenWarning(tk);
+    if (warn) lines.push('⚠ ' + warn);
 
     return window.fetch(API.replace('/gists', '/'), { cache: 'no-store' }).then(
       function (r) { lines.push('① GitHub に届く … ' + (r.ok ? 'はい' : 'いいえ（' + r.status + '）')); },
@@ -1214,8 +1226,53 @@
     return true;
   }
 
-  function token() { return trim(lsGet(LS_TOKEN)); }
-  function gistId() { return trim(lsGet(LS_GIST)); }
+  /**
+   * Gist ID として通る形にそろえる。
+   *
+   * ここに入るものが素の ID だけとは限らない。GitHub の画面からコピーすると
+   * https://gist.github.com/名前/1f2e…#file-… のような URL になり、
+   * 「名前/ID」の形で控えている人もいる。そのまま投げると GitHub は 404 を返すが、
+   * 返ってくるのは Not Found だけで、何を直せばよいのかは分からない。
+   *
+   * しかも、間違ったまま「つなぐリンク」に載ってしまうと、気付くのは
+   * **受け取った側の端末**になる。そちらでは、リンクが悪いのか自分の端末が
+   * 悪いのかも分からない。だから入口でそろえる。
+   */
+  function normalizeGistId(v) {
+    var s = trim(v).replace(/\s+/g, '');
+    if (!s) return '';
+    s = s.split('#')[0].split('?')[0];   // #file-… や ?... は ID ではない
+    s = s.replace(/\.git$/i, '');
+    s = s.replace(/\/+$/, '');           // 末尾の / を落としてから最後の区切りを見る
+    var cut = s.lastIndexOf('/');
+    if (cut >= 0) s = s.slice(cut + 1);  // URL でも 名前/ID でも、末尾が ID
+    // GitHub の ID は小文字の 16 進数。大文字が混じると見つからない
+    if (/^[0-9a-fA-F]{16,}$/.test(s)) s = s.toLowerCase();
+    return s;
+  }
+
+  /** トークンに空白や改行が混じると、貼った本人には見えないまま通らなくなる */
+  function normalizeToken(v) { return trim(v).replace(/\s+/g, ''); }
+
+  /**
+   * 使えないトークンを、困る前に見分ける。
+   *
+   * GitHub の画面はいま Fine-grained のほうを先にすすめてくる。ところが
+   * これには Gist の権限がそもそも無く、シークレット Gist は「無い」ものとして
+   * 返ってくる。つまり出るのは 404 で、番号だけを見せられても
+   * トークンの種類が原因だとは気付けない。
+   */
+  function tokenWarning(tk) {
+    if (tk && tk.indexOf('github_pat_') === 0) {
+      return 'このトークンは Fine-grained という種類で、Gist には使えません。'
+        + '「Tokens (classic)」のほうで、scope に gist を付けて作り直してください。';
+    }
+    return '';
+  }
+
+  // 読むときにもそろえる。前に入れた値が直っていない端末を、開くだけで直すため
+  function token() { return normalizeToken(lsGet(LS_TOKEN)); }
+  function gistId() { return normalizeGistId(lsGet(LS_GIST)); }
   function autoOn() { return lsGet(LS_AUTO) === '1'; }
   function ready() { return !!(token() && gistId()); }
 
@@ -1377,7 +1434,8 @@
       var why = (err && err.message) ? err.message : '通信エラー';
       lsSet(LS_ERR, why + '\n' + Date.now());
       renderState();
-      if (!silent) setStatus('同期できませんでした: ' + why, true);
+      if (!silent) setStatus('同期できませんでした: ' + why
+        + '\nどこで止まっているかは「うまくいかないとき」で 1 つずつ調べられます。', true);
       return false;
     }).then(function (ok) {
       state.busy = false;
@@ -1512,6 +1570,13 @@
     elStatus.classList.toggle('is-error', !!bad);
   }
 
+  /** すでに出ている知らせの下に 1 行足す。上書きすると、肝心の理由が消える */
+  function addStatusLine(text) {
+    if (!elStatus) return;
+    var now = trim(elStatus.textContent);
+    elStatus.textContent = now ? (now + '\n' + text) : text;
+  }
+
   function stamp(ms) {
     var d = new Date(ms), p = function (n) { return (n < 10 ? '0' : '') + n; };
     return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) +
@@ -1580,9 +1645,21 @@
     if (elDialog && elDialog.open) elDialog.close();
   }
 
+  /**
+   * 欄の中身をしまう。そろえたものを欄にも書き戻す。
+   * 黙って直すと、次に見たときに「入れたものと違う」と思われる。
+   */
   function saveFields() {
-    if (elToken) lsSet(LS_TOKEN, trim(elToken.value));
-    if (elGist) lsSet(LS_GIST, trim(elGist.value));
+    if (elToken) {
+      var tk = normalizeToken(elToken.value);
+      lsSet(LS_TOKEN, tk);
+      if (elToken.value !== tk) elToken.value = tk;
+    }
+    if (elGist) {
+      var id = normalizeGistId(elGist.value);
+      lsSet(LS_GIST, id);
+      if (elGist.value !== id) elGist.value = id;
+    }
     renderState();
   }
 
@@ -1678,7 +1755,14 @@
     bindHandoff();
     bindPaste();
     if (elOpen) elOpen.addEventListener('click', openSync);
-    if (elToken) elToken.addEventListener('change', saveFields);
+    // 直したのに叱られたままだと、直ったのかどうか分からない。出したぶんは自分で片付ける
+    var warned = false;
+    if (elToken) elToken.addEventListener('change', function () {
+      saveFields();
+      var warn = tokenWarning(token());
+      if (warn) { setStatus('⚠ ' + warn, true); warned = true; }
+      else if (warned) { warned = false; setStatus(whenText(), !!lastError()); }
+    });
     if (elGist) elGist.addEventListener('change', saveFields);
 
     var close = $('btn-sync-close');
@@ -1724,11 +1808,23 @@
       if (!ready()) { setStatus('先にこの端末の設定を済ませてください。', true); return; }
       var url = pairLink();
       var api = window.SUNKAN_DRILL;
+      var id = gistId(), tk = token();
       var done = function (ok) {
-        setStatus(ok
-          ? 'つなぐリンクをコピーしました。もう片方のアプリの、この画面の「貼り付けて受け取る」に貼ってください。'
-          : 'コピーできませんでした: ' + url, !ok);
+        if (!ok) { setStatus('コピーできませんでした: ' + url, true); return; }
+        setStatus('つなぐリンクをコピーしました。この設定で読めるか確かめています…', false);
+        // この端末で開けない設定を渡しても、気付くのは受け取った側になる。
+        // そちらでは、リンクが悪いのか自分の端末が悪いのかが分からない。だからここで見る。
+        gistGet(id, tk).then(function () {
+          setStatus('つなぐリンクをコピーしました（この端末からは保存先を読めています）。\n'
+            + 'もう片方のアプリの、この画面の「貼り付けて受け取る」に貼ってください。', false);
+        }, function (err) {
+          setStatus('リンクはコピーしましたが、この端末からは保存先を読めませんでした:\n'
+            + ((err && err.message) || '通信エラー')
+            + '\n貼り付けても、向こうで同じところで止まります。'
+            + '先にこの端末で「うまくいかないとき」を押して、直してからやり直してください。', true);
+        });
       };
+      // 写すのは押した指から離れる前に。iPhone では、待ってから写そうとすると通らない
       if (api && typeof api.copyText === 'function') api.copyText(url, done);
       else done(false);
     });

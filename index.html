@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 40 (2026-09-23)">
+<meta name="sunkan-build" content="build 41 (2026-09-23)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -914,6 +914,9 @@ MEMO: take after = 〜に似ている</pre>
     <p class="dialog-hint">
       <a href="https://github.com/settings/tokens/new" target="_blank" rel="noopener noreferrer">GitHub でトークンを作る</a>
       … Note は何でもよく、権限（scope）は <strong>gist</strong> だけで足ります。
+      <strong>必ず「Tokens (classic)」のほうで作ってください。</strong>
+      Fine-grained（<code>github_pat_</code> で始まるもの）は Gist に使えず、
+      入れても「見つかりません」になります。
       My Dictionary 用に作ったトークンがあれば、それをそのまま使えます。
     </p>
 
@@ -925,6 +928,7 @@ MEMO: take after = 〜に似ている</pre>
     <p class="dialog-hint">
       1 台目：空のまま下の「保存先を新しく作る」を押すと、ここに入ります。<br>
       2 台目：1 台目のこの値をそのまま貼り付けます。
+      GitHub の画面から <code>https://gist.github.com/…</code> を丸ごと貼っても、番号だけ取り出します。
       My Dictionary と同じ Gist ID でもかまいません（中では別のファイルに分けて置きます）。
     </p>
 
