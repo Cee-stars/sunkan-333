@@ -271,7 +271,7 @@
           <!-- 例文の中に覚える語が見つからなかったときだけ出す（どの語の話かを迷わせない） -->
           <p class="card-target-tag" id="card-target-tag" hidden></p>
           <button type="button" id="btn-card-play" class="btn card-play" hidden>
-            <span aria-hidden="true">🔈</span> もう一度きく
+            <span aria-hidden="true">🔈</span> <span id="card-play-label">きく</span>
           </button>
         </div>
 
@@ -1191,7 +1191,8 @@ EXJA: 会議を金曜まで延期した。</pre>
 
     <fieldset class="field-group">
       <legend class="field-label">読み上げ</legend>
-      <label class="check"><input type="checkbox" id="opt-card-auto-speak" checked> めくったら自動で英語を読み上げる</label>
+      <label class="check"><input type="checkbox" id="opt-card-auto-speak"> 自動で読み上げる（めくったときと、「聞」のカードが出たとき）</label>
+      <p class="dialog-hint">切っておくと、音が出るのは 🔈 を押したときだけです。</p>
       <p class="dialog-hint" id="opt-card-speak-note" hidden>この端末（このブラウザ）は読み上げに対応していないので、「聞」の面は出しません。</p>
     </fieldset>
 

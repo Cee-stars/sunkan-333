@@ -367,7 +367,7 @@ window.SUNKAN_DECKS = [
 | 面 | 表 | 裏 | 開く条件 |
 | --- | --- | --- | --- |
 | `r` 読 | 例文（覚える語を強調）。例文が無ければ語そのもの | 意味・例文の訳・メモ | いつでも |
-| `l` 聞 | 🔈 の記号だけ。**文字を出さない**。出た時点で鳴らす | 英文・意味・訳 | `r.streak >= 1` かつ **答えた日と違う日** |
+| `l` 聞 | 🔈 の記号だけ。**文字を出さない**。鳴らすのは「きく」を押したとき（`autoSpeak` を入れていれば出た時点でも） | 英文・意味・訳 | `r.streak >= 1` かつ **答えた日と違う日** |
 | `s` 言 | 例文の訳（無ければ意味） | 英文 | `l.streak >= 1` かつ日が違う（聞を使わない設定なら `r` を見る） |
 
 **条件を満たした当日は開かない**（`faceUnlocked` が `dayOf(gate.last) !== today()` を見る）。
@@ -706,7 +706,8 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 | `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,img,created}]`。`img` は写真の **id だけ**（中身は IndexedDB） |
 | `sunkan:cards:srs` | 覚えた記録 `{ [itemId]: { r:状態, l:状態, s:状態 } }`（面ごとに別）。**これを落とすと忘却曲線が消える** |
 | `sunkan:cards:stars` | ★を付けたカードの id `string[]` |
-| `sunkan:cards:ui` | `{deckId, faces, newPerDay, retention, autoSpeak}`。**同期しない**（端末ごとの好み） |
+| `sunkan:cards:ui` | `{deckId, faces, newPerDay, retention, autoSpeak}`。**同期しない**（端末ごとの好み）。`autoSpeak` の既定は **off**（押していないのに音が出ない） |
+| `sunkan:cards:autospeak-off` | `'1'` … `autoSpeak` の既定を off に変えたときの 1 度きりの印。すでに保存された設定を 1 回だけ切るために見る |
 | `sunkan:cards:day` | `{day, introduced, answered, done}` … 今日の数え。`introduced` は **セットごと**の `{deckId: n}`、`done` は今日カタが付いた面の数（進み具合の分子）。日が変わると 0 に戻る。**同期しない** |
 | `sunkan:para:genres` | パラフレ帳のジャンル `[{id,name}]` |
 | `sunkan:para:cards` | パラフレ本体 `[{id,genreId,headEn,headJa,lines}]` |
@@ -774,6 +775,9 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 
 ## やらないこと
 
+- **押していないのに音は出さない。** 自動で鳴らすのは、利用者が自分で入れた設定
+  （`settings.autoSpeak` / `cards:ui.autoSpeak`）があるときだけ。どちらも既定は off。
+  シャドーイングは流しっぱなしにするが、始まるのは「はじめる」を押したときだけ。
 - 外部 CDN・npm・ビルドツールは使わない。素の HTML/CSS/JS のみ。
 - 学習モード、スコア、タイマーなどの「練習モード」は作らない。
 - パラフレ帳に例文は同梱しない（中身は使う人が入れる）。

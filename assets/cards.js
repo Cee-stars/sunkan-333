@@ -106,6 +106,7 @@
   var LS_SRS = 'sunkan:cards:srs';
   var LS_STARS = 'sunkan:cards:stars';
   var LS_UI = 'sunkan:cards:ui';
+  var LS_AUTOSPEAK_RESET = 'sunkan:cards:autospeak-off';   // 既定を切り替えたときの 1 度きりの印
   var LS_DAY = 'sunkan:cards:day';
 
   /** 面。順番がそのまま開放の順番になる */
@@ -223,7 +224,8 @@
       },
       newPerDay: (isFinite(newPerDay) && newPerDay >= 0) ? Math.min(200, Math.round(newPerDay)) : 20,
       retention: (isFinite(retention) && retention >= 0.7 && retention <= 0.99) ? retention : 0.9,
-      autoSpeak: o.autoSpeak !== false
+      // 勝手に音が出るのは既定にしない。鳴らしたい人が入れる
+      autoSpeak: o.autoSpeak === true
     };
   }
 
@@ -306,6 +308,7 @@
   var elFrontText = $('card-front-text');
   var elTargetTag = $('card-target-tag');
   var elPlayBtn = $('btn-card-play');
+  var elPlayLabel = $('card-play-label');
   var elBack = $('card-back');
   var elAnswer = $('card-answer');
   var elSub = $('card-sub');
@@ -937,6 +940,8 @@
       }
     }
     if (elPlayBtn) elPlayBtn.hidden = (face !== 'l');
+    // まだ鳴らしていないうちに「もう一度」と書いてあると、鳴り損ねたように読める
+    setPlayLabel(face === 'l' && state.ui.autoSpeak);
 
     // --- 裏 ---
     if (face === 'r') {
@@ -1065,8 +1070,10 @@
     renderCard();
     renderProgress();
 
-    // 「聞」は表に出た時点で鳴らす。タップの中から同期で呼ぶこと（iOS で無音になる）
-    if (state.current.face === 'l') playAudio(1);
+    // 「聞」も、自動で鳴らすのは設定を入れているときだけ。
+    // 入っていなければ「きく」を押してもらう（iOS はタップの中からでないと
+    // そもそも鳴らないので、押してもらうほうが確実でもある）。
+    if (state.current.face === 'l' && state.ui.autoSpeak) playAudio(1);
   }
 
   function flip() {
@@ -1138,11 +1145,17 @@
    * 11. 音
    * ========================================================== */
 
+  /** 「聞」の表に出すボタンの字。鳴らす前と鳴らしたあとで言い方を変える */
+  function setPlayLabel(played) {
+    if (elPlayLabel) elPlayLabel.textContent = played ? 'もう一度きく' : 'きく';
+  }
+
   function playAudio(rate) {
     var port = speechPort();
     if (!port || !state.speechOK || !state.current) return;
     var item = findItem(state.current.itemId);
     if (!item) return;
+    setPlayLabel(true);
     port.speak(audioText(item), { rate: rate || 1 });
   }
 
@@ -1833,6 +1846,14 @@
     var ui = sanitizeUI(readJSON(LS_UI));
     state.ui = ui;
     state.deckId = findDeck(ui.deckId) ? ui.deckId : '';
+
+    // 以前は自動で読み上げるのが既定だった。既定を変えるだけでは、
+    // すでに保存されている設定（入っているまま）が残るので、1 度だけ切って書き戻す。
+    // 入れ直したい人は設定で入れられる（この印があるので、二度は切られない）。
+    if (lsGet(LS_AUTOSPEAK_RESET) !== '1') {
+      lsSet(LS_AUTOSPEAK_RESET, '1');
+      if (state.ui.autoSpeak) { state.ui.autoSpeak = false; saveUI(); }
+    }
   }
 
   function init() {
