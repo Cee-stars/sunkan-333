@@ -26,6 +26,24 @@
   var dismissed = '';   // 「あとで」と言われた版
   var latest = '';
 
+  var AUTO_KEY = 'sunkan:update:auto';   // この起動で、もう自動で片付けたか
+
+  /**
+   * 自動で片付けるのは **1 回の起動につき 1 度だけ**。
+   * 印が残らない端末（プライベートモードなど）では、繰り返さないよう
+   * 自動では片付けない（帯を出して、押してもらう）。
+   */
+  function autoTried() {
+    try {
+      if (!window.sessionStorage) return true;
+      return window.sessionStorage.getItem(AUTO_KEY) === '1';
+    } catch (e) { return true; }
+  }
+  function markAutoTried() {
+    try { window.sessionStorage.setItem(AUTO_KEY, '1'); return true; }
+    catch (e) { return false; }
+  }
+
   function trim(v) { return (v === null || v === undefined ? '' : String(v)).replace(/^\s+|\s+$/g, ''); }
 
   /**
@@ -107,6 +125,13 @@
     var half = halfUpdated();
     if (half) {
       latest = 'mixed';
+      // この状態は端末に古い index.html が居座っているだけで、押してもらう意味がない。
+      // 黙って 1 度だけ片付けて読み直す（覚えた文には触らない。捨てるのは
+      // サービスワーカーが溜めている一式だけ）。
+      if (!autoTried() && markAutoTried()) {
+        forceUpdate(true);
+        return;
+      }
       if (dismissed !== 'mixed') {
         show('画面の一部が古いままです（ページは ' + half + '）。「更新する」で揃います。');
       }
@@ -124,10 +149,15 @@
     });
   }
 
-  /** 溜まっているものを全部捨ててから読み直す */
-  function forceUpdate() {
-    if (elGo) { elGo.disabled = true; }
-    if (elText) { elText.textContent = '新しくしています…'; }
+  /**
+   * 溜まっているものを全部捨ててから読み直す。
+   * 捨てるのはサービスワーカーとその一式だけで、**覚えた文や設定には触らない**。
+   */
+  function forceUpdate(silent) {
+    if (!silent) {
+      if (elGo) { elGo.disabled = true; }
+      if (elText) { elText.textContent = '新しくしています…'; }
+    }
 
     var jobs = [];
 
@@ -144,6 +174,15 @@
     }
 
     Promise.all(jobs).then(function () {
+      // ここで一度、ページ本体をネットワークから取り直させる。
+      // サービスワーカーを外しただけでは、次の読み込みがブラウザ自身の
+      // 溜めている index.html から返ることがあり、同じ古い画面に戻ってしまう。
+      var opts = { cache: 'reload', credentials: 'same-origin' };
+      var warm = (typeof window.fetch === 'function')
+        ? window.fetch('index.html', opts).catch(function () { return null; })
+        : Promise.resolve(null);
+      return warm;
+    }).then(function () {
       // ？を足して、ブラウザ自身が溜めている一式も避けて取りに行かせる
       var base = window.location.href.split('#')[0].split('?')[0];
       window.location.replace(base + '?v=' + Date.now());
@@ -152,8 +191,19 @@
     });
   }
 
+  /** 取り直しのために付けた ?v=… は、読み込めたら消す（始まりの URL を汚さない） */
+  function cleanUrl() {
+    try {
+      if (!/[?&]v=\d+/.test(window.location.search)) return;
+      if (!window.history || !window.history.replaceState) return;
+      var search = window.location.search.replace(/([?&])v=\d+&?/, '$1').replace(/[?&]$/, '');
+      window.history.replaceState(null, '', window.location.pathname + search + window.location.hash);
+    } catch (e) { /* 消せなくても困らない */ }
+  }
+
   function init() {
-    if (elGo) elGo.addEventListener('click', forceUpdate);
+    cleanUrl();
+    if (elGo) elGo.addEventListener('click', function () { forceUpdate(false); });
     if (elLater) {
       elLater.addEventListener('click', function () {
         dismissed = latest;
