@@ -1,7 +1,7 @@
 {
-  "name": "Duo",
-  "short_name": "Duo",
-  "description": "瞬間英作文・パラフレ帳・カードの3つ。カードはPDFから作れて、忘却曲線で出し直します。",
+  "name": "Instant English",
+  "short_name": "IE",
+  "description": "瞬間英作文・パラフレ帳・カード・シャドーイングの4つ。カードはPDFから作れて、忘却曲線で出し直します。",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
