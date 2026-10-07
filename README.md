@@ -535,6 +535,20 @@ CONTRACT.md                 ファイル間の取り決め
 帯が出続けたりします。`index.html` の meta を忘れると、**画面が古いままなのに
 「最新です」と言う**状態になります（これはいちばん困るので気をつけてください）。
 
+逆に meta だけ古いまま残すと、**「画面の一部が古いままです」の帯が、
+「更新する」を押しても消えなくなります**（食い違いが配信物そのものにあるので、
+利用者の側では直しようがない）。実際に一度やりました。
+
+**この食い違いは公開の手前で止まります。** GitHub Actions が 3 か所を照合し、
+1 つでも違えば公開せずに失敗します（`.github/workflows/pages.yml`）。
+手元で確かめるなら:
+
+```sh
+sed -n 's/.*<meta name="sunkan-build" content="\([^"]*\)".*/\1/p' index.html
+sed -n "s/.*var APP_VERSION = '\([^']*\)'.*/\1/p" assets/app.js
+sed -n 's/.*"build"[^"]*"\([^"]*\)".*/\1/p' version.json
+```
+
 ## 公開する
 
 `main` に push すると GitHub Pages に自動で公開されます（リポジトリの Settings → Pages で Source を **GitHub Actions** にしておいてください）。
