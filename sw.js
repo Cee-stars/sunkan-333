@@ -5,7 +5,7 @@
 
 // 名前を変えると activate で古いキャッシュを丸ごと捨てられる。
 // 配信方法を変えたときは必ず上げること。
-var CACHE = 'sunkan-v41';
+var CACHE = 'sunkan-v42';
 
 var ASSETS = [
   './',
@@ -75,11 +75,22 @@ self.addEventListener('fetch', function (event) {
   // 本体（app.js）は新しい、という半端な状態になった。
   // no-cache は「毎回サーバーに確かめる」であって「毎回落とし直す」ではないので、
   // 変わっていなければ 304 で済む。
+  //
+  // **ページそのもの（navigate）は Request を渡さない。** mode が 'navigate' の
+  // Request に init を添えると、弾いたり指定を落としたりする実装がある。
+  // それに当たると cache の指定だけが効かず、**index.html だけがブラウザの
+  // 一式から返り続ける**。実際これで、本体は新しいのに画面だけ古い、という
+  // 状態が端末に居座った。URL から頼み直せばその穴を踏まない。
   function freshFetch(request) {
+    var opts = { cache: 'no-cache', credentials: 'same-origin' };
+    if (request.mode === 'navigate') {
+      // ページだけは 304 で済ませず必ず落とし直す。ここが古いと全部が古く見える
+      return fetch(request.url, { cache: 'reload', credentials: 'same-origin' });
+    }
     try {
-      return fetch(request, { cache: 'no-cache' });
+      return fetch(request, opts);
     } catch (e) {
-      return fetch(request);   // 受け付けない実装のために元の道も残す
+      return fetch(request.url, opts);   // 受け付けない実装のために URL でも頼む
     }
   }
 
