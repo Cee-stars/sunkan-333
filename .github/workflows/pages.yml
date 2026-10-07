@@ -40,6 +40,24 @@ jobs:
           node --check sw.js
           # assets/vendor/ は外から持ってきたものなので見ない（手を入れない約束）
 
+      - name: Check the build number matches everywhere
+        run: |
+          page=$(sed -n 's/.*<meta name="sunkan-build" content="\([^"]*\)".*/\1/p' index.html)
+          app=$(sed -n "s/.*var APP_VERSION = '\([^']*\)'.*/\1/p" assets/app.js)
+          json=$(sed -n 's/.*"build"[^"]*"\([^"]*\)".*/\1/p' version.json)
+          echo "index.html   : $page"
+          echo "assets/app.js: $app"
+          echo "version.json : $json"
+          if [ -z "$page" ] || [ -z "$app" ] || [ -z "$json" ]; then
+            echo "::error::版の文字列を読み取れませんでした"
+            exit 1
+          fi
+          if [ "$page" != "$app" ] || [ "$app" != "$json" ]; then
+            echo "::error::版が食い違っています。3 か所を同じ文字列にしてください（README の「版を上げる」）。"
+            echo "::error::このまま公開すると「画面の一部が古いままです」の帯が、更新しても消えなくなります。"
+            exit 1
+          fi
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
