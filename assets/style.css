@@ -2492,12 +2492,20 @@ legend.field-label {
   user-select: none;
 }
 
-.shadow-actions { display: flex; gap: 8px; }
+/* 主ボタンで 1 段。その下に「この文だけ」と「はじめから」を半分ずつ。
+   3 つ横に並べると iPhone の幅で字が潰れる。 */
+.shadow-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .shadow-play {
-  flex: 1 1 auto;
+  flex: 1 1 100%;
   min-height: 56px;
   font-size: 1.0625rem;
+}
+
+.shadow-actions .btn--ghost {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--tap);
 }
 
 .shadow-opts {
