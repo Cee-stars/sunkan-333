@@ -745,7 +745,7 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | --- | --- |
 | `sunkan:settings` | `{ maskStyle, fontSize, autoHide, direction, starredOnly, deckId }` |
 | `sunkan:decks` | ユーザーが取り込んだ自作デッキの配列（`data.js` と同じ形） |
-| `sunkan:stars` | `{ [deckId]: string[] }` … ★を付けた項目の id |
+| `sunkan:stars` | `{ [deckId]: string[] }` … 「もう一度」を付けた項目の id。**画面では ↻「もう一度」**（間違えた文に付けて、言えるようになったら外す）。中の名前が `star` のままなのは、保存の鍵も同期の記録（`star:` / `parastar:` / `cardstar:`）もそれで動いているから。変えると今まで付けたぶんが消える |
 | `sunkan:levels` | `{ [deckId]: { [itemId]: {v,at} } }` … どれくらい言えるか。`v` は 40/80/100、**0 は「外した」印**。`at` は付けた時刻 |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
