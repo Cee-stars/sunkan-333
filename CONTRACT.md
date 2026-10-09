@@ -608,6 +608,7 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
   decks: [ /* sunkan:decks と同じ形 */ ],
   added: { /* sunkan:added と同じ形 */ },
   edits: { /* sunkan:edits と同じ形 */ },
+  levels: { /* sunkan:levels と同じ形 */ },
   stars: { /* sunkan:stars と同じ形 */ },
   para:  { genres: [...], cards: [...], stars: [...] },
   tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
@@ -662,6 +663,19 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 消した記録の鍵の頭は、`deck:` `card:` `genre:` `parastar:` のほかに
 **`carddeck:` `carditem:` `cardstar:`**（カード）。`cards.js` が消すときに必ず `recordDelete` を呼ぶ。
 忘れると、もう片方の端末から消したはずのカードが戻ってくる。
+
+### どれくらい言えるか（`levels`）の突き合わせ
+
+★のような足し算では決められない。片方で 100% にして、もう片方で 40% に下げたとき、
+大きいほうを採ると「下げた」が伝わらない。**1 件ごとに `at` を持たせ、新しいほうを採る**
+（`mergeLevels`）。外したときも `{v: 0, at}` を残すので、外したことも同じ仕組みで伝わる。
+`v: 0` は 90 日で捨てる（`sanitizeLevels`）。残しても誰の役にも立たない。
+
+印は id に付いている。足した文を書き換えると id が変わるので、★と同じように**付け替える**
+（忘れると、直した文だけ「まだ」に戻って見える）。セットを消したら、その段階も一緒に捨てる。
+
+どの絞り込みを選んでいるか（`settings.levelFilter`）は**同期しない**。隠し方や文字サイズと
+同じ、端末ごとの好み。
 
 ### カードの覚えた記録の突き合わせ
 
@@ -729,6 +743,7 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:settings` | `{ maskStyle, fontSize, autoHide, direction, starredOnly, deckId }` |
 | `sunkan:decks` | ユーザーが取り込んだ自作デッキの配列（`data.js` と同じ形） |
 | `sunkan:stars` | `{ [deckId]: string[] }` … ★を付けた項目の id |
+| `sunkan:levels` | `{ [deckId]: { [itemId]: {v,at} } }` … どれくらい言えるか。`v` は 40/80/100、**0 は「外した」印**。`at` は付けた時刻 |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
 | `sunkan:mode` | `drill` / `para` / `cards` / `shadow` … 最後に開いていたモード |

@@ -69,6 +69,14 @@
   --danger:          #b3261e;
   --danger-soft:     #fdeceb;
 
+  /* --- どれくらい言えるか（40 / 80 / 100） --- */
+  --lv40:            #b3261e;
+  --lv40-soft:       #fdeceb;
+  --lv80:            #9a6700;
+  --lv80-soft:       #fdf3dd;
+  --lv100:           #1a7f4b;
+  --lv100-soft:      #e4f5ec;
+
   /* --- 覆い（block モードの帯） --- */
   --mask-block:      #dde2e8;
   --mask-block-edge: #cdd4dc;
@@ -139,6 +147,13 @@
     --star-off:        #616b77;
     --danger:          #f2a8a3;
     --danger-soft:     #33201f;
+
+    --lv40:            #f2a8a3;
+    --lv40-soft:       #33201f;
+    --lv80:            #e8c37a;
+    --lv80-soft:       #332a19;
+    --lv100:           #7fd3a4;
+    --lv100-soft:      #152b20;
 
     --mask-block:      #2b323a;
     --mask-block-edge: #363e47;
@@ -368,6 +383,7 @@ button, input, select, textarea {
 
 .header-row--main {
   padding-block: 8px 2px;
+  flex-wrap: wrap;   /* 絞り込みの欄が増えたぶん、狭い画面では折り返させる */
 }
 
 .header-row--controls {
@@ -980,6 +996,48 @@ button, input, select, textarea {
   border-radius: 50%;
 }
 .row-tools .btn--icon { position: relative; }
+
+/* --- どれくらい言えるか --- */
+
+/* 日本語の先頭に小さく出す。# 列は狭幅で畳まれるので、そこには置けない */
+.lv-tag {
+  display: inline-block;
+  margin-inline-end: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  vertical-align: 0.1em;
+  white-space: nowrap;
+}
+
+.lv-tag[hidden] { display: none; }
+
+.row[data-level="40"]  .lv-tag { color: var(--lv40);  background: var(--lv40-soft); }
+.row[data-level="80"]  .lv-tag { color: var(--lv80);  background: var(--lv80-soft); }
+.row[data-level="100"] .lv-tag { color: var(--lv100); background: var(--lv100-soft); }
+
+/* 押すたびに 未設定 → 40 → 80 → 100 → 未設定 */
+.row-level {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: -0.03em;
+}
+
+.row[data-level="40"]  .row-level { color: var(--lv40); }
+.row[data-level="80"]  .row-level { color: var(--lv80); }
+.row[data-level="100"] .row-level { color: var(--lv100); }
+
+/* 絞り込みの欄。セット名より短くてよい。
+   ここが伸びるとセット名と「PDF から」がはみ出すので、中身なりの幅で止める */
+.level-filter {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 10em;
+}
 
 .row-speak { color: var(--text-faint); }
 .row-edit  { color: var(--text-faint); }
@@ -2587,6 +2645,11 @@ legend.field-label {
 
   .cell--num,
   .sheet-head-cell--num { display: none; }
+
+  /* セット名と絞り込みは同じ行に。先にセット名が伸びきると、絞り込みだけが
+     次の行へ落ちて、関係のない「＋追加」と並んでしまう */
+  .deck-picker { flex: 1 1 7rem; }
+  .level-filter { max-width: 9em; }
 
   /* ★ の目印は行の左端に出す */
   .row.is-starred::before {

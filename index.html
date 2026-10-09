@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 45 (2026-10-07)">
+<meta name="sunkan-build" content="build 46 (2026-10-09)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -62,6 +62,10 @@
       <label class="visually-hidden" for="deck-select">セット</label>
       <select id="deck-select" class="deck-select"></select>
     </div>
+
+    <!-- どれくらい言えるかで絞る。まだ言えないものだけを並べて練習できる -->
+    <label class="visually-hidden" for="level-filter">どれくらい言えるかで絞る</label>
+    <select id="level-filter" class="deck-select level-filter"></select>
 
     <button type="button" id="btn-add" class="btn btn--ghost" aria-haspopup="dialog">
       <span aria-hidden="true">＋</span><span class="btn-label">追加</span>
@@ -388,6 +392,8 @@
     <span class="row-tools">
       <button type="button" class="btn btn--icon row-speak" aria-label="英語を読み上げる" tabindex="-1">🔈</button>
       <button type="button" class="btn btn--icon row-star" aria-label="チェックを付ける" aria-pressed="false" tabindex="-1">★</button>
+      <!-- どれくらい言えるか。押すたびに 未設定 → 40 → 80 → 100 → 未設定 -->
+      <button type="button" class="btn btn--icon row-level" aria-label="どれくらい言えるか（まだ）" tabindex="-1">–</button>
       <button type="button" class="btn btn--icon row-edit" aria-label="この文を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
       <button type="button" class="btn btn--icon row-delete" aria-label="この文を削除する" tabindex="-1" hidden>🗑</button>
     </span>
