@@ -58,6 +58,31 @@ jobs:
             exit 1
           fi
 
+          # index.html が読む一式は、版で縛る（assets/app.js?v=47 のように）。
+          # 縛っておかないと、新しいページに古い js / css が当たったままになり、
+          # 画面の一部だけが古いという状態が端末に居座る。
+          num=$(printf '%s' "$app" | sed -n 's/^build \([0-9][0-9]*\).*/\1/p')
+          if [ -z "$num" ]; then
+            echo "::error::版の番号を読み取れませんでした（$app）"
+            exit 1
+          fi
+          # 画像（アイコン）は版で縛らない。中身が変わっても画面の作りとはずれない。
+          # ずれて困るのは、ページと一緒に動く js / css だけ。
+          bad=$(grep -oE '(src|href)="assets/[^"]+\.(js|css)"' index.html || true)
+          if [ -n "$bad" ]; then
+            echo "::error::版を付けていない読み込みがあります（?v=$num を付けてください）:"
+            echo "$bad"
+            exit 1
+          fi
+          wrong=$(grep -oE '(src|href)="assets/[^"]+\.(js|css)\?v=[0-9]+"' index.html \
+                  | grep -v "?v=$num\"" || true)
+          if [ -n "$wrong" ]; then
+            echo "::error::版の番号が本体（$num）と違う読み込みがあります:"
+            echo "$wrong"
+            exit 1
+          fi
+          echo "一式の版しばり: ?v=$num でそろっています"
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
