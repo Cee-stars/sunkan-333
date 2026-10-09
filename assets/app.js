@@ -36,7 +36,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 48 (2026-10-09)';
+  var APP_VERSION = 'build 49 (2026-10-09)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -771,7 +771,11 @@
   }
 
   /* ============================================================
-   * 10. ★（チェック）の保存
+   * 10. 「もう一度」の保存
+   *
+   * 画面では ↻「もう一度」。間違えた文に付けて、言えるようになったら外す。
+   * 中では star / stars のまま（保存の鍵も同期の記録も `star:` で動いているので、
+   * 名前を変えると今まで付けたぶんが消える）。
    * ========================================================== */
 
   /* --- アプリ内で足した文 ------------------------------------- */
@@ -1060,7 +1064,7 @@
       if (starred) {
         li.classList.add('is-starred');
         starEl.setAttribute('aria-pressed', 'true');
-        starEl.setAttribute('aria-label', 'チェックを外す');
+        starEl.setAttribute('aria-label', '「もう一度」から外す');
       }
     }
 
@@ -1600,7 +1604,7 @@
     if (state.query) {
       return 'いまの検索「' + (elSearch ? trim(elSearch.value) : state.query) + '」に当てはまらないので、表には出ていません。';
     }
-    if (state.settings.starredOnly) return '「★だけ表示」なので、表には出ていません。';
+    if (state.settings.starredOnly) return '「もう一度」だけを表示しているので、表には出ていません。';
     var lf = state.settings.levelFilter;
     if (lf !== 'all') {
       return '「' + LEVEL_FILTER_LABELS[lf] + '」で絞っているので、表には出ていません。';
@@ -2240,7 +2244,7 @@
     if (state.visibleCount !== state.records.length) {
       parts.push('表示中 ' + state.visibleCount + ' 文');
     }
-    if (state.settings.starredOnly) parts.push('★のみ');
+    if (state.settings.starredOnly) parts.push('もう一度のみ');
     if (state.settings.levelFilter !== 'all') {
       parts.push(LEVEL_FILTER_LABELS[state.settings.levelFilter]);
     }
@@ -2331,7 +2335,7 @@
     }
     if (rec.starEl) {
       rec.starEl.setAttribute('aria-pressed', on ? 'true' : 'false');
-      rec.starEl.setAttribute('aria-label', on ? 'チェックを外す' : 'チェックを付ける');
+      rec.starEl.setAttribute('aria-label', on ? '「もう一度」から外す' : '「もう一度」に入れる');
     }
     if (state.settings.starredOnly) applyFilter();
   }

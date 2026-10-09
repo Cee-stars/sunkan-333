@@ -16,7 +16,7 @@
      06. シート（表本体）
      07. 行
      08. 隠す仕組み（blur / block / hidden）
-     09. 行のツール（読み上げ・★）
+     09. 行のツール（読み上げ・もう一度）
      10. 空状態・フッター
      11. ダイアログ
      12. フォーム部品
@@ -858,9 +858,9 @@ button, input, select, textarea {
 .row.is-current .cell--en,
 .row.is-current .sheet-head-cell--en { border-inline-start-color: transparent; }
 
-/* ★ が付いた行の目印 */
+/* 「もう一度」が付いた行の目印 */
 .row.is-starred .cell--num::before {
-  content: "★";
+  content: "↻";
   position: absolute;
   inset-inline-start: 0;
   color: var(--star);
@@ -958,7 +958,7 @@ button, input, select, textarea {
 
 
 /* =============================================================
-   09. 行のツール（読み上げ・★）
+   09. 行のツール（読み上げ・もう一度）
    ------------------------------------------------------------
    狭幅では場所を取らず、行の右側に重ねて出す（背景と同色の
    グラデーションで文字と干渉しないようにする）。
@@ -1060,7 +1060,7 @@ button, input, select, textarea {
 
 .row-speak { color: var(--text-faint); }
 .row-edit  { color: var(--text-faint); }
-.row-star  { color: var(--star-off); }
+.row-star  { color: var(--star-off); font-size: 1.125rem; font-weight: 700; }
 .row-star[aria-pressed="true"] { color: var(--star); }
 
 /* 出す条件 */
@@ -1961,10 +1961,10 @@ legend.field-label {
   color: var(--text-faint);
 }
 
-.para-star { color: var(--star-off); }
+.para-star { color: var(--star-off); font-size: 1.125rem; font-weight: 700; }
 .para-star[aria-pressed="true"] { color: var(--star); }
 
-/* ★が付いた札は左端にも印を出す（畳んでいても分かるように） */
+/* 「もう一度」の札は左端にも印を出す（畳んでいても分かるように） */
 .para-card.is-starred .para-head { border-inline-start-color: var(--star); }
 
 /* --- 伏せる（言い換えだけを隠す。見出しは出したまま） --- */
@@ -1986,7 +1986,7 @@ legend.field-label {
 
 :root[data-para-mask="on"] .para-card.is-revealed .para-head::after { content: none; }
 
-/* --- 並べ替え・★だけ --- */
+/* --- 並べ替え・「もう一度」だけ --- */
 
 .para-sort {
   flex: 0 0 auto;
@@ -2670,7 +2670,7 @@ legend.field-label {
   .deck-picker { flex: 1 1 7rem; }
   .level-filter { max-width: 9em; }
 
-  /* ★ の目印は行の左端に出す */
+  /* 「もう一度」の目印は行の左端に出す */
   .row.is-starred::before {
     content: "";
     position: absolute;

@@ -1,7 +1,7 @@
 /*!
  * 瞬間英作文 — 端末どうしの同期（GitHub のシークレット Gist 経由）
  *
- * iPhone と MacBook で、自作セット・足した文・★・パラフレ帳を揃える。
+ * iPhone と MacBook で、自作セット・足した文・「もう一度」・パラフレ帳を揃える。
  * サーバーは持たない。GitHub の Gist を 1 枚の置き場として使うだけ。
  *
  * app.js / paraphrase.js の中身には触らない。localStorage を読み書きしたあと、
@@ -344,15 +344,15 @@
     put(LS_ADDED, merged.added, {}, 'drill', '足した文');
     put(LS_EDITS, merged.edits, {}, 'drill', '直した文');
     put(LS_LEVELS, merged.levels, {}, 'drill', 'どれくらい言えるか');
-    put(LS_STARS, merged.stars, {}, 'drill', '★');
+    put(LS_STARS, merged.stars, {}, 'drill', '「もう一度」');
     put(LS_PARA_GENRES, merged.para.genres, [], 'para', 'ジャンル');
     put(LS_PARA_CARDS, merged.para.cards, [], 'para', 'パラフレ');
-    put(LS_PARA_STARS, merged.para.stars, [], 'para', 'パラフレの★');
+    put(LS_PARA_STARS, merged.para.stars, [], 'para', 'パラフレの「もう一度」');
     var mc = cardsPart(merged);
     put(LS_CARD_DECKS, mc.decks, [], 'cards', 'カードのセット');
     put(LS_CARD_ITEMS, mc.items, [], 'cards', 'カード');
     put(LS_CARD_SRS, mc.srs, {}, 'cards', 'カードの覚えた記録');
-    put(LS_CARD_STARS, mc.stars, [], 'cards', 'カードの★');
+    put(LS_CARD_STARS, mc.stars, [], 'cards', 'カードの「もう一度」');
     var ms = shadowPart(merged);
     put(LS_SHADOW_DECKS, ms.decks, [], 'shadow', 'シャドーイングのセット');
     put(LS_SHADOW_ITEMS, ms.items, [], 'shadow', 'シャドーイングの文');

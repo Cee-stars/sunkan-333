@@ -11,12 +11,12 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 48 (2026-10-09)">
+<meta name="sunkan-build" content="build 49 (2026-10-09)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=48">
+<link rel="stylesheet" href="assets/style.css?v=49">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -136,8 +136,8 @@
       <span aria-hidden="true">⇅</span><span class="btn-label">シャッフル</span>
     </button>
 
-    <button type="button" id="btn-para-starred" class="btn btn--ghost" aria-pressed="false" aria-label="★を付けたものだけ表示">
-      <span aria-hidden="true">★</span><span class="btn-label">だけ表示</span>
+    <button type="button" id="btn-para-starred" class="btn btn--ghost" aria-pressed="false" aria-label="「もう一度」だけ表示">
+      <span aria-hidden="true">↻</span><span class="btn-label">だけ表示</span>
     </button>
 
     <button type="button" id="btn-para-data" class="btn btn--icon" aria-label="表の読み込み・書き出し" aria-haspopup="dialog">📋</button>
@@ -308,7 +308,7 @@
         <span class="card-tools">
           <button type="button" id="btn-card-speak" class="btn btn--icon" aria-label="英語を読み上げる">🔈</button>
           <button type="button" id="btn-card-slow" class="btn btn--icon" aria-label="ゆっくり読み上げる">🐢</button>
-          <button type="button" id="btn-card-star" class="btn btn--icon" aria-label="チェックを付ける" aria-pressed="false">★</button>
+          <button type="button" id="btn-card-star" class="btn btn--icon" aria-label="「もう一度」に入れる" aria-pressed="false">↻</button>
           <button type="button" id="btn-card-edit" class="btn btn--icon" aria-label="このカードを編集する" aria-haspopup="dialog">✎</button>
         </span>
       </div>
@@ -391,7 +391,8 @@
     </button>
     <span class="row-tools">
       <button type="button" class="btn btn--icon row-speak" aria-label="英語を読み上げる" tabindex="-1">🔈</button>
-      <button type="button" class="btn btn--icon row-star" aria-label="チェックを付ける" aria-pressed="false" tabindex="-1">★</button>
+      <!-- 間違えた文に付けて、言えるようになったら外す印 -->
+      <button type="button" class="btn btn--icon row-star" aria-label="「もう一度」に入れる" aria-pressed="false" tabindex="-1">↻</button>
       <!-- どれくらい言えるか。押して一覧から選ぶ。
            選択肢は HTML に置いておく（JS が古いままでも空にならない） -->
       <label class="visually-hidden">どれくらい言えるか</label>
@@ -421,7 +422,7 @@
       <span class="para-genre-tag"></span>
       <span class="para-tools">
         <button type="button" class="btn btn--icon para-speak" aria-label="見出しの英文を読み上げる">🔈</button>
-        <button type="button" class="btn btn--icon para-star" aria-label="チェックを付ける" aria-pressed="false">★</button>
+        <button type="button" class="btn btn--icon para-star" aria-label="「もう一度」に入れる" aria-pressed="false">↻</button>
         <button type="button" class="btn btn--icon para-send" aria-label="瞬間英作文へ送る">📤</button>
         <button type="button" class="btn btn--icon para-edit" aria-label="このパラフレを編集する">✎</button>
         <button type="button" class="btn btn--icon para-delete" aria-label="このパラフレを削除する">🗑</button>
@@ -823,7 +824,7 @@ MEMO: take after = 〜に似ている</pre>
       <legend class="field-label">表示</legend>
       <label class="check"><input type="checkbox" id="opt-auto-hide"> 次の行を開いたら前の行を隠す</label>
       <label class="check"><input type="checkbox" id="opt-hide-ja"> 逆向き（日本語のほうを隠す）</label>
-      <label class="check"><input type="checkbox" id="opt-starred-only"> ★を付けた行だけ表示</label>
+      <label class="check"><input type="checkbox" id="opt-starred-only"> 「もう一度」の行だけ表示</label>
     </fieldset>
 
     <fieldset class="field-group">
@@ -840,7 +841,7 @@ MEMO: take after = 〜に似ている</pre>
 
     <fieldset class="field-group">
       <legend class="field-label">同期</legend>
-      <p class="dialog-hint">iPhone と MacBook で、自作セット・足した文・★・パラフレ帳を揃えます。</p>
+      <p class="dialog-hint">iPhone と MacBook で、自作セット・足した文・「もう一度」・パラフレ帳を揃えます。</p>
       <button type="button" id="btn-sync-open" class="btn btn--ghost" aria-haspopup="dialog">
         同期の設定<span class="sync-state" id="sync-state"></span>
       </button>
@@ -869,7 +870,7 @@ MEMO: take after = 〜に似ている</pre>
   <form method="dialog" class="dialog-inner">
     <h2 id="sync-dialog-title" class="dialog-title">iPhone・MacBook で揃える</h2>
     <p class="dialog-desc">
-      自作セット・足した文・★・パラフレ帳を、端末どうしで揃えます。
+      自作セット・足した文・「もう一度」・パラフレ帳を、端末どうしで揃えます。
       収録の 360 文と、隠し方・文字サイズなどの設定はそのままです（端末ごとの好みのため）。
       <strong>どちらの端末で足したものも消えません。</strong>足りないほうに入るだけです。
     </p>
@@ -1231,10 +1232,10 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=48"></script>
-<script src="assets/data.js?v=48"></script>
-<script src="assets/app.js?v=48"></script>
-<script src="assets/paraphrase.js?v=48"></script>
+<script src="assets/speech.js?v=49"></script>
+<script src="assets/data.js?v=49"></script>
+<script src="assets/app.js?v=49"></script>
+<script src="assets/paraphrase.js?v=49"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1325,14 +1326,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=48"></script>
-<script src="assets/srs.js?v=48"></script>
-<script src="assets/cards.js?v=48"></script>
-<script src="assets/shadow.js?v=48"></script>
-<script src="assets/import.js?v=48"></script>
-<script src="assets/inbox.js?v=48"></script>
-<script src="assets/sync.js?v=48"></script>
-<script src="assets/update.js?v=48"></script>
+<script src="assets/media.js?v=49"></script>
+<script src="assets/srs.js?v=49"></script>
+<script src="assets/cards.js?v=49"></script>
+<script src="assets/shadow.js?v=49"></script>
+<script src="assets/import.js?v=49"></script>
+<script src="assets/inbox.js?v=49"></script>
+<script src="assets/sync.js?v=49"></script>
+<script src="assets/update.js?v=49"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。

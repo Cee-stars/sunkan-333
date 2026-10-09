@@ -638,7 +638,7 @@
     if (starBtn && isStarred(card.id)) {
       li.classList.add('is-starred');
       starBtn.setAttribute('aria-pressed', 'true');
-      starBtn.setAttribute('aria-label', 'チェックを外す');
+      starBtn.setAttribute('aria-label', '「もう一度」から外す');
     }
 
     // 読み上げできない環境ではボタンごと隠す
@@ -700,7 +700,7 @@
       return 'まだパラフレがありません。下の「＋ パラフレを追加」から作れます。';
     }
     if (state.query) return '「' + trim(elSearch ? elSearch.value : '') + '」に当てはまるパラフレがありません。';
-    if (state.starredOnly) return '★を付けたパラフレがまだありません。';
+    if (state.starredOnly) return '「もう一度」を付けたパラフレがまだありません。';
     return '「' + genreName(state.genreId) + '」にはまだパラフレがありません。';
   }
 
@@ -720,7 +720,7 @@
     if (shown !== state.cards.length) text += ' / 表示中 ' + shown + ' 枚';
     var marks = [];
     if (state.genreId !== ALL) marks.push(genreName(state.genreId));
-    if (state.starredOnly) marks.push('★だけ');
+    if (state.starredOnly) marks.push('もう一度だけ');
     if (state.shuffleOrder) marks.push('シャッフル中');
     if (marks.length) text += '［' + marks.join(' / ') + '］';
     elStatus.textContent = text;
@@ -1307,7 +1307,7 @@
     else li.classList.remove('is-starred');
     if (btn) {
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-      btn.setAttribute('aria-label', on ? 'チェックを外す' : 'チェックを付ける');
+      btn.setAttribute('aria-label', on ? '「もう一度」から外す' : '「もう一度」に入れる');
     }
     if (state.starredOnly) renderCards();   // ★だけ表示中なら、外した札は消える
   }
