@@ -17,6 +17,18 @@
   // 収録・取り込みの文への上書き。元データ（data.js / sunkan:decks）は書き換えず、
   // 表を組み立てるときに当てる。sunkan:added が「後ろへ足す」のと同じ考え方。
   var LS_EDITS = 'sunkan:edits';
+  // 「どれくらい言えるか」。40 / 80 / 100 の 3 段階（未設定は 0）。
+  // 文ごとに持ち、同期にも載せる（★と同じ扱い）。
+  var LS_LEVELS = 'sunkan:levels';
+
+  /** 選べる段階。0 は「まだ付けていない」 */
+  var LEVELS = [0, 40, 80, 100];
+
+  /** 絞り込みの選択肢。value は settings.levelFilter に入る */
+  var LEVEL_FILTERS = ['all', 'lt80', 'lt100', 'l0', 'l40', 'l80', 'l100'];
+
+  /** 付けた段階を 90 日より古い「外した記録」まで持ち続けない */
+  var LEVEL_ZERO_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
 
   var MASK_STYLES = ['blur', 'block', 'hidden'];
   var DIRECTIONS = ['ja-en', 'en-ja'];
@@ -24,7 +36,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 45 (2026-10-07)';
+  var APP_VERSION = 'build 46 (2026-10-09)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -37,6 +49,7 @@
     direction: 'ja-en',
     starredOnly: false,
     autoSpeak: false,
+    levelFilter: 'all',
     deckId: ''
   };
 
@@ -203,6 +216,7 @@
       direction: DEFAULT_SETTINGS.direction,
       starredOnly: DEFAULT_SETTINGS.starredOnly,
       autoSpeak: DEFAULT_SETTINGS.autoSpeak,
+      levelFilter: DEFAULT_SETTINGS.levelFilter,
       deckId: DEFAULT_SETTINGS.deckId
     };
     if (!raw || typeof raw !== 'object') return s;
@@ -212,6 +226,7 @@
     if (isBool(raw.autoHide)) s.autoHide = raw.autoHide;
     if (isBool(raw.starredOnly)) s.starredOnly = raw.starredOnly;
     if (isBool(raw.autoSpeak)) s.autoSpeak = raw.autoSpeak;
+    s.levelFilter = inList(str(raw.levelFilter), LEVEL_FILTERS, s.levelFilter);
     if (typeof raw.deckId === 'string') s.deckId = raw.deckId;
     return s;
   }
@@ -256,6 +271,35 @@
   }
 
   /** { deckId: [itemId, ...] } の形に整える */
+  /**
+   * { deckId: { itemId: { v, at } } }。v は 40 / 80 / 100、外したものは 0。
+   * 0 を時刻つきで残すのは、同期で「外した」を伝えるため（★の消した記録と同じ考え）。
+   * 古い 0 は捨てる。残しても誰の役にも立たない。
+   */
+  function sanitizeLevels(raw) {
+    var out = {}, cutoff = Date.now() - LEVEL_ZERO_MAX_AGE;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (var deckId in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, deckId)) continue;
+      var per = raw[deckId];
+      if (!per || typeof per !== 'object' || Array.isArray(per)) continue;
+      var keep = {}, any = false;
+      for (var itemId in per) {
+        if (!Object.prototype.hasOwnProperty.call(per, itemId)) continue;
+        var rec = per[itemId];
+        if (!rec || typeof rec !== 'object') continue;
+        var v = Number(rec.v);
+        if (LEVELS.indexOf(v) < 0) continue;
+        var at = Number(rec.at) || 0;
+        if (!v && at < cutoff) continue;
+        keep[itemId] = { v: v, at: at };
+        any = true;
+      }
+      if (any) out[deckId] = keep;
+    }
+    return out;
+  }
+
   function sanitizeStars(raw) {
     var out = {};
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
@@ -531,6 +575,7 @@
     shuffled: false,
     query: '',
     stars: {},        // { deckId: [itemId...] }
+    levels: {},       // { deckId: { itemId: { v: 40|80|100, at } } } どれくらい言えるか
     added: {},        // { deckId: [{ja,en,note}...] } アプリ内で足した文
     edits: {},        // { deckId: { itemId: {ja,en,note} } } 収録の文への上書き
     settings: sanitizeSettings(readJSON(LS_SETTINGS)),
@@ -569,6 +614,7 @@
   var elEmptyState = $('empty-state');
   var elStatusBar = $('status-bar');
   var elDeckSelect = $('deck-select');
+  var elLevelFilter = $('level-filter');
   var elSearch = $('search');
   var elSearchClear = $('btn-search-clear');
   var elToggleAll = $('btn-toggle-all');
@@ -852,6 +898,49 @@
     state.stars = sanitizeStars(readJSON(LS_STARS));
   }
 
+  function loadLevels() {
+    state.levels = sanitizeLevels(readJSON(LS_LEVELS));
+  }
+
+  function saveLevels() {
+    return writeJSON(LS_LEVELS, state.levels);
+  }
+
+  /** この文の段階。付けていなければ 0 */
+  function levelOf(deckId, itemId) {
+    var per = state.levels[deckId];
+    var rec = per && per[itemId];
+    return (rec && Number(rec.v)) || 0;
+  }
+
+  /** 段階を付け替える。0 は「外す」。時刻を添えて、同期で新しいほうを勝たせる */
+  function setLevel(deckId, itemId, v) {
+    if (!deckId || !itemId) return;
+    if (LEVELS.indexOf(v) < 0) v = 0;
+    var per = state.levels[deckId] || (state.levels[deckId] = {});
+    per[itemId] = { v: v, at: Date.now() };
+    saveLevels();
+  }
+
+  /** 押すたびに 未設定 → 40 → 80 → 100 → 未設定 */
+  function nextLevel(v) {
+    var i = LEVELS.indexOf(v);
+    return LEVELS[(i < 0 ? 0 : i + 1) % LEVELS.length];
+  }
+
+  /** 絞り込みに引っかかるか */
+  function levelMatches(filter, v) {
+    switch (filter) {
+      case 'lt80':  return v < 80;
+      case 'lt100': return v < 100;
+      case 'l0':    return v === 0;
+      case 'l40':   return v === 40;
+      case 'l80':   return v === 80;
+      case 'l100':  return v === 100;
+      default:      return true;
+    }
+  }
+
   function saveStars() {
     return writeJSON(LS_STARS, state.stars);
   }
@@ -928,6 +1017,8 @@
         numEl: null,
         mainEl: null,
         starEl: null,
+        levelTagEl: null,
+        levelBtnEl: null,
         revealed: false
       });
     }
@@ -945,8 +1036,18 @@
     var starEl = li.querySelector('.row-star');
     var speakEl = li.querySelector('.row-speak');
 
+    record.levelBtnEl = li.querySelector('.row-level');
+
     li.setAttribute('data-id', record.id);
     jaEl.textContent = record.ja;
+
+    // どれくらい言えるかの札。**日本語側の先頭に置く**。
+    // # 列は iPhone の幅では畳まれてしまうので、そこに出すと肝心の端末で見えない。
+    var tag = document.createElement('small');
+    tag.className = 'lv-tag';
+    tag.hidden = true;
+    jaEl.insertBefore(tag, jaEl.firstChild);
+    record.levelTagEl = tag;
     enTextEl.textContent = record.en;
 
     // note は日本語側（＝出題側）に小さく添える。
@@ -984,7 +1085,26 @@
     record.numEl = numEl;
     record.mainEl = main;
     record.starEl = starEl;
+    renderLevel(record);
     return li;
+  }
+
+  /** いまの段階を、番号の下の札とボタンの字に出す */
+  function renderLevel(record) {
+    var v = levelOf(currentDeckId(), record.id);
+    if (record.el) {
+      if (v) record.el.setAttribute('data-level', String(v));
+      else record.el.removeAttribute('data-level');
+    }
+    if (record.levelTagEl) {
+      record.levelTagEl.textContent = v ? String(v) : '';
+      record.levelTagEl.hidden = !v;
+    }
+    if (record.levelBtnEl) {
+      record.levelBtnEl.textContent = v ? String(v) : '–';
+      record.levelBtnEl.setAttribute('aria-label',
+        'どれくらい言えるか（' + (v ? v + '%' : 'まだ') + '）');
+    }
   }
 
   /** #rows を order の順に組み立て直す（DocumentFragment で 1 回だけ挿入） */
@@ -1041,6 +1161,7 @@
 
     updateShuffleButton();
     renderRows();
+    renderLevelFilter();
     applyFilter();
     syncToggleAllButton();
     if (elDeckSelect && deck) elDeckSelect.value = deck.id;
@@ -1189,9 +1310,52 @@
    * 15. 検索・絞り込み
    * ========================================================== */
 
+  var LEVEL_FILTER_LABELS = {
+    all:   'ぜんぶ',
+    lt80:  '〜80%',     // 80% に届いていないものだけ（まだ・40%）
+    lt100: '〜100%',    // 100% に届いていないものだけ
+    l0:    'まだ',
+    l40:   '40%',
+    l80:   '80%',
+    l100:  '100%'
+  };
+
+  /**
+   * 絞り込み欄を作り直す。**どれが何件あるか**をその場に出す。
+   * 「まだ言えないのが何文あるか」は、練習の前にいちばん知りたいことなので、
+   * 開いて数えさせない。
+   */
+  function renderLevelFilter() {
+    if (!elLevelFilter) return;
+    var deckId = currentDeckId();
+    var counts = { all: state.records.length, lt80: 0, lt100: 0, l0: 0, l40: 0, l80: 0, l100: 0 };
+    for (var i = 0; i < state.records.length; i++) {
+      var v = levelOf(deckId, state.records[i].id);
+      if (v < 80) counts.lt80++;
+      if (v < 100) counts.lt100++;
+      counts['l' + v]++;
+    }
+
+    var keep = state.settings.levelFilter;
+    while (elLevelFilter.firstChild) elLevelFilter.removeChild(elLevelFilter.firstChild);
+    for (var k = 0; k < LEVEL_FILTERS.length; k++) {
+      var key = LEVEL_FILTERS[k];
+      var opt = document.createElement('option');
+      opt.value = key;
+      // 「ぜんぶ」の件数は下の状態（全 N 文）と同じなので出さない。
+      // 選んでいるものが欄に出るため、長いと狭い画面で切られてしまう。
+      opt.textContent = (key === 'all')
+        ? LEVEL_FILTER_LABELS[key]
+        : LEVEL_FILTER_LABELS[key] + ' ' + counts[key];
+      elLevelFilter.appendChild(opt);
+    }
+    elLevelFilter.value = keep;
+  }
+
   function applyFilter() {
     var q = state.query;
     var starredOnly = state.settings.starredOnly;
+    var levelFilter = state.settings.levelFilter;
     var deckId = state.deck ? state.deck.id : '';
     var visible = 0;
 
@@ -1204,6 +1368,9 @@
       }
       if (ok && starredOnly) {
         ok = isStarred(deckId, rec.id);
+      }
+      if (ok && levelFilter !== 'all') {
+        ok = levelMatches(levelFilter, levelOf(deckId, rec.id));
       }
       rec.el.hidden = !ok;
       if (ok) visible++;
@@ -1444,6 +1611,10 @@
       return 'いまの検索「' + (elSearch ? trim(elSearch.value) : state.query) + '」に当てはまらないので、表には出ていません。';
     }
     if (state.settings.starredOnly) return '「★だけ表示」なので、表には出ていません。';
+    var lf = state.settings.levelFilter;
+    if (lf !== 'all') {
+      return '「' + LEVEL_FILTER_LABELS[lf] + '」で絞っているので、表には出ていません。';
+    }
     return '絞り込みに当てはまらないので、表には出ていません。';
   }
 
@@ -1661,6 +1832,7 @@
     if (rec.added) {
       var oldId = rec.id;
       var wasStarred = isStarred(deckId, oldId);
+      var hadLevel = levelOf(deckId, oldId);
       if (!updateAddedSentence(deckId, rec.ja, rec.en, ja, en, note)) {
         setEditStatus('編集する文が見つかりません。', true);
         return;
@@ -1670,6 +1842,13 @@
       if (wasStarred && newId && newId !== oldId) {
         setStar(deckId, oldId, false);
         if (state.byId[newId]) toggleStar(state.byId[newId]);
+      }
+      // 段階も id に付いている。同じように付け替えないと、直した文だけ「まだ」に戻る
+      if (hadLevel && newId && newId !== oldId) {
+        setLevel(deckId, oldId, 0);
+        setLevel(deckId, newId, hadLevel);
+        if (state.byId[newId]) renderLevel(state.byId[newId]);
+        renderLevelFilter();
       }
     } else if (ja === rec.srcJa && en === rec.srcEn && note === rec.srcNote) {
       // 元と同じ中身に戻した＝上書きを持つ意味がない。「元に戻す」と同じ扱いにする
@@ -2072,6 +2251,9 @@
       parts.push('表示中 ' + state.visibleCount + ' 文');
     }
     if (state.settings.starredOnly) parts.push('★のみ');
+    if (state.settings.levelFilter !== 'all') {
+      parts.push(LEVEL_FILTER_LABELS[state.settings.levelFilter]);
+    }
     if (state.shuffled) parts.push('シャッフル中');
     elStatusBar.textContent = parts.join(' ・ ');
   }
@@ -2118,6 +2300,13 @@
       return;
     }
 
+    var levelBtn = target.closest('.row-level');
+    if (levelBtn && elRows.contains(levelBtn)) {
+      var recL = recordFromEvent(levelBtn);
+      if (recL) cycleLevel(recL);
+      return;
+    }
+
     var editBtn = target.closest('.row-edit');
     if (editBtn && elRows.contains(editBtn)) {
       var recE = recordFromEvent(editBtn);
@@ -2152,6 +2341,26 @@
       rec.starEl.setAttribute('aria-label', on ? 'チェックを外す' : 'チェックを付ける');
     }
     if (state.settings.starredOnly) applyFilter();
+  }
+
+  /**
+   * 押すたびに 未設定 → 40 → 80 → 100 → 未設定。
+   * 絞り込み中だと、付けた瞬間にその行が消えることがある。黙って消えると
+   * 「どこへ行った」になるので、何に変えたかを知らせてから消す。
+   */
+  function cycleLevel(rec) {
+    var deckId = currentDeckId();
+    var v = nextLevel(levelOf(deckId, rec.id));
+    setLevel(deckId, rec.id, v);
+    renderLevel(rec);
+    renderLevelFilter();
+
+    var filter = state.settings.levelFilter;
+    if (filter !== 'all') {
+      var stays = levelMatches(filter, v);
+      applyFilter();
+      if (!stays) flashStatus((v ? v + '% にしました。' : '印を外しました。') + whyHidden());
+    }
   }
 
   /* ============================================================
@@ -2503,6 +2712,10 @@
       delete state.stars[deckId];
       saveStars();
     }
+    if (state.levels[deckId]) {
+      delete state.levels[deckId];
+      saveLevels();
+    }
 
     // このセットに足した文も、書き換えた文の上書きも一緒に片付ける
     if (state.added[deckId]) {
@@ -2676,6 +2889,15 @@
       elDeckSelect.addEventListener('change', function () {
         if (!elDeckSelect.value) return;
         selectDeck(elDeckSelect.value);
+      });
+    }
+
+    if (elLevelFilter) {
+      elLevelFilter.addEventListener('change', function () {
+        var v = inList(str(elLevelFilter.value), LEVEL_FILTERS, 'all');
+        state.settings.levelFilter = v;
+        saveSettings();
+        applyFilter();   // 中で件数の表示まで直る
       });
     }
 
@@ -3007,6 +3229,7 @@
     // rebuildKeepingView に預けて元に戻す。
     rebuildKeepingView(function () {
       loadStars();
+      loadLevels();
       loadAdded();
       loadEdits();
       state.userDecks = loadUserDecks();
@@ -3076,6 +3299,7 @@
 
     initSpeech();
     loadStars();
+    loadLevels();
     loadAdded();
     loadEdits();
 
