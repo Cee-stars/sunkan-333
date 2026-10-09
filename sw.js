@@ -5,27 +5,18 @@
 
 // 名前を変えると activate で古いキャッシュを丸ごと捨てられる。
 // 配信方法を変えたときは必ず上げること。
-var CACHE = 'sunkan-v43';
+var CACHE = 'sunkan-v45';
 
 var ASSETS = [
   './',
   './index.html',
-  './assets/style.css',
-  './assets/app.js',
-  './assets/speech.js',
-  './assets/data.js',
-  './assets/paraphrase.js',
-  './assets/media.js',
-  './assets/srs.js',
-  './assets/cards.js',
-  './assets/shadow.js',
-  './assets/import.js',
-  './assets/inbox.js',
-  './assets/sync.js',
-  './assets/update.js',
-  './assets/icon.svg',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+  './assets/icon.svg'
 ];
+
+/* 一式（js / css）はここで先読みしない。index.html が ?v=<版> 付きで読むので、
+   版なしの URL を溜めても二度と使われず、容量を食うだけになる。
+   初回に開いた時点で下の fetch が版付きのまま溜めるので、オフラインでも開ける。 */
 
 // pdf.js（assets/vendor/）はここに載せない。1.5MB あり、PDF を取り込むときにしか要らない。
 // 一度使えば fetch のほうでキャッシュに入るので、そのあとはオフラインでも読める。

@@ -1019,17 +1019,36 @@ button, input, select, textarea {
 .row[data-level="80"]  .lv-tag { color: var(--lv80);  background: var(--lv80-soft); }
 .row[data-level="100"] .lv-tag { color: var(--lv100); background: var(--lv100-soft); }
 
-/* 押すたびに 未設定 → 40 → 80 → 100 → 未設定 */
+/* 押して一覧から選ぶ。端末の選択 UI に任せる（iPhone なら下から出るホイール） */
 .row-level {
-  font-size: 0.6875rem;
-  font-weight: 700;
+  flex: 0 0 auto;
+  /* 隣の丸ボタン（36px）と高さをそろえる。
+     指の当たりは、札の幅があるぶん横で稼げている */
+  height: 36px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--text-faint);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  text-align-last: center;   /* 閉じているときの字も真ん中に */
   letter-spacing: -0.03em;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
-.row[data-level="40"]  .row-level { color: var(--lv40); }
-.row[data-level="80"]  .row-level { color: var(--lv80); }
-.row[data-level="100"] .row-level { color: var(--lv100); }
+.row-level:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.row[data-level="40"]  .row-level { color: var(--lv40);  border-color: var(--lv40);  background: var(--lv40-soft); }
+.row[data-level="80"]  .row-level { color: var(--lv80);  border-color: var(--lv80);  background: var(--lv80-soft); }
+.row[data-level="100"] .row-level { color: var(--lv100); border-color: var(--lv100); background: var(--lv100-soft); }
 
 /* 絞り込みの欄。セット名より短くてよい。
    ここが伸びるとセット名と「PDF から」がはみ出すので、中身なりの幅で止める */

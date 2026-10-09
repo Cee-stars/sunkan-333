@@ -36,7 +36,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 46 (2026-10-09)';
+  var APP_VERSION = 'build 48 (2026-10-09)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -922,12 +922,6 @@
     saveLevels();
   }
 
-  /** 押すたびに 未設定 → 40 → 80 → 100 → 未設定 */
-  function nextLevel(v) {
-    var i = LEVELS.indexOf(v);
-    return LEVELS[(i < 0 ? 0 : i + 1) % LEVELS.length];
-  }
-
   /** 絞り込みに引っかかるか */
   function levelMatches(filter, v) {
     switch (filter) {
@@ -1100,11 +1094,7 @@
       record.levelTagEl.textContent = v ? String(v) : '';
       record.levelTagEl.hidden = !v;
     }
-    if (record.levelBtnEl) {
-      record.levelBtnEl.textContent = v ? String(v) : '–';
-      record.levelBtnEl.setAttribute('aria-label',
-        'どれくらい言えるか（' + (v ? v + '%' : 'まだ') + '）');
-    }
+    if (record.levelBtnEl) record.levelBtnEl.value = String(v);
   }
 
   /** #rows を order の順に組み立て直す（DocumentFragment で 1 回だけ挿入） */
@@ -2282,6 +2272,16 @@
     return state.byId[li.getAttribute('data-id')] || null;
   }
 
+  /** 行の中の「どれくらい言えるか」を選んだとき */
+  function onRowsChange(e) {
+    var target = e.target;
+    if (!target || !target.closest) return;
+    var sel = target.closest('.row-level');
+    if (!sel || !elRows.contains(sel)) return;
+    var rec = recordFromEvent(sel);
+    if (rec) pickLevel(rec, Number(sel.value));
+  }
+
   function onRowsClick(e) {
     var target = e.target;
     if (!target || !target.closest) return;
@@ -2297,13 +2297,6 @@
     if (starBtn && elRows.contains(starBtn)) {
       var recT = recordFromEvent(starBtn);
       if (recT) toggleStar(recT);
-      return;
-    }
-
-    var levelBtn = target.closest('.row-level');
-    if (levelBtn && elRows.contains(levelBtn)) {
-      var recL = recordFromEvent(levelBtn);
-      if (recL) cycleLevel(recL);
       return;
     }
 
@@ -2344,13 +2337,14 @@
   }
 
   /**
-   * 押すたびに 未設定 → 40 → 80 → 100 → 未設定。
+   * 一覧から選んだものを入れる。
    * 絞り込み中だと、付けた瞬間にその行が消えることがある。黙って消えると
    * 「どこへ行った」になるので、何に変えたかを知らせてから消す。
    */
-  function cycleLevel(rec) {
+  function pickLevel(rec, v) {
     var deckId = currentDeckId();
-    var v = nextLevel(levelOf(deckId, rec.id));
+    if (LEVELS.indexOf(v) < 0) v = 0;
+    if (v === levelOf(deckId, rec.id)) return;
     setLevel(deckId, rec.id, v);
     renderLevel(rec);
     renderLevelFilter();
@@ -2865,6 +2859,7 @@
 
   function bindEvents() {
     if (elRows) elRows.addEventListener('click', onRowsClick);
+    if (elRows) elRows.addEventListener('change', onRowsChange);
 
     if (elToggleAll) {
       elToggleAll.addEventListener('click', function () {

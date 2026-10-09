@@ -11,12 +11,12 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 46 (2026-10-09)">
+<meta name="sunkan-build" content="build 48 (2026-10-09)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/style.css?v=48">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -392,8 +392,15 @@
     <span class="row-tools">
       <button type="button" class="btn btn--icon row-speak" aria-label="英語を読み上げる" tabindex="-1">🔈</button>
       <button type="button" class="btn btn--icon row-star" aria-label="チェックを付ける" aria-pressed="false" tabindex="-1">★</button>
-      <!-- どれくらい言えるか。押すたびに 未設定 → 40 → 80 → 100 → 未設定 -->
-      <button type="button" class="btn btn--icon row-level" aria-label="どれくらい言えるか（まだ）" tabindex="-1">–</button>
+      <!-- どれくらい言えるか。押して一覧から選ぶ。
+           選択肢は HTML に置いておく（JS が古いままでも空にならない） -->
+      <label class="visually-hidden">どれくらい言えるか</label>
+      <select class="row-level" tabindex="-1" aria-label="どれくらい言えるか">
+        <option value="0">まだ</option>
+        <option value="40">40%</option>
+        <option value="80">80%</option>
+        <option value="100">100%</option>
+      </select>
       <button type="button" class="btn btn--icon row-edit" aria-label="この文を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
       <button type="button" class="btn btn--icon row-delete" aria-label="この文を削除する" tabindex="-1" hidden>🗑</button>
     </span>
@@ -1224,10 +1231,10 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js"></script>
-<script src="assets/data.js"></script>
-<script src="assets/app.js"></script>
-<script src="assets/paraphrase.js"></script>
+<script src="assets/speech.js?v=48"></script>
+<script src="assets/data.js?v=48"></script>
+<script src="assets/app.js?v=48"></script>
+<script src="assets/paraphrase.js?v=48"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1318,14 +1325,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js"></script>
-<script src="assets/srs.js"></script>
-<script src="assets/cards.js"></script>
-<script src="assets/shadow.js"></script>
-<script src="assets/import.js"></script>
-<script src="assets/inbox.js"></script>
-<script src="assets/sync.js"></script>
-<script src="assets/update.js"></script>
+<script src="assets/media.js?v=48"></script>
+<script src="assets/srs.js?v=48"></script>
+<script src="assets/cards.js?v=48"></script>
+<script src="assets/shadow.js?v=48"></script>
+<script src="assets/import.js?v=48"></script>
+<script src="assets/inbox.js?v=48"></script>
+<script src="assets/sync.js?v=48"></script>
+<script src="assets/update.js?v=48"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
