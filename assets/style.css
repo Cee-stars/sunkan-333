@@ -975,9 +975,6 @@ button, input, select, textarea {
   padding-inline: 14px 4px;
   padding-inline-end: max(4px, env(safe-area-inset-right));
   background: linear-gradient(to right, transparent 0, var(--row-bg) 14px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur) var(--ease);
 }
 
 .row-tools .btn--icon {
@@ -1063,17 +1060,30 @@ button, input, select, textarea {
 .row-star  { color: var(--star-off); font-size: 1.125rem; font-weight: 700; }
 .row-star[aria-pressed="true"] { color: var(--star); }
 
-/* 出す条件 */
-.row.is-revealed .row-tools,
-.row.is-current .row-tools,
-.row.is-starred .row-tools,
-.row:focus-within .row-tools {
-  opacity: 1;
-  pointer-events: auto;
+/* 出す条件
+ *
+ * ↻ と % は**いつでも出す**。英語を隠したまま「もう一度」を付けたり、
+ * どれくらい言えるかを変えたりしたい——答えを見ないと印を付けられないのでは、
+ * 隠している意味がなくなる。
+ *
+ * 読み上げ・編集・削除は、これまでどおり開いた行とカーソルの行だけ。
+ * 常に出すと、行の右が常時ふさがって英語が読めなくなる。 */
+.row-speak,
+.row-edit,
+.row-delete { display: none; }
+
+:is(.row.is-revealed, .row.is-current) :is(.row-speak, .row-edit) {
+  display: inline-flex;
+}
+
+/* [hidden]（＝自分で足した文ではない）のときは出さない */
+:is(.row.is-revealed, .row.is-current) .row-delete:not([hidden]) {
+  display: inline-flex;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .row:hover .row-tools { opacity: 1; pointer-events: auto; }
+  .row:hover :is(.row-speak, .row-edit) { display: inline-flex; }
+  .row:hover .row-delete:not([hidden]) { display: inline-flex; }
 }
 
 /* 狭い画面では右に逃がす余白が取れないので、重ねずに 2 段目へ落とす。
@@ -1085,23 +1095,30 @@ button, input, select, textarea {
     grid-template-rows: auto auto;
   }
 
+  /* 閉じている間は、↻ と % を 1 段目の右に重ねる。
+     ここで 2 段目を使うと、**ぜんぶの行が 1 段ぶん高くなる**（130 文もあると
+     それだけで画面が倍になる）。隠れているのはぼかした英語なので重ねてよい。 */
   .row-tools {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    background: linear-gradient(to right, transparent 0, var(--row-bg) 14px);
+    padding-inline: 14px max(4px, env(safe-area-inset-right));
+    padding-block-end: 0;
+  }
+
+  /* 開いたら 2 段目へ下ろす。重ねたままだと答えの末尾がボタンに隠れる。
+     **開いたときだけ**動かす。押しただけで動かすと、指が離れる前にボタンが
+     下の段へ逃げて、押したことにならない（iPhone で実際にそうなった）。 */
+  .row.is-revealed .row-tools {
     position: static;
     grid-row: 2;
-    display: none;
-    justify-content: flex-end;
     background: none;
     padding-inline: 0 max(8px, env(safe-area-inset-right));
     padding-block-end: 4px;
-  }
-
-  .row.is-revealed .row-tools,
-  .row.is-current .row-tools,
-  .row.is-starred .row-tools,
-  .row:focus-within .row-tools {
-    display: flex;
-    opacity: 1;
-    pointer-events: auto;
   }
 }
 
