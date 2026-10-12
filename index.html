@@ -11,12 +11,12 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 51 (2026-10-12)">
+<meta name="sunkan-build" content="build 52 (2026-10-12)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=51">
+<link rel="stylesheet" href="assets/style.css?v=52">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -402,6 +402,9 @@
         <option value="80">80%</option>
         <option value="100">100%</option>
       </select>
+      <!-- 言えなかった所。答えを見てから付けるので、開いた行とカーソル行だけに出す -->
+      <button type="button" class="btn btn--icon row-gap" aria-label="つまずいた所を記録する"
+        aria-pressed="false" tabindex="-1" aria-haspopup="dialog">△</button>
       <button type="button" class="btn btn--icon row-edit" aria-label="この文を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
       <button type="button" class="btn btn--icon row-delete" aria-label="この文を削除する" tabindex="-1" hidden>🗑</button>
     </span>
@@ -530,6 +533,40 @@
   </form>
 </dialog>
 
+<!-- ===== つまずいた所（言えなかった語に印をつける） ===== -->
+<dialog id="gap-dialog" class="dialog" aria-labelledby="gap-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="gap-dialog-title" class="dialog-title">つまずいた所</h2>
+    <p class="dialog-desc">
+      言えなかった語をタップします。文ごとではなく<strong>どこで</strong>詰まったかを残すと、
+      溜まったときに「どの語でいつも詰まるか」が分かります。
+    </p>
+
+    <p class="gap-ja" id="gap-ja"></p>
+    <!-- 語は JS が並べる（文によって数が違うため） -->
+    <div class="gap-words" id="gap-words"></div>
+
+    <p class="dialog-note" id="gap-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-gap-clear" class="btn btn--ghost">ぜんぶ外す</button>
+      <button type="button" id="btn-gap-close" class="btn btn--primary">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== よくつまずく語（溜まったものを数えて見せるだけ） ===== -->
+<dialog id="gaps-dialog" class="dialog dialog--sheet" aria-labelledby="gaps-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="gaps-dialog-title" class="dialog-title">よくつまずく語</h2>
+    <p class="dialog-desc" id="gaps-desc"></p>
+    <ul class="gaps-list" id="gaps-list"></ul>
+    <div class="dialog-actions">
+      <button type="button" id="btn-gaps-close" class="btn btn--primary">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ===== メニュー（持ち出しと端末まわりを 1 か所に） ===== -->
 <dialog id="menu-dialog" class="dialog dialog--sheet" aria-labelledby="menu-dialog-title">
   <form method="dialog" class="dialog-inner sheet-inner">
@@ -538,6 +575,12 @@
     <ul class="sheet-list">
       <!-- 「ぜんぶ」なのか「このセットだけ」なのかを、押す前に必ず言う。
            右の注記に頼らず、見出しそのものに入れる。 -->
+      <li class="sheet-item">
+        <button type="button" id="btn-gaps" class="sheet-btn" aria-haspopup="dialog">
+          <span class="sheet-label">よくつまずく語</span>
+          <span class="sheet-hint" id="gaps-hint">言えなかった所の集計</span>
+        </button>
+      </li>
       <li class="sheet-item">
         <button type="button" id="btn-backup-out" class="sheet-btn">
           <span class="sheet-label">ぜんぶ書き出す（機種変更用）</span>
@@ -1232,10 +1275,10 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=51"></script>
-<script src="assets/data.js?v=51"></script>
-<script src="assets/app.js?v=51"></script>
-<script src="assets/paraphrase.js?v=51"></script>
+<script src="assets/speech.js?v=52"></script>
+<script src="assets/data.js?v=52"></script>
+<script src="assets/app.js?v=52"></script>
+<script src="assets/paraphrase.js?v=52"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1326,14 +1369,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=51"></script>
-<script src="assets/srs.js?v=51"></script>
-<script src="assets/cards.js?v=51"></script>
-<script src="assets/shadow.js?v=51"></script>
-<script src="assets/import.js?v=51"></script>
-<script src="assets/inbox.js?v=51"></script>
-<script src="assets/sync.js?v=51"></script>
-<script src="assets/update.js?v=51"></script>
+<script src="assets/media.js?v=52"></script>
+<script src="assets/srs.js?v=52"></script>
+<script src="assets/cards.js?v=52"></script>
+<script src="assets/shadow.js?v=52"></script>
+<script src="assets/import.js?v=52"></script>
+<script src="assets/inbox.js?v=52"></script>
+<script src="assets/sync.js?v=52"></script>
+<script src="assets/update.js?v=52"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。

@@ -25,6 +25,11 @@
   // 「どれくらい言えるか」を選んだときだけ動く（選ぶ操作をそのまま自己採点として使う）。
   var LS_DRILL_SRS = 'sunkan:drill:srs';
 
+  // つまずいた所。文ごとに「言えなかった語」を持つ。
+  // 文の正誤ではなく**どこで詰まったか**を残すためのもので、
+  // 溜まると「どの語でいつも詰まるか」が数えられる。
+  var LS_GAPS = 'sunkan:gaps';
+
   /** 選べる段階。0 は「まだ付けていない」 */
   var LEVELS = [0, 40, 80, 100];
 
@@ -46,7 +51,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 51 (2026-10-12)';
+  var APP_VERSION = 'build 52 (2026-10-12)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -587,6 +592,7 @@
     stars: {},        // { deckId: [itemId...] }
     levels: {},       // { deckId: { itemId: { v: 40|80|100, at } } } どれくらい言えるか
     drillSrs: {},     // { deckId: { itemId: srs の状態 } } 次にいつ出すか
+    gaps: {},         // { deckId: { itemId: { w: [語...], at } } } 言えなかった所
     added: {},        // { deckId: [{ja,en,note}...] } アプリ内で足した文
     edits: {},        // { deckId: { itemId: {ja,en,note} } } 収録の文への上書き
     settings: sanitizeSettings(readJSON(LS_SETTINGS)),
@@ -650,6 +656,18 @@
   var elAddedList = $('added-list');
   var elNewDeckName = $('new-deck-name');
   var elNewDeck = $('btn-new-deck');
+
+  var elGapDialog = $('gap-dialog');
+  var elGapJa = $('gap-ja');
+  var elGapWords = $('gap-words');
+  var elGapStatus = $('gap-status');
+  var elGapClose = $('btn-gap-close');
+  var elGapClear = $('btn-gap-clear');
+  var elGapsDialog = $('gaps-dialog');
+  var elGapsDesc = $('gaps-desc');
+  var elGapsList = $('gaps-list');
+  var elGapsClose = $('btn-gaps-close');
+  var elGapsOpen = $('btn-gaps');
 
   var elEditDialog = $('edit-dialog');
   var elEditJa = $('edit-ja');
@@ -1022,6 +1040,86 @@
     return window.SUNKAN_SRS.humanInterval(next.intervalDays);
   }
 
+  /* ---- つまずいた所 -------------------------------------------
+   * 入れ物は `levels` / `drillSrs` と同じ { deckId: { itemId: ... } }。
+   * セットを消すときも、文を直して id が変わったときも同じ手順で片付く。
+   *
+   * 語は**均した形**（小文字・前後の記号を落とす）で持つ。数えるためで、
+   * "Brother." と "brother" を別物として数えると集計が意味を持たない。
+   */
+
+  /** 文を語に割る。見せる形（もとのまま）と、数える形（均した形）を返す */
+  function splitWords(en) {
+    var raw = String(en || '').split(/\s+/);
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      var t = raw[i];
+      if (!t) continue;
+      var key = normalizeWord(t);
+      if (!key) continue;            // 記号だけの切れ端は語として扱わない
+      out.push({ text: t, key: key });
+    }
+    return out;
+  }
+
+  /** 数えるための形。前後の記号だけ落とす（語中の ' と - は残す）*/
+  function normalizeWord(t) {
+    return String(t || '')
+      .toLowerCase()
+      .replace(/^[^0-9a-z\u00c0-\u024f']+/, '')
+      .replace(/[^0-9a-z\u00c0-\u024f']+$/, '');
+  }
+
+  function sanitizeGaps(raw) {
+    var out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (var deckId in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, deckId)) continue;
+      var per = raw[deckId];
+      if (!per || typeof per !== 'object' || Array.isArray(per)) continue;
+      var keep = {}, any = false;
+      for (var itemId in per) {
+        if (!Object.prototype.hasOwnProperty.call(per, itemId)) continue;
+        var rec = per[itemId];
+        if (!rec || typeof rec !== 'object' || !Array.isArray(rec.w)) continue;
+        var words = [], seen = {};
+        for (var i = 0; i < rec.w.length; i++) {
+          var k = normalizeWord(rec.w[i]);
+          if (!k || seen[k]) continue;
+          seen[k] = true;
+          words.push(k);
+        }
+        // 空は「外した」印として残す（同期で「外した」を伝えるため）
+        keep[itemId] = { w: words, at: Number(rec.at) || 0 };
+        any = true;
+      }
+      if (any) out[deckId] = keep;
+    }
+    return out;
+  }
+
+  function loadGaps() {
+    state.gaps = sanitizeGaps(readJSON(LS_GAPS));
+  }
+
+  function saveGaps() {
+    return writeJSON(LS_GAPS, state.gaps);
+  }
+
+  /** この文につけた語。無ければ空の配列 */
+  function gapsOf(deckId, itemId) {
+    var per = state.gaps[deckId];
+    var rec = per && per[itemId];
+    return (rec && Array.isArray(rec.w)) ? rec.w : [];
+  }
+
+  function setGaps(deckId, itemId, words) {
+    if (!deckId || !itemId) return;
+    var per = state.gaps[deckId] || (state.gaps[deckId] = {});
+    per[itemId] = { w: words || [], at: Date.now() };
+    saveGaps();
+  }
+
   /** 絞り込みに引っかかるか */
   function levelMatches(filter, v) {
     switch (filter) {
@@ -1119,6 +1217,7 @@
         starEl: null,
         levelTagEl: null,
         levelBtnEl: null,
+        gapEl: null,
         revealed: false
       });
     }
@@ -1137,6 +1236,7 @@
     var speakEl = li.querySelector('.row-speak');
 
     record.levelBtnEl = li.querySelector('.row-level');
+    record.gapEl = li.querySelector('.row-gap');
 
     li.setAttribute('data-id', record.id);
     jaEl.textContent = record.ja;
@@ -1186,6 +1286,7 @@
     record.mainEl = main;
     record.starEl = starEl;
     renderLevel(record);
+    renderGap(record);
     return li;
   }
 
@@ -1201,6 +1302,15 @@
       record.levelTagEl.hidden = !v;
     }
     if (record.levelBtnEl) record.levelBtnEl.value = String(v);
+  }
+
+  /** つまずいた所が付いているかを △ の色に出す。付いた所はその場で分かるように */
+  function renderGap(record) {
+    if (!record || !record.gapEl) return;
+    var n = gapsOf(currentDeckId(), record.id).length;
+    record.gapEl.setAttribute('aria-pressed', n ? 'true' : 'false');
+    record.gapEl.setAttribute('aria-label',
+      n ? 'つまずいた所（' + n + ' 語）を直す' : 'つまずいた所を記録する');
   }
 
   /** #rows を order の順に組み立て直す（DocumentFragment で 1 回だけ挿入） */
@@ -1900,6 +2010,126 @@
     if (elEditJa) elEditJa.focus();
   }
 
+  /* ---- つまずいた所のダイアログ --------------------------------
+   * 語を直に触らせない理由: 英語は `.row-main`（1 枚のボタン）の中にあり、
+   * そこを押すと行が閉じる。語をタップで選ばせると「閉じようとして印が付く」
+   * ことになるので、**別のダイアログに出す**。
+   */
+
+  var gapEditingId = null;
+
+  function openGapDialog(rec, invoker) {
+    if (!rec || !elGapDialog) return;
+    gapEditingId = rec.id;
+    if (elGapJa) elGapJa.textContent = rec.ja;
+    renderGapWords(rec);
+    if (elGapStatus) elGapStatus.textContent = '';
+    openDialog(elGapDialog, invoker);
+  }
+
+  /** 語のチップを並べ直す。いま付いているものを押された状態にする */
+  function renderGapWords(rec) {
+    if (!elGapWords) return;
+    while (elGapWords.firstChild) elGapWords.removeChild(elGapWords.firstChild);
+    var marked = gapsOf(currentDeckId(), rec.id);
+    var words = splitWords(rec.en);
+    for (var i = 0; i < words.length; i++) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gap-word';
+      b.textContent = words[i].text;          // 見せるのはもとのまま
+      b.setAttribute('data-key', words[i].key); // 数えるのは均した形
+      b.setAttribute('aria-pressed', marked.indexOf(words[i].key) >= 0 ? 'true' : 'false');
+      elGapWords.appendChild(b);
+    }
+  }
+
+  /** チップを押したら、その場で保存する（「保存」を押させない） */
+  function toggleGapWord(btn) {
+    if (!gapEditingId || !btn) return;
+    var rec = state.byId[gapEditingId];
+    if (!rec) return;
+    var on = btn.getAttribute('aria-pressed') !== 'true';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+
+    var words = [];
+    var all = elGapWords ? elGapWords.querySelectorAll('.gap-word') : [];
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getAttribute('aria-pressed') === 'true') {
+        words.push(all[i].getAttribute('data-key'));
+      }
+    }
+    setGaps(currentDeckId(), rec.id, words);
+    renderGap(rec);
+    if (elGapStatus) {
+      elGapStatus.textContent = words.length
+        ? words.length + ' 語に印を付けています。'
+        : '印はありません。';
+    }
+  }
+
+  function clearGapWords() {
+    if (!gapEditingId) return;
+    var rec = state.byId[gapEditingId];
+    if (!rec) return;
+    setGaps(currentDeckId(), rec.id, []);
+    renderGapWords(rec);
+    renderGap(rec);
+    if (elGapStatus) elGapStatus.textContent = '印はありません。';
+  }
+
+  /* ---- よくつまずく語（数えて見せるだけ）---------------------- */
+
+  /**
+   * 付けた語を**セットをまたいで**数える。どの語で詰まるかは
+   * セットごとの話ではないので、分けて数えても仕方がない。
+   */
+  function countGaps() {
+    var counts = {}, keys = [], deckId, itemId, i;
+    for (deckId in state.gaps) {
+      if (!Object.prototype.hasOwnProperty.call(state.gaps, deckId)) continue;
+      var per = state.gaps[deckId];
+      for (itemId in per) {
+        if (!Object.prototype.hasOwnProperty.call(per, itemId)) continue;
+        var w = per[itemId].w || [];
+        for (i = 0; i < w.length; i++) {
+          if (!counts[w[i]]) { counts[w[i]] = 0; keys.push(w[i]); }
+          counts[w[i]]++;
+        }
+      }
+    }
+    keys.sort(function (a, b) {
+      return counts[b] - counts[a] || (a < b ? -1 : a > b ? 1 : 0);
+    });
+    return { keys: keys, counts: counts };
+  }
+
+  function openGapsDialog(invoker) {
+    if (!elGapsDialog) return;
+    var got = countGaps();
+    if (elGapsList) {
+      while (elGapsList.firstChild) elGapsList.removeChild(elGapsList.firstChild);
+      for (var i = 0; i < got.keys.length && i < 60; i++) {
+        var li = document.createElement('li');
+        var w = document.createElement('span');
+        w.className = 'gaps-word';
+        w.textContent = got.keys[i];
+        var c = document.createElement('span');
+        c.className = 'gaps-count';
+        c.textContent = got.counts[got.keys[i]] + ' 文';
+        li.appendChild(w);
+        li.appendChild(c);
+        elGapsList.appendChild(li);
+      }
+    }
+    if (elGapsDesc) {
+      elGapsDesc.textContent = got.keys.length
+        ? '行の △ で付けた「言えなかった語」を、セットをまたいで数えています。多い順です。'
+        : 'まだありません。英語を開いたあと、行の右の △ から、言えなかった語をタップして残します。';
+    }
+    openDialog(elGapsDialog, invoker);
+  }
+
   /** 同じ (ja, en) が別の行にもあるか。二つ並ぶとどちらを直したのか分からなくなる */
   function hasSameSentence(exceptId, ja, en) {
     for (var i = 0; i < state.records.length; i++) {
@@ -1936,6 +2166,7 @@
       var wasStarred = isStarred(deckId, oldId);
       var hadLevel = levelOf(deckId, oldId);
       var hadSrs = srsOf(deckId, oldId);
+      var hadGaps = gapsOf(deckId, oldId);
       if (!updateAddedSentence(deckId, rec.ja, rec.en, ja, en, note)) {
         setEditStatus('編集する文が見つかりません。', true);
         return;
@@ -1960,6 +2191,16 @@
           delete state.drillSrs[deckId][oldId];
           saveDrillSrs();
         }
+      }
+      // つまずいた所も同じ。英語を直したときは、もう無い語が残ることがあるが、
+      // **捨てない**（直す前にどこで詰まっていたかは、それ自体が記録なので）
+      if (hadGaps.length && newId && newId !== oldId) {
+        setGaps(deckId, newId, hadGaps);
+        if (state.gaps[deckId] && state.gaps[deckId][oldId]) {
+          delete state.gaps[deckId][oldId];
+          saveGaps();
+        }
+        if (state.byId[newId]) renderGap(state.byId[newId]);
       }
     } else if (ja === rec.srcJa && en === rec.srcEn && note === rec.srcNote) {
       // 元と同じ中身に戻した＝上書きを持つ意味がない。「元に戻す」と同じ扱いにする
@@ -2421,6 +2662,13 @@
       return;
     }
 
+    var gapBtn = target.closest('.row-gap');
+    if (gapBtn && elRows.contains(gapBtn)) {
+      var recG = recordFromEvent(gapBtn);
+      if (recG) openGapDialog(recG, gapBtn);
+      return;
+    }
+
     var editBtn = target.closest('.row-edit');
     if (editBtn && elRows.contains(editBtn)) {
       var recE = recordFromEvent(editBtn);
@@ -2855,6 +3103,10 @@
       delete state.drillSrs[deckId];
       saveDrillSrs();
     }
+    if (state.gaps[deckId]) {
+      delete state.gaps[deckId];
+      saveGaps();
+    }
 
     // このセットに足した文も、書き換えた文の上書きも一緒に片付ける
     if (state.added[deckId]) {
@@ -3219,6 +3471,28 @@
       });
     }
 
+    // --- つまずいた所 ---
+    if (elGapWords) {
+      elGapWords.addEventListener('click', function (e) {
+        var b = e.target && e.target.closest ? e.target.closest('.gap-word') : null;
+        if (b && elGapWords.contains(b)) toggleGapWord(b);
+      });
+    }
+    if (elGapClose) elGapClose.addEventListener('click', function () { closeDialog(elGapDialog); });
+    if (elGapClear) elGapClear.addEventListener('click', clearGapWords);
+    if (elGapDialog) {
+      elGapDialog.addEventListener('close', function () {
+        if (!elGapDialog.open) gapEditingId = null;
+      });
+    }
+    if (elGapsOpen) {
+      elGapsOpen.addEventListener('click', function () {
+        closeDialog(elMenuDialog);   // シートを重ねない
+        openGapsDialog(elMenuOpen);
+      });
+    }
+    if (elGapsClose) elGapsClose.addEventListener('click', function () { closeDialog(elGapsDialog); });
+
     // --- データの持ち出し ---
     if (elBackupOut) elBackupOut.addEventListener('click', exportBackup);
     if (elBackupIn && elBackupFile) {
@@ -3281,7 +3555,8 @@
     }
 
     // Esc などで閉じたときもフォーカスを戻す
-    [elDataDialog, elSettingsDialog, elEditDialog, elVoiceDialog, elMenuDialog].forEach(function (d) {
+    [elDataDialog, elSettingsDialog, elEditDialog, elVoiceDialog, elMenuDialog,
+     elGapDialog, elGapsDialog].forEach(function (d) {
       if (!d) return;
       d.addEventListener('close', restoreFocus);
       d.addEventListener('cancel', function () { /* 既定の閉じる動作に任せる */ });
@@ -3371,6 +3646,7 @@
       loadStars();
       loadLevels();
       loadDrillSrs();
+      loadGaps();
       loadAdded();
       loadEdits();
       state.userDecks = loadUserDecks();
@@ -3442,6 +3718,7 @@
     loadStars();
     loadLevels();
     loadDrillSrs();
+    loadGaps();
     loadAdded();
     loadEdits();
 

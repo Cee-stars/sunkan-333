@@ -23,6 +23,7 @@
 | `assets/update.js` | H | 版ずれの検知と、溜まった古い一式を捨てて読み直す道 |
 | `version.json` | 共通 | 公開されている版。`APP_VERSION` と同じ文字列を入れる |
 | `tests/srstest.mjs` | 共通 | 復習の予定の確かめ（Playwright）。**390px と 1180px の両方**で走る。`python3 -m http.server 8599` を上げてから `node tests/srstest.mjs` |
+| `tests/gaptest.mjs` | 共通 | つまずいた所の確かめ。同じ上げ方で `node tests/gaptest.mjs` |
 
 `app.js` と `paraphrase.js` と `cards.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
 `<html data-mode>` と下の `window.SUNKAN_*` だけで、`app.js` は `data-mode` が `drill` 以外の間
@@ -45,6 +46,14 @@
 | `splitTable(text)` | 貼り付けテキストを行×列に割る（TSV / CSV 自動判定）。戻り値は `{rows, delimiter}` |
 | `copyText(text, done)` | クリップボードへ。非同期なので結果は `done(ok)` で返す |
 | `reload()` | localStorage を読み直して表を作り直す。同期が中身を入れ替えたあとに呼ぶ。開いていたセットは、まだ在ればそのまま |
+
+### つまずいた所を、語の直タップで取らない理由
+
+英語は `.row-main`（**1 枚のボタン**）の中にある。そこを押すと行が開閉するので、
+語をそのままタップで選ばせると「閉じようとして印が付く」ことになる。
+だから **別のダイアログ（`#gap-dialog`）に出す**。`△` は `.row-tools` の中に置き、
+🔈・✎ と同じく**開いた行とカーソル行だけ**に出す（答えを見てから付けるものなので、
+↻ や % のように常時出す必要がない。常時出すと行の右がふさがる）。
 
 ### `window.SUNKAN_PARA`（paraphrase.js が開けている口）
 
@@ -614,6 +623,7 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
   edits: { /* sunkan:edits と同じ形 */ },
   levels: { /* sunkan:levels と同じ形 */ },
   drillSrs: { /* sunkan:drill:srs と同じ形 */ },
+  gaps: { /* sunkan:gaps と同じ形 */ },
   stars: { /* sunkan:stars と同じ形 */ },
   para:  { genres: [...], cards: [...], stars: [...] },
   tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
@@ -691,6 +701,11 @@ JS が古いまま当たっても空の欄にならないようにするため�
 （`mergeDrillSrs`）。足し算にすると間隔が伸びすぎ、古いほうを残すともう覚えた文が何度も出る。
 消したセットのぶんを落とすところは `mergeLevels` に合わせてある（入れ物の形が同じため）。
 
+### つまずいた所（`gaps`）の突き合わせ
+
+**1 件ごとに `at` が新しいほうを採る**（`mergeGaps`。`mergeLevels` と同じ考え方）。
+足し算にすると、片方で外した語がもう片方から戻ってきて、いつまでも消せなくなる。
+
 ### カードの覚えた記録の突き合わせ
 
 `sunkan:cards:srs` だけは、足し算でも「手元が勝ち」でもなく、
@@ -759,6 +774,7 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:stars` | `{ [deckId]: string[] }` … 「もう一度」を付けた項目の id。**画面では ↻「もう一度」**（間違えた文に付けて、言えるようになったら外す）。中の名前が `star` のままなのは、保存の鍵も同期の記録（`star:` / `parastar:` / `cardstar:`）もそれで動いているから。変えると今まで付けたぶんが消える |
 | `sunkan:levels` | `{ [deckId]: { [itemId]: {v,at} } }` … どれくらい言えるか。`v` は 40/80/100、**0 は「外した」印**。`at` は付けた時刻 |
 | `sunkan:drill:srs` | `{ [deckId]: { [itemId]: srs の状態 } }` … 瞬間英作文の復習の予定。中身の形は `srs.js` の `newState()` が正。`levels` と同じ入れ物の形にしてあるので、セットを消すときも文を直して id が変わったときも、★・段階とまったく同じ手順で片付く |
+| `sunkan:gaps` | `{ [deckId]: { [itemId]: {w,at} } }` … つまずいた所。`w` は**均した語**（小文字・前後の記号を落とす）の配列。`"Brother." と "brother" を別に数えると集計が意味を持たない`ため。**空配列は「外した」印**として残す（同期で「外した」を伝えるのに要る） |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
 | `sunkan:mode` | `drill` / `para` / `cards` / `shadow` … 最後に開いていたモード |
