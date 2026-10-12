@@ -1,7 +1,7 @@
 /* Duo — 忘却曲線（FSRS-5）
  *
  * 「いつ出すか」だけを決める。DOM も localStorage も触らない純粋な計算。
- * cards.js から window.SUNKAN_SRS 越しに呼ぶ。
+ * cards.js と app.js（瞬間英作文）から window.SUNKAN_SRS 越しに呼ぶ。
  *
  * なぜ SM-2（1987 年の式）ではなく FSRS か:
  *   SM-2 は「正解したら間隔に固定の倍率を掛ける」だけで、忘れかけているかどうかを見ていない。

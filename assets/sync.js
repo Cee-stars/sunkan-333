@@ -20,6 +20,7 @@
   var LS_ADDED = 'sunkan:added';
   var LS_EDITS = 'sunkan:edits';   // 収録の文への上書き（元データは書き換えない）
   var LS_LEVELS = 'sunkan:levels'; // どれくらい言えるか（40 / 80 / 100。0 は外した印）
+  var LS_DRILL_SRS = 'sunkan:drill:srs'; // 瞬間英作文の復習の予定。落とすと忘却曲線が消える
   var LS_STARS = 'sunkan:stars';
   var LS_PARA_GENRES = 'sunkan:para:genres';
   var LS_PARA_CARDS = 'sunkan:para:cards';
@@ -222,6 +223,7 @@
       added: isObject(readJSON(LS_ADDED, {})) ? readJSON(LS_ADDED, {}) : {},
       edits: isObject(readJSON(LS_EDITS, {})) ? readJSON(LS_EDITS, {}) : {},
       levels: isObject(readJSON(LS_LEVELS, {})) ? readJSON(LS_LEVELS, {}) : {},
+      drillSrs: isObject(readJSON(LS_DRILL_SRS, {})) ? readJSON(LS_DRILL_SRS, {}) : {},
       stars: isObject(readJSON(LS_STARS, {})) ? readJSON(LS_STARS, {}) : {},
       para: {
         genres: isArray(readJSON(LS_PARA_GENRES, [])) ? readJSON(LS_PARA_GENRES, []) : [],
@@ -274,7 +276,7 @@
   // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
   // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
   // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'stars', 'para', 'cards', 'shadow', 'media', 'inbox', 'tombs', 'handed'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'stars', 'para', 'cards', 'shadow', 'media', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -304,6 +306,7 @@
       added: isObject(d.added) ? d.added : {},
       edits: isObject(d.edits) ? d.edits : {},
       levels: isObject(d.levels) ? d.levels : {},
+      drillSrs: isObject(d.drillSrs) ? d.drillSrs : {},
       stars: isObject(d.stars) ? d.stars : {},
       para: {
         genres: isArray(para.genres) ? para.genres : [],
@@ -344,6 +347,7 @@
     put(LS_ADDED, merged.added, {}, 'drill', '足した文');
     put(LS_EDITS, merged.edits, {}, 'drill', '直した文');
     put(LS_LEVELS, merged.levels, {}, 'drill', 'どれくらい言えるか');
+    put(LS_DRILL_SRS, merged.drillSrs, {}, 'drill', '復習の予定');
     put(LS_STARS, merged.stars, {}, 'drill', '「もう一度」');
     put(LS_PARA_GENRES, merged.para.genres, [], 'para', 'ジャンル');
     put(LS_PARA_CARDS, merged.para.cards, [], 'para', 'パラフレ');
@@ -518,6 +522,44 @@
     return out;
   }
 
+  /**
+   * 復習の予定の突き合わせ。**面ごとに last が新しいほうを残す**
+   * （カードの `mergeCardSrs` と同じ考え方。足し算にすると間隔が伸びすぎ、
+   *   古いほうを残すともう覚えた文が何度も出る）。
+   * 入れ物は `levels` と同じ { deckId: { itemId: ... } } なので、
+   * 消したセットの扱いも `mergeLevels` に合わせる。
+   */
+  function mergeDrillSrs(mine, theirs, tombs, liveDecks) {
+    var out = {}, deckId;
+
+    function take(src) {
+      for (var id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!isObject(src[id])) continue;
+        if (isDeleted(tombs, 'deck:' + id)) continue;   // セットごと消してある
+        if (liveDecks && !liveDecks[id]) continue;
+        var table = out[id] || (out[id] = {});
+        for (var itemId in src[id]) {
+          if (!Object.prototype.hasOwnProperty.call(src[id], itemId)) continue;
+          var it = src[id][itemId];
+          if (!isObject(it)) continue;
+          var cur = table[itemId];
+          // 同じ時刻なら手元を残す（take(mine) が先に入っている）
+          if (cur && (Number(cur.last) || 0) >= (Number(it.last) || 0)) continue;
+          table[itemId] = it;
+        }
+      }
+    }
+
+    take(mine);
+    take(theirs);
+
+    for (deckId in out) {
+      if (Object.prototype.hasOwnProperty.call(out, deckId) && !hasKeys(out[deckId])) delete out[deckId];
+    }
+    return out;
+  }
+
   function mergeStars(mine, theirs, tombs) {
     var out = {};
     function take(src) {
@@ -650,6 +692,7 @@
     collectDeckIds(mine.stars); collectDeckIds(theirs.stars);
     collectDeckIds(mine.edits); collectDeckIds(theirs.edits);
     collectDeckIds(mine.levels); collectDeckIds(theirs.levels);
+    collectDeckIds(mine.drillSrs); collectDeckIds(theirs.drillSrs);
 
     var cardIds = {};
     for (i = 0; i < cards.length; i++) cardIds[trim(cards[i].id)] = true;
@@ -662,6 +705,7 @@
       added: addedOut,
       edits: mergeEdits(mine.edits, theirs.edits, map, liveMap),
       levels: mergeLevels(mine.levels, theirs.levels, map, liveMap),
+      drillSrs: mergeDrillSrs(mine.drillSrs, theirs.drillSrs, map, liveMap),
       stars: mergeStars(mine.stars, theirs.stars, map),
       para: {
         genres: genres,
@@ -1569,7 +1613,7 @@
   /* --- 変更を見張る（app.js の保存に手を入れずに済ませる） --- */
 
   function fingerprint() {
-    return [LS_DECKS, LS_ADDED, LS_EDITS, LS_LEVELS, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
+    return [LS_DECKS, LS_ADDED, LS_EDITS, LS_LEVELS, LS_DRILL_SRS, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }

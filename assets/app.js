@@ -21,11 +21,21 @@
   // 文ごとに持ち、同期にも載せる（★と同じ扱い）。
   var LS_LEVELS = 'sunkan:levels';
 
+  // 復習の予定（忘却曲線）。文ごとに FSRS-5 の状態を持つ。計算は srs.js に任せる。
+  // 「どれくらい言えるか」を選んだときだけ動く（選ぶ操作をそのまま自己採点として使う）。
+  var LS_DRILL_SRS = 'sunkan:drill:srs';
+
   /** 選べる段階。0 は「まだ付けていない」 */
   var LEVELS = [0, 40, 80, 100];
 
+  /** 「どれくらい言えるか」を FSRS の 4 段階に読み替える表。
+   *  覚えた記録のために新しいボタンを足さない。いま選んでいるものが
+   *  そのまま自己採点になっているので、それを使う。
+   *  1=もう一度 2=むずかしい 3=できた 4=かんたん */
+  var LEVEL_GRADES = { 0: 1, 40: 2, 80: 3, 100: 4 };
+
   /** 絞り込みの選択肢。value は settings.levelFilter に入る */
-  var LEVEL_FILTERS = ['all', 'lt80', 'lt100', 'l0', 'l40', 'l80', 'l100'];
+  var LEVEL_FILTERS = ['all', 'due', 'lt80', 'lt100', 'l0', 'l40', 'l80', 'l100'];
 
   /** 付けた段階を 90 日より古い「外した記録」まで持ち続けない */
   var LEVEL_ZERO_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
@@ -36,7 +46,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 50 (2026-10-10)';
+  var APP_VERSION = 'build 51 (2026-10-12)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -576,6 +586,7 @@
     query: '',
     stars: {},        // { deckId: [itemId...] }
     levels: {},       // { deckId: { itemId: { v: 40|80|100, at } } } どれくらい言えるか
+    drillSrs: {},     // { deckId: { itemId: srs の状態 } } 次にいつ出すか
     added: {},        // { deckId: [{ja,en,note}...] } アプリ内で足した文
     edits: {},        // { deckId: { itemId: {ja,en,note} } } 収録の文への上書き
     settings: sanitizeSettings(readJSON(LS_SETTINGS)),
@@ -926,6 +937,91 @@
     saveLevels();
   }
 
+  /* ---- 復習の予定（忘却曲線）----------------------------------
+   * 中身の形と計算は srs.js が正。ここは保存と問い合わせだけを持つ。
+   * 「どれくらい言えるか」と同じ { deckId: { itemId: ... } } の形にしてあるので、
+   * セットを消すときも、文を直して id が変わったときも、★・段階とまったく同じ手順で済む。
+   */
+
+  function sanitizeDrillSrs(raw) {
+    var out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    // srs.js は index.html では app.js より後に読み込まれる（init は DOMContentLoaded
+    // なので間に合っているが、万一読めていなくても**記録は捨てない**）。
+    // 均せないときは中身をそのまま持つ。ここで {} を返すと、次の保存で
+    // ユーザーの予定がまるごと消える。
+    var srs = window.SUNKAN_SRS;
+    for (var deckId in raw) {
+      if (!Object.prototype.hasOwnProperty.call(raw, deckId)) continue;
+      var per = raw[deckId];
+      if (!per || typeof per !== 'object' || Array.isArray(per)) continue;
+      var keep = {}, any = false;
+      for (var itemId in per) {
+        if (!Object.prototype.hasOwnProperty.call(per, itemId)) continue;
+        if (!per[itemId] || typeof per[itemId] !== 'object') continue;
+        keep[itemId] = srs ? srs.sanitize(per[itemId]) : per[itemId];
+        any = true;
+      }
+      if (any) out[deckId] = keep;
+    }
+    return out;
+  }
+
+  function loadDrillSrs() {
+    state.drillSrs = sanitizeDrillSrs(readJSON(LS_DRILL_SRS));
+  }
+
+  function saveDrillSrs() {
+    return writeJSON(LS_DRILL_SRS, state.drillSrs);
+  }
+
+  /** この文の記録。まだ一度も採点していなければ null */
+  function srsOf(deckId, itemId) {
+    var per = state.drillSrs[deckId];
+    return (per && per[itemId]) || null;
+  }
+
+  function setSrs(deckId, itemId, next) {
+    if (!deckId || !itemId || !next) return;
+    var per = state.drillSrs[deckId] || (state.drillSrs[deckId] = {});
+    per[itemId] = next;
+    saveDrillSrs();
+  }
+
+  /**
+   * 「今日やるぶん」の締め＝今日の終わり。**「いま」で切らない。**
+   * 「もう一度」と採点した文は 10 分後に置き直されるので、「いま」で切ると
+   * たったいま「まだ」にした文が目の前から消える。カードのように 1 枚ずつ
+   * 出す画面なら並べ直しに見えるが、こちらは一覧なので消失に見える。
+   */
+  function dueCutoff() {
+    var d = new Date();
+    d.setHours(23, 59, 59, 999);
+    return d.getTime();
+  }
+
+  /** 今日やる番が来ているか。**一度も採点していない文は「やる番」** */
+  function isDueItem(deckId, itemId, cutoff) {
+    if (!window.SUNKAN_SRS) return true;
+    var rec = srsOf(deckId, itemId);
+    if (!rec) return true;
+    return window.SUNKAN_SRS.isDue(rec, cutoff || dueCutoff());
+  }
+
+  /**
+   * 「どれくらい言えるか」を選んだら、それを自己採点として次に出す日を決める。
+   * 戻り値は「次はいつか」の短い言い方。これを画面に出さないと、
+   * 予定が動いたのかどうかユーザーには分からない。
+   */
+  function recordReview(deckId, itemId, v) {
+    if (!window.SUNKAN_SRS || !deckId || !itemId) return '';
+    var g = LEVEL_GRADES[v] || 1;
+    var cur = srsOf(deckId, itemId) || window.SUNKAN_SRS.newState();
+    var next = window.SUNKAN_SRS.review(cur, g, { now: Date.now() });
+    setSrs(deckId, itemId, next);
+    return window.SUNKAN_SRS.humanInterval(next.intervalDays);
+  }
+
   /** 絞り込みに引っかかるか */
   function levelMatches(filter, v) {
     switch (filter) {
@@ -937,6 +1033,12 @@
       case 'l100':  return v === 100;
       default:      return true;
     }
+  }
+
+  /** 絞り込みに引っかかるか。**「今日やるぶん」だけは段階ではなく予定で決まる** */
+  function filterMatches(filter, deckId, itemId, v) {
+    if (filter === 'due') return isDueItem(deckId, itemId, dueCutoff());
+    return levelMatches(filter, v);
   }
 
   function saveStars() {
@@ -1306,6 +1408,10 @@
 
   var LEVEL_FILTER_LABELS = {
     all:   'ぜんぶ',
+    // 予定が来たもの＋まだ一度も採点していないもの。
+    // **短くしてある**。選んでいるものが欄にそのまま出るので、
+    // 「今日やるぶん 56」では iPhone 幅で切れる（件数のほうが大事）
+    due:   '今日',
     lt80:  '〜80%',     // 80% に届いていないものだけ（まだ・40%）
     lt100: '〜100%',    // 100% に届いていないものだけ
     l0:    'まだ',
@@ -1322,12 +1428,14 @@
   function renderLevelFilter() {
     if (!elLevelFilter) return;
     var deckId = currentDeckId();
-    var counts = { all: state.records.length, lt80: 0, lt100: 0, l0: 0, l40: 0, l80: 0, l100: 0 };
+    var counts = { all: state.records.length, due: 0, lt80: 0, lt100: 0, l0: 0, l40: 0, l80: 0, l100: 0 };
+    var cutoff = dueCutoff();
     for (var i = 0; i < state.records.length; i++) {
       var v = levelOf(deckId, state.records[i].id);
       if (v < 80) counts.lt80++;
       if (v < 100) counts.lt100++;
       counts['l' + v]++;
+      if (isDueItem(deckId, state.records[i].id, cutoff)) counts.due++;
     }
 
     var keep = state.settings.levelFilter;
@@ -1364,7 +1472,7 @@
         ok = isStarred(deckId, rec.id);
       }
       if (ok && levelFilter !== 'all') {
-        ok = levelMatches(levelFilter, levelOf(deckId, rec.id));
+        ok = filterMatches(levelFilter, deckId, rec.id, levelOf(deckId, rec.id));
       }
       rec.el.hidden = !ok;
       if (ok) visible++;
@@ -1827,6 +1935,7 @@
       var oldId = rec.id;
       var wasStarred = isStarred(deckId, oldId);
       var hadLevel = levelOf(deckId, oldId);
+      var hadSrs = srsOf(deckId, oldId);
       if (!updateAddedSentence(deckId, rec.ja, rec.en, ja, en, note)) {
         setEditStatus('編集する文が見つかりません。', true);
         return;
@@ -1843,6 +1952,14 @@
         setLevel(deckId, newId, hadLevel);
         if (state.byId[newId]) renderLevel(state.byId[newId]);
         renderLevelFilter();
+      }
+      // 復習の予定も id に付いている。付け替えないと、直した文だけ予定が消える
+      if (hadSrs && newId && newId !== oldId) {
+        setSrs(deckId, newId, hadSrs);
+        if (state.drillSrs[deckId] && state.drillSrs[deckId][oldId]) {
+          delete state.drillSrs[deckId][oldId];
+          saveDrillSrs();
+        }
       }
     } else if (ja === rec.srcJa && en === rec.srcEn && note === rec.srcNote) {
       // 元と同じ中身に戻した＝上書きを持つ意味がない。「元に戻す」と同じ扱いにする
@@ -2337,7 +2454,20 @@
       rec.starEl.setAttribute('aria-pressed', on ? 'true' : 'false');
       rec.starEl.setAttribute('aria-label', on ? '「もう一度」から外す' : '「もう一度」に入れる');
     }
+    if (on) {
+      // ↻「もう一度」が、この画面での「言えなかった」。
+      // 段階の欄は既定が「まだ」なので、**まだ の行では「まだ」を選べない**
+      //（同じ値を選び直すことになり、change が起きない）。
+      // 言えなかったことを記録できる操作はここしか無いので、ここで採点する。
+      // 知らせは出さない。↻ の答えはいつも「今日」で、言うことが無い。
+      recordReview(deckId, rec.id, 0);
+      renderLevelFilter();   // 「今日やるぶん」の件数は増える
+    }
     if (state.settings.starredOnly) applyFilter();
+    // ふだんは「今日やるぶん」で絞っていても見た目は変わらない（今日の文を
+    // 「もう一度」にしても今日のままなので）。効くのは日付が変わる直前だけ
+    // ——23:55 に押すと 10 分後は明日になり、その行は今日のぶんから外れる。
+    else if (state.settings.levelFilter === 'due') applyFilter();
   }
 
   /**
@@ -2350,15 +2480,22 @@
     if (LEVELS.indexOf(v) < 0) v = 0;
     if (v === levelOf(deckId, rec.id)) return;
     setLevel(deckId, rec.id, v);
+    // 選んだことがそのまま自己採点。次にいつ出すかはここで決まる
+    var when = recordReview(deckId, rec.id, v);
     renderLevel(rec);
     renderLevelFilter();
 
     var filter = state.settings.levelFilter;
+    var stays = true;
     if (filter !== 'all') {
-      var stays = levelMatches(filter, v);
+      stays = filterMatches(filter, deckId, rec.id, v);
       applyFilter();
-      if (!stays) flashStatus((v ? v + '% にしました。' : '印を外しました。') + whyHidden());
     }
+    // 予定が動いたことは必ず出す。出さないと、何が起きたのか分からないまま
+    // 間隔だけが伸びていく（忘却曲線がユーザーから見えなくなる）
+    flashStatus((v ? v + '% にしました。' : 'まだ にしました。')
+      + (when ? '次は ' + when + '。' : '')
+      + (stays ? '' : whyHidden()));
   }
 
   /* ============================================================
@@ -2713,6 +2850,10 @@
     if (state.levels[deckId]) {
       delete state.levels[deckId];
       saveLevels();
+    }
+    if (state.drillSrs[deckId]) {
+      delete state.drillSrs[deckId];
+      saveDrillSrs();
     }
 
     // このセットに足した文も、書き換えた文の上書きも一緒に片付ける
@@ -3229,6 +3370,7 @@
     rebuildKeepingView(function () {
       loadStars();
       loadLevels();
+      loadDrillSrs();
       loadAdded();
       loadEdits();
       state.userDecks = loadUserDecks();
@@ -3299,6 +3441,7 @@
     initSpeech();
     loadStars();
     loadLevels();
+    loadDrillSrs();
     loadAdded();
     loadEdits();
 
