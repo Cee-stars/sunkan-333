@@ -11,7 +11,7 @@
 | `assets/data.js` | B | 例文データ `window.SUNKAN_DECKS` |
 | `assets/app.js` | C | 瞬間英作文の動作すべて（描画・隠す/表示・検索・取り込み・保存） |
 | `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え（3 モードぶん） |
-| `assets/srs.js` | I | 忘却曲線（FSRS-5）。予定の計算だけ。DOM も localStorage も触らない |
+| `assets/srs.js` | I | 忘却曲線（FSRS-5）。予定の計算だけ。DOM も localStorage も触らない。**カードと瞬間英作文の両方**が使う |
 | `assets/cards.js` | J | カードの動作すべて（3 つの面・めくり・一覧・設定） |
 | `assets/import.js` | K | 取り込み（PDF・テキスト・表・AI への指示）。**カードと瞬間英作文の両方**が通る |
 | `assets/media.js` | L | 写真（IndexedDB）。縮めて詰めるのもここ。画面は触らない |
@@ -22,6 +22,8 @@
 | `assets/speech.js` | G | 読み上げ（Web Speech API の端末ごとの癖をここに閉じ込める） |
 | `assets/update.js` | H | 版ずれの検知と、溜まった古い一式を捨てて読み直す道 |
 | `version.json` | 共通 | 公開されている版。`APP_VERSION` と同じ文字列を入れる |
+| `tests/srstest.mjs` | 共通 | 復習の予定の確かめ（Playwright）。**390px と 1180px の両方**で走る。`python3 -m http.server 8599` を上げてから `node tests/srstest.mjs` |
+| `tests/gaptest.mjs` | 共通 | つまずいた所の確かめ。同じ上げ方で `node tests/gaptest.mjs` |
 
 `app.js` と `paraphrase.js` と `cards.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
 `<html data-mode>` と下の `window.SUNKAN_*` だけで、`app.js` は `data-mode` が `drill` 以外の間
@@ -45,6 +47,14 @@
 | `copyText(text, done)` | クリップボードへ。非同期なので結果は `done(ok)` で返す |
 | `reload()` | localStorage を読み直して表を作り直す。同期が中身を入れ替えたあとに呼ぶ。開いていたセットは、まだ在ればそのまま |
 
+### つまずいた所を、語の直タップで取らない理由
+
+英語は `.row-main`（**1 枚のボタン**）の中にある。そこを押すと行が開閉するので、
+語をそのままタップで選ばせると「閉じようとして印が付く」ことになる。
+だから **別のダイアログ（`#gap-dialog`）に出す**。`△` は `.row-tools` の中に置き、
+🔈・✎ と同じく**開いた行とカーソル行だけ**に出す（答えを見てから付けるものなので、
+↻ や % のように常時出す必要がない。常時出すと行の右がふさがる）。
+
 ### `window.SUNKAN_PARA`（paraphrase.js が開けている口）
 
 | 関数 | 内容 |
@@ -55,6 +65,9 @@
 
 忘却曲線の計算だけを持つ。**DOM も localStorage も触らない純粋な関数**なので、
 画面なしで確かめられる。FSRS-5 の既定パラメータを使う（自分の記録に合わせた最適化はまだしない）。
+
+**カード（`cards.js`）と瞬間英作文（`app.js`）の両方**が使う。保存先は別々
+（`sunkan:cards:srs` と `sunkan:drill:srs`）で、計算だけをここに寄せている。
 
 1 枚 1 面の記憶は `{s, d, due, last, reps, lapses, streak, step, state}`。
 `state` は `new` / `learning` / `review` / `relearning`。
@@ -609,6 +622,8 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
   added: { /* sunkan:added と同じ形 */ },
   edits: { /* sunkan:edits と同じ形 */ },
   levels: { /* sunkan:levels と同じ形 */ },
+  drillSrs: { /* sunkan:drill:srs と同じ形 */ },
+  gaps: { /* sunkan:gaps と同じ形 */ },
   stars: { /* sunkan:stars と同じ形 */ },
   para:  { genres: [...], cards: [...], stars: [...] },
   tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
@@ -680,6 +695,17 @@ JS が古いまま当たっても空の欄にならないようにするため�
 どの絞り込みを選んでいるか（`settings.levelFilter`）は**同期しない**。隠し方や文字サイズと
 同じ、端末ごとの好み。
 
+### 瞬間英作文の復習の予定（`drillSrs`）の突き合わせ
+
+`sunkan:cards:srs` と同じ考え方で、**1 件ごとに `last`（最後に答えた時刻）が新しいほうを残す**
+（`mergeDrillSrs`）。足し算にすると間隔が伸びすぎ、古いほうを残すともう覚えた文が何度も出る。
+消したセットのぶんを落とすところは `mergeLevels` に合わせてある（入れ物の形が同じため）。
+
+### つまずいた所（`gaps`）の突き合わせ
+
+**1 件ごとに `at` が新しいほうを採る**（`mergeGaps`。`mergeLevels` と同じ考え方）。
+足し算にすると、片方で外した語がもう片方から戻ってきて、いつまでも消せなくなる。
+
 ### カードの覚えた記録の突き合わせ
 
 `sunkan:cards:srs` だけは、足し算でも「手元が勝ち」でもなく、
@@ -747,6 +773,8 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:decks` | ユーザーが取り込んだ自作デッキの配列（`data.js` と同じ形） |
 | `sunkan:stars` | `{ [deckId]: string[] }` … 「もう一度」を付けた項目の id。**画面では ↻「もう一度」**（間違えた文に付けて、言えるようになったら外す）。中の名前が `star` のままなのは、保存の鍵も同期の記録（`star:` / `parastar:` / `cardstar:`）もそれで動いているから。変えると今まで付けたぶんが消える |
 | `sunkan:levels` | `{ [deckId]: { [itemId]: {v,at} } }` … どれくらい言えるか。`v` は 40/80/100、**0 は「外した」印**。`at` は付けた時刻 |
+| `sunkan:drill:srs` | `{ [deckId]: { [itemId]: srs の状態 } }` … 瞬間英作文の復習の予定。中身の形は `srs.js` の `newState()` が正。`levels` と同じ入れ物の形にしてあるので、セットを消すときも文を直して id が変わったときも、★・段階とまったく同じ手順で片付く |
+| `sunkan:gaps` | `{ [deckId]: { [itemId]: {w,at} } }` … つまずいた所。`w` は**均した語**（小文字・前後の記号を落とす）の配列。`"Brother." と "brother" を別に数えると集計が意味を持たない`ため。**空配列は「外した」印**として残す（同期で「外した」を伝えるのに要る） |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
 | `sunkan:mode` | `drill` / `para` / `cards` / `shadow` … 最後に開いていたモード |
