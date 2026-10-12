@@ -22,6 +22,13 @@
   var LS_LEVELS = 'sunkan:levels'; // どれくらい言えるか（40 / 80 / 100。0 は外した印）
   var LS_DRILL_SRS = 'sunkan:drill:srs'; // 瞬間英作文の復習の予定。落とすと忘却曲線が消える
   var LS_GAPS = 'sunkan:gaps';           // つまずいた所（言えなかった語）
+
+  // フレーズ（かたまりを言う練習）。セットは持たず、場面（scene）で分ける。
+  // `sunkan:phrase:ui` は端末ごとの好みなので**送らない**
+  var LS_PHRASE_ITEMS = 'sunkan:phrase:items';
+  var LS_PHRASE_STARS = 'sunkan:phrase:stars';
+  var LS_PHRASE_LEVELS = 'sunkan:phrase:levels';
+  var LS_PHRASE_SRS = 'sunkan:phrase:srs';
   var LS_STARS = 'sunkan:stars';
   var LS_PARA_GENRES = 'sunkan:para:genres';
   var LS_PARA_CARDS = 'sunkan:para:cards';
@@ -242,6 +249,12 @@
         decks: isArray(readJSON(LS_SHADOW_DECKS, [])) ? readJSON(LS_SHADOW_DECKS, []) : [],
         items: isArray(readJSON(LS_SHADOW_ITEMS, [])) ? readJSON(LS_SHADOW_ITEMS, []) : []
       },
+      phrase: {
+        items: isArray(readJSON(LS_PHRASE_ITEMS, [])) ? readJSON(LS_PHRASE_ITEMS, []) : [],
+        stars: isArray(readJSON(LS_PHRASE_STARS, [])) ? readJSON(LS_PHRASE_STARS, []) : [],
+        levels: isObject(readJSON(LS_PHRASE_LEVELS, {})) ? readJSON(LS_PHRASE_LEVELS, {}) : {},
+        srs: isObject(readJSON(LS_PHRASE_SRS, {})) ? readJSON(LS_PHRASE_SRS, {}) : {}
+      },
       inbox: isArray(readJSON(LS_INBOX, [])) ? readJSON(LS_INBOX, []) : [],
       tombs: readTombs()
     };
@@ -262,6 +275,17 @@
     };
   }
 
+  /** 古い版が書き出したぶんには phrase が無い。読むときはここを通して形を揃える */
+  function phrasePart(snap) {
+    var c = (snap && isObject(snap.phrase)) ? snap.phrase : {};
+    return {
+      items: isArray(c.items) ? c.items : [],
+      stars: isArray(c.stars) ? c.stars : [],
+      levels: isObject(c.levels) ? c.levels : {},
+      srs: isObject(c.srs) ? c.srs : {}
+    };
+  }
+
   /** 古い版が書き出したぶんには cards が無い。読むときはここを通して形を揃える */
   function cardsPart(snap) {
     var c = (snap && isObject(snap.cards)) ? snap.cards : {};
@@ -278,7 +302,7 @@
   // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
   // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
   // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'media', 'inbox', 'tombs', 'handed'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'phrase', 'media', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -320,6 +344,7 @@
       // 届いたぶんが黙って落ちる（実際それでカードが復元できなかった）。
       cards: cardsPart(d),
       shadow: shadowPart(d),
+      phrase: phrasePart(d),
       // 写真の中身。バックアップにだけ入っている（同期には載せない）
       media: isObject(d.media) ? d.media : {},
       inbox: isArray(d.inbox) ? d.inbox : [],
@@ -336,7 +361,7 @@
   function apply(merged) {
     // failed … この端末に書けなかったもの。保存領域がいっぱいだと起きる。
     // 黙って通すと「同期しました」と言いながら相手のぶんがどこにも無い、になる
-    var hit = { drill: false, para: false, cards: false, shadow: false, inbox: false, failed: [] };
+    var hit = { drill: false, para: false, cards: false, shadow: false, phrase: false, inbox: false, failed: [] };
 
     function put(key, value, empty, group, label) {
       var next = JSON.stringify(value);
@@ -364,6 +389,11 @@
     var ms = shadowPart(merged);
     put(LS_SHADOW_DECKS, ms.decks, [], 'shadow', 'シャドーイングのセット');
     put(LS_SHADOW_ITEMS, ms.items, [], 'shadow', 'シャドーイングの文');
+    var mp = phrasePart(merged);
+    put(LS_PHRASE_ITEMS, mp.items, [], 'phrase', 'フレーズ');
+    put(LS_PHRASE_STARS, mp.stars, [], 'phrase', 'フレーズの「もう一度」');
+    put(LS_PHRASE_LEVELS, mp.levels, {}, 'phrase', 'フレーズのどれくらい言えるか');
+    put(LS_PHRASE_SRS, mp.srs, {}, 'phrase', 'フレーズの復習の予定');
     put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
@@ -600,6 +630,55 @@
     return out;
   }
 
+  /**
+   * フレーズの段階（`{itemId: {v,at}}`）。**`at` が新しいほうを採る**。
+   * 瞬間英作文の `mergeLevels` と同じ考え方だが、フレーズはセットを持たないので
+   * 入れ物が 1 段ひらたい（`{deckId: {itemId: …}}` ではない）。
+   */
+  function mergePhraseLevels(mine, theirs, liveIds) {
+    var out = {};
+    function take(src) {
+      for (var id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!liveIds[id]) continue;             // 消えたフレーズの印は連れて戻さない
+        var it = src[id];
+        if (!isObject(it)) continue;
+        var v = Number(it.v);
+        if (v !== 0 && v !== 40 && v !== 80 && v !== 100) continue;
+        var at = Number(it.at) || 0;
+        var cur = out[id];
+        if (cur && (cur.at || 0) >= at) continue;
+        out[id] = { v: v, at: at };
+      }
+    }
+    take(mine);
+    take(theirs);
+    return out;
+  }
+
+  /**
+   * フレーズの復習の予定（`{itemId: srs}`）。**`last` が新しいほうを残す**
+   *（カードの `mergeCardSrs` と同じ考え方。ただし面を持たないぶん 1 段浅い）。
+   */
+  function mergePhraseSrs(mine, theirs, liveIds) {
+    var out = {}, id;
+    function take(src) {
+      for (id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!liveIds[id]) continue;
+        var it = src[id];
+        if (!isObject(it)) continue;
+        var cur = out[id];
+        // 同じ時刻なら手元を残す（take(mine) が先に入っている）
+        if (cur && (Number(cur.last) || 0) >= (Number(it.last) || 0)) continue;
+        out[id] = it;
+      }
+    }
+    take(mine);
+    take(theirs);
+    return out;
+  }
+
   function mergeStars(mine, theirs, tombs) {
     var out = {};
     function take(src) {
@@ -771,6 +850,20 @@
           })
         };
       })(),
+      phrase: (function () {
+        var mp = phrasePart(mine), tp = phrasePart(theirs);
+        var items = mergeById(mp.items, tp.items, map, 'phraseitem:');
+        var liveIds = {}, n;
+        for (n = 0; n < items.length; n++) liveIds[trim(items[n].id)] = true;
+        return {
+          items: items,
+          stars: mergeStrings(mp.stars, tp.stars, function (id) {
+            return !!liveIds[id] && !isDeleted(map, 'phrasestar:' + id);
+          }),
+          levels: mergePhraseLevels(mp.levels, tp.levels, liveIds),
+          srs: mergePhraseSrs(mp.srs, tp.srs, liveIds)
+        };
+      })(),
       shadow: (function () {
         var mi = shadowPart(mine), ti = shadowPart(theirs);
         var sDecks = mergeById(mi.decks, ti.decks, map, 'shadowdeck:');
@@ -871,7 +964,7 @@
     var hit = apply(merged);
     refreshViews(hit);
     state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
-    return hit.drill || hit.para || hit.cards || hit.shadow || hit.inbox;
+    return hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
   }
 
   function handoffLink() {
@@ -1152,7 +1245,8 @@
         name = deckNameById(data, id);
         if (!best || n > best.n) best = { name: name, n: n };
       }
-    } else if (key === 'para') {
+    } else if (key === 'para' || key === 'phrase') {
+      // セット名を持たないので「うち『○○』が」の内訳は出せない。総量だけ出す
       return null;
     }
     return (best && best.n > 1024) ? best : null;
@@ -1483,6 +1577,8 @@
     if (hit.cards && cards && typeof cards.reload === 'function') cards.reload();
     var shadow = window.SUNKAN_SHADOW;
     if (hit.shadow && shadow && typeof shadow.reload === 'function') shadow.reload();
+    var phrase = window.SUNKAN_PHRASE;
+    if (hit.phrase && phrase && typeof phrase.reload === 'function') phrase.reload();
     if (hit.inbox && inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
@@ -1521,7 +1617,7 @@
         : '';
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.inbox;
+      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
       refreshViews(hit);
       // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
       // 「同期しました」で流すと、届いていないのに届いた気になる
@@ -1655,7 +1751,8 @@
   /* --- 変更を見張る（app.js の保存に手を入れずに済ませる） --- */
 
   function fingerprint() {
-    return [LS_DECKS, LS_ADDED, LS_EDITS, LS_LEVELS, LS_DRILL_SRS, LS_GAPS, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
+    return [LS_DECKS, LS_ADDED, LS_EDITS, LS_LEVELS, LS_DRILL_SRS, LS_GAPS, LS_STARS, LS_PHRASE_ITEMS, LS_PHRASE_STARS,
+            LS_PHRASE_LEVELS, LS_PHRASE_SRS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }
