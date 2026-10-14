@@ -26,6 +26,8 @@
 | `tests/srstest.mjs` | 共通 | 復習の予定の確かめ（Playwright）。**390px と 1180px の両方**で走る。`python3 -m http.server 8599` を上げてから `node tests/srstest.mjs` |
 | `tests/gaptest.mjs` | 共通 | つまずいた所の確かめ。同じ上げ方で `node tests/gaptest.mjs` |
 | `tests/phrasetest.mjs` | 共通 | フレーズの確かめ（足す・ファイルから読む・同期）。`node tests/phrasetest.mjs` |
+| `tests/fake-worker.mjs` | 共通 | 確かめ用の置き場。**`cloudflare/worker.mjs` をそのまま**動かす（D1 の代わりにその場かぎりの SQLite）。`node tests/fake-worker.mjs 8600` |
+| `tests/synctest.mjs` | 共通 | 2 台が揃うかの確かめ。アプリと置き場の両方を上げてから `node tests/synctest.mjs` |
 | `cloudflare/worker.mjs` | 共通 | 同期の置き場（Cloudflare Worker）。**アプリの一式ではない**ので `index.html` からは読まない。管理画面に貼って使う（npm もビルドも要らない）。中身は解釈せず、合言葉ごとに JSON を 1 つ預かって返すだけ |
 
 `app.js` と `paraphrase.js` と `cards.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
@@ -680,6 +682,28 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 `sunkan:voice`（入っている声が端末ごとに違うので、揃えても意味がない）、
 `sunkan:mode`、`sunkan:para:ui`、収録例文（`data.js` にあるので送る意味がない）。
 
+### 同期の道は 2 つある
+
+`ready()` は**どちらかが設定されていれば真**。`sync()` は
+**置き場（Cloudflare）が設定してあればそちらを使う**（トークンを端末に持たせない道を優先）。
+
+| | 持たせるもの | My Dictionary の受け渡し |
+| --- | --- | --- |
+| 置き場（`cfSync`） | 置き場の URL ＋ 合言葉 | **使えない** |
+| GitHub（`sync` の後半） | PAT ＋ Gist ID | 使える |
+
+**Gist を消してはいけない。** 同じ Gist の `sunkan-inbox.json` が
+My Dictionary からの受け渡し口を兼ねている。置き場はその代わりではなく**追加**。
+
+`pairCode()` / つなぐリンク / `whenText()` の保存先表示は **GitHub 専用**なので
+`gistReady()` で見る。ここを `ready()` にすると、置き場だけ設定した端末で
+トークンの無いリンクを作ってしまう。
+
+置き場との往復は **取る → 合わせる → 返す**。返すときに「取ったときから
+変わっていないか」を見て、先を越されていたら **取り直して合わせ直す**（`cfRound`）。
+これが無いと、2 台がほぼ同時に同期したとき、あとから書いたほうが相手のぶんを消す。
+合言葉の形（`CF_ROOM_OK`）は `cloudflare/worker.mjs` の `CODE_OK` と**必ず同じにする**。
+
 ### つなぐリンク（`#pair=`）
 
 ホーム画面のアプリにはアドレス欄が無く、端末ごとにトークンを打ち込ませるのは現実的でない。
@@ -828,6 +852,8 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:para:stars` | ★を付けたパラフレの id `string[]` |
 | `sunkan:para:ui` | `{ genreId, mask, sort, starredOnly }` … 表示の状態（シャッフルは持ち越さない） |
 | `sunkan:inbox` | 別アプリから届いた取り込み待ちのカード（上の「受信箱」を参照）。書くのは送り手、消すのは `inbox.js` |
+| `sunkan:sync:cfUrl` | 自分の置き場（Cloudflare Worker）の URL。**同期しない** |
+| `sunkan:sync:cfRoom` | 合言葉。**この仕組みの唯一の鍵**なので、同期にもバックアップにも載せない |
 | `sunkan:sync:token` | GitHub のアクセストークン。**この端末の中だけ**。GitHub 以外へは送らない |
 | `sunkan:sync:gistId` | 置き場の Gist ID |
 | `sunkan:sync:auto` | `'1'` / `'0'` … 自動で同期するか |

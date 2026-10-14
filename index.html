@@ -11,12 +11,12 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 53 (2026-10-12)">
+<meta name="sunkan-build" content="build 54 (2026-10-14)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=53">
+<link rel="stylesheet" href="assets/style.css?v=54">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -1089,6 +1089,39 @@ MEMO: take after = 〜に似ている</pre>
 
     <hr class="dialog-sep">
 
+    <h3 class="dialog-subtitle">放っておいても揃うようにする（自分の置き場を使う）</h3>
+    <p class="dialog-hint">
+      <strong>おすすめはこちらです。</strong>端末に持たせるのは <strong>合言葉だけ</strong>で、
+      GitHub のトークンは要りません。万一 合言葉 が漏れても、見られるのはこのアプリの中身だけで、
+      ほかのサービスには影響しません。置き場は Cloudflare の無料枠で足ります
+      （使いすぎても勝手に課金はされず、止まるだけです）。
+    </p>
+
+    <label class="field">
+      <span class="field-label">置き場の URL</span>
+      <input type="text" id="sync-cf-url" class="field-input" autocomplete="off"
+        spellcheck="false" placeholder="https://〇〇.workers.dev">
+    </label>
+
+    <label class="field">
+      <span class="field-label">合言葉</span>
+      <input type="text" id="sync-cf-room" class="field-input" autocomplete="off"
+        spellcheck="false" placeholder="まだ無ければ「合言葉を作る」を押してください">
+    </label>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-sync-cf-make" class="btn btn--ghost">合言葉を作る</button>
+      <button type="button" id="btn-sync-cf-copy" class="btn btn--ghost">合言葉をコピー</button>
+    </div>
+
+    <p class="dialog-hint">
+      <strong>2 台目には、同じ URL と同じ合言葉を入れるだけ</strong>です。
+      合言葉は AirDrop か自分宛てのメモで渡してください
+      （<strong>人に見える所に貼らないこと</strong>。これが唯一の鍵です）。
+    </p>
+
+    <hr class="dialog-sep">
+
     <h3 class="dialog-subtitle">放っておいても揃うようにする（GitHub を使う）</h3>
     <p class="dialog-hint">
       こちらは <strong>最初に一度だけ登録が要ります</strong>が、そのあとは開くたびに自動で揃います。
@@ -1462,12 +1495,12 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=53"></script>
-<script src="assets/data.js?v=53"></script>
-<script src="assets/app.js?v=53"></script>
-<script src="assets/paraphrase.js?v=53"></script>
+<script src="assets/speech.js?v=54"></script>
+<script src="assets/data.js?v=54"></script>
+<script src="assets/app.js?v=54"></script>
+<script src="assets/paraphrase.js?v=54"></script>
 <!-- フレーズの本体。?v= は付けない（版は最後にまとめてそろえる） -->
-<script src="assets/phrase.js?v=53"></script>
+<script src="assets/phrase.js?v=54"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1558,14 +1591,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=53"></script>
-<script src="assets/srs.js?v=53"></script>
-<script src="assets/cards.js?v=53"></script>
-<script src="assets/shadow.js?v=53"></script>
-<script src="assets/import.js?v=53"></script>
-<script src="assets/inbox.js?v=53"></script>
-<script src="assets/sync.js?v=53"></script>
-<script src="assets/update.js?v=53"></script>
+<script src="assets/media.js?v=54"></script>
+<script src="assets/srs.js?v=54"></script>
+<script src="assets/cards.js?v=54"></script>
+<script src="assets/shadow.js?v=54"></script>
+<script src="assets/import.js?v=54"></script>
+<script src="assets/inbox.js?v=54"></script>
+<script src="assets/sync.js?v=54"></script>
+<script src="assets/update.js?v=54"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
