@@ -39,6 +39,7 @@ jobs:
           node --check assets/update.js
           node --check assets/sync.js
           node --check sw.js
+          node --check cloudflare/worker.mjs
           # assets/vendor/ は外から持ってきたものなので見ない（手を入れない約束）
 
       - name: Check the build number matches everywhere
