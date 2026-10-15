@@ -76,7 +76,11 @@
     exja: 'exJa', exjp: 'exJa', translation: 'exJa',
     '訳': 'exJa', '例文訳': 'exJa', '例文の訳': 'exJa', '和訳': 'exJa',
     memo: 'note', note: 'note',
-    'メモ': 'note', '注': 'note', '補足': 'note'
+    'メモ': 'note', '注': 'note', '補足': 'note',
+    // フレーズだけが使う。カードの取り込みでは当たらない見出し語なので、
+    // ここに足しても既存の読み方は変わらない
+    scene: 'scene', situation: 'scene',
+    '場面': 'scene', 'シーン': 'scene', '場所': 'scene'
   };
 
   /** 日本語（かな・カナ・漢字・句読点） */
@@ -270,7 +274,7 @@
       if (key) {
         // 区切りが抜けていても、EN が 2 回来たら次の 1 枚と見なす
         if (key === 'en' && cur && trim(cur.en)) flush();
-        if (!cur) cur = { en: '', ja: '', exEn: '', exJa: '', note: '' };
+        if (!cur) cur = { en: '', ja: '', exEn: '', exJa: '', note: '', scene: '' };
         cur[key] = trim(hit[2]);
         lastKey = key;
         continue;
@@ -893,6 +897,275 @@
    * 7. 外に出す口（app.js / cards.js / 試すため）
    * ========================================================== */
 
+  /* ============================================================
+   * 7. フレーズのがわ
+   *
+   * **表の列の並びが瞬間英作文と同じ「日本語が先」**。カードの `parseTable`
+   * （英語が先）をそのまま使うと日本語と英語が入れ替わる。CONTRACT に
+   * 書いてある落とし穴そのものなので、表は自分で解く。
+   *
+   * 解いた中身は保存しない。足すのは `SUNKAN_PHRASE.addPhrases` 越しに限る。
+   * ========================================================== */
+
+  var PHRASE_PROMPT = [
+    '添付のファイルから、英会話で使う「フレーズ（決まった言い回し）」を抜き出して、',
+    '下の形だけで出力してください。前置きも説明も付けないでください。',
+    '',
+    'JA: 日本語の意味（短く、話し言葉で）',
+    'EN: 英語のフレーズ（文より短いかたまり。ピリオドは付けてよい）',
+    '場面: どんなときに使うか（電話 / 食事 / 買い物 / 仕事 など短く）',
+    'メモ: 注意点があれば（無ければ行ごと省く）',
+    '---',
+    '',
+    '・1 つのフレーズごとに --- で区切ってください',
+    '・JA と EN は必ず入れてください（どちらかが無いものは出さないでください）',
+    '・長い説明文は入れないでください'
+  ].join('\n');
+
+  var PHRASE_TEMPLATE = [
+    '# この形で書けば、そのまま読み込めます。',
+    '# 「場面」と「メモ」は省いてもかまいません。',
+    '',
+    'JA: ちょっと待って',
+    'EN: Hold on a second.',
+    '場面: 電話',
+    '---',
+    'JA: お会計をお願いします',
+    'EN: Could I get the check?',
+    '場面: 食事',
+    '---',
+    'JA: それ、いいですね',
+    'EN: That sounds good.',
+    '場面: ぜんぶ',
+    'メモ: 相づちにも使える',
+    '',
+    '# 表（タブ区切り / カンマ区切り）でも読み込めます。',
+    '# 列は左から 日本語 / 英語 / 場面 / メモ です。',
+    '# ※ カードの表とは1列目が逆（あちらは英語が先）なので注意してください。'
+  ].join('\n');
+
+  /** 見出し付きで書かれたものを、フレーズの形に写す */
+  function toPhraseItems(items) {
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var ja = trim(it.ja);
+      var en = trim(it.en);
+      if (!ja || !en) continue;
+      // 例文が付いていたら捨てずにメモへ回す。せっかく書いたものを黙って落とさない
+      var note = trim(it.note);
+      var ex = trim(it.exEn);
+      if (ex) note = note ? note + ' / ' + ex : ex;
+      out.push({ ja: ja, en: en, scene: trim(it.scene), note: note });
+    }
+    return out;
+  }
+
+  /**
+   * 表を読む。列は左から **日本語 / 英語 / 場面 / メモ**。
+   * カードの `parseTable` は英語が先なので、こちらでは使えない。
+   */
+  function parsePhraseTable(text) {
+    var got = splitTable(text);
+    var rows = got.rows || [];
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i] || [];
+      var ja = trim(row[0]);
+      var en = trim(row[1]);
+      if (!ja || !en) continue;
+      // 見出し行を外す
+      if (i === 0 && /^(ja|japanese|日本語|意味)$/i.test(ja)) continue;
+      out.push({ ja: ja, en: en, scene: trim(row[2]), note: trim(row[3]) });
+      if (out.length >= MAX_CARDS) break;
+    }
+    return out;
+  }
+
+  /** 書き方を見分けて読む */
+  function parsePhraseAny(text) {
+    if (looksBlock(text)) return toPhraseItems(parseBlocks(text).items);
+    var table = parsePhraseTable(text);
+    if (table.length) return table;
+    return toPhraseItems(parseBlocks(text).items);
+  }
+
+  function phraseAPI() {
+    var api = window.SUNKAN_PHRASE;
+    return (api && typeof api.addPhrases === 'function') ? api : null;
+  }
+
+  var elPhDialog = $('phrase-import-dialog');
+  var elPhOpen = $('btn-phrase-import');
+  var elPhScene = $('phrase-import-scene');
+  var elPhText = $('phrase-import-text');
+  var elPhPreview = $('phrase-import-preview');
+  var elPhSave = $('btn-phrase-import-save');
+  var elPhCancel = $('btn-phrase-import-cancel');
+  var elPhFileBtn = $('btn-phrase-file');
+  var elPhFile = $('phrase-file');
+  var elPhFileStatus = $('phrase-file-status');
+  var elPhTemplate = $('btn-phrase-template');
+  var elPhPrompt = $('btn-phrase-prompt');
+  var elPhPromptStatus = $('phrase-prompt-status');
+  var phPreviewTimer = null;
+
+  function openPhraseDialog() {
+    if (!elPhDialog) return;
+    if (elPhPreview) elPhPreview.textContent = '';
+    if (elPhFileStatus) elPhFileStatus.textContent = '';
+    if (elPhPromptStatus) elPhPromptStatus.textContent = '';
+    if (typeof elPhDialog.showModal === 'function') {
+      if (!elPhDialog.open) elPhDialog.showModal();
+    } else {
+      elPhDialog.setAttribute('open', 'open');
+    }
+    // いちばん上から見せる。中ほどに焦点を当てると、そこまで送られた状態で開く
+    elPhDialog.scrollTop = 0;
+  }
+
+  function closePhraseDialog() {
+    if (!elPhDialog) return;
+    if (typeof elPhDialog.close === 'function') {
+      if (elPhDialog.open) elPhDialog.close();
+    } else {
+      elPhDialog.removeAttribute('open');
+    }
+  }
+
+  /** 何件になるかを押す前に見せる。押してから分かるのがいちばん困る */
+  function phrasePreview() {
+    if (!elPhPreview) return;
+    var text = str(elPhText && elPhText.value);
+    if (!trim(text)) { elPhPreview.textContent = ''; return; }
+    var items = parsePhraseAny(text);
+    if (!items.length) {
+      elPhPreview.textContent = 'フレーズとして読めませんでした。JA: EN: の書き方か、'
+        + '日本語 / 英語 の 2 列以上の表にしてください。';
+      return;
+    }
+    var withScene = 0;
+    for (var i = 0; i < items.length; i++) { if (items[i].scene) withScene++; }
+    var fallback = trim(elPhScene && elPhScene.value);
+    elPhPreview.textContent = items.length + ' 件ぶん読めました'
+      + '（うち場面つき ' + withScene + ' 件）。'
+      + (withScene < items.length
+          ? (fallback
+              ? '残りは「' + fallback + '」に入れます。'
+              : '残りは場面なしで入ります（上の欄に書くと、まとめて付けられます）。')
+          : '');
+  }
+
+  function savePhrases() {
+    var api = phraseAPI();
+    if (!api) {
+      if (elPhPreview) elPhPreview.textContent = 'フレーズの画面が読み込めていません。';
+      return;
+    }
+    var items = parsePhraseAny(str(elPhText && elPhText.value));
+    if (!items.length) {
+      if (elPhPreview) elPhPreview.textContent = '読み込めるフレーズがありませんでした。';
+      return;
+    }
+    // ファイルに場面が書いていないものに、まとめて付ける
+    var fallback = trim(elPhScene && elPhScene.value);
+    if (fallback) {
+      for (var i = 0; i < items.length; i++) {
+        if (!items[i].scene) items[i].scene = fallback;
+      }
+    }
+    var result = api.addPhrases(items) || {};
+    closePhraseDialog();
+    if (elPhText) elPhText.value = '';
+    if (elPhPreview) elPhPreview.textContent = '';
+  }
+
+  function onPhraseFile() {
+    if (!elPhFile || !elPhFile.files || !elPhFile.files.length) return;
+    var file = elPhFile.files[0];
+    var isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+    elPhFile.value = '';   // 同じファイルを選び直せるように
+
+    if (!isPdf) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        if (elPhText) elPhText.value = str(reader.result);
+        if (elPhFileStatus) elPhFileStatus.textContent = file.name + ' を読みました。';
+        phrasePreview();
+      };
+      reader.onerror = function () {
+        if (elPhFileStatus) elPhFileStatus.textContent = 'このファイルは読めませんでした。';
+      };
+      reader.readAsText(file);
+      return;
+    }
+
+    if (elPhFileStatus) elPhFileStatus.textContent = 'PDF を読んでいます…';
+    pdfToText(file, function (done, total) {
+      if (elPhFileStatus) elPhFileStatus.textContent = 'PDF を読んでいます… ' + done + ' / ' + total;
+    }).then(function (text) {
+      if (elPhText) elPhText.value = text;
+      if (elPhFileStatus) elPhFileStatus.textContent = file.name + ' を読みました。';
+      phrasePreview();
+    })['catch'](function (e) {
+      if (elPhFileStatus) {
+        elPhFileStatus.textContent = 'PDF を読めませんでした（' + (e && e.message ? e.message : '原因不明') + '）。';
+      }
+    });
+  }
+
+  function copyPhrasePrompt() {
+    copyText(PHRASE_PROMPT, function (ok) {
+      if (!elPhPromptStatus) return;
+      elPhPromptStatus.textContent = ok
+        ? 'コピーしました。ファイルといっしょに AI へ渡してください。'
+        : 'コピーできませんでした。長押しで選んでコピーしてください。';
+    });
+  }
+
+  function downloadPhraseTemplate() {
+    try {
+      var blob = new Blob(['\ufeff' + PHRASE_TEMPLATE], { type: 'text/plain;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'フレーズの書き方.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      if (elPhFileStatus) elPhFileStatus.textContent = '見本を書き出しました。この形で書けば、そのまま読み込めます。';
+    } catch (e) {
+      // 書き出せない端末では、欄に入れてしまうほうが早い
+      if (elPhText) elPhText.value = PHRASE_TEMPLATE;
+      phrasePreview();
+    }
+  }
+
+  function bindPhrase() {
+    if (elPhOpen) elPhOpen.addEventListener('click', openPhraseDialog);
+    if (elPhCancel) elPhCancel.addEventListener('click', closePhraseDialog);
+    if (elPhSave) elPhSave.addEventListener('click', savePhrases);
+    if (elPhFileBtn && elPhFile) {
+      elPhFileBtn.addEventListener('click', function () { elPhFile.click(); });
+      elPhFile.addEventListener('change', onPhraseFile);
+    }
+    if (elPhTemplate) elPhTemplate.addEventListener('click', downloadPhraseTemplate);
+    if (elPhPrompt) elPhPrompt.addEventListener('click', copyPhrasePrompt);
+    if (elPhText) {
+      // 打つたびに解き直すと、長い貼り付けで引っかかる。少し待ってから下読みする
+      elPhText.addEventListener('input', function () {
+        if (phPreviewTimer) window.clearTimeout(phPreviewTimer);
+        phPreviewTimer = window.setTimeout(phrasePreview, 150);
+      });
+      // 貼り付けは待たずに出す（待つと「読めたのか」が分からない間ができる）
+      elPhText.addEventListener('paste', function () { window.setTimeout(phrasePreview, 0); });
+    }
+    if (elPhScene) elPhScene.addEventListener('input', phrasePreview);
+  }
+
+  bindPhrase();
+
   window.SUNKAN_IMPORT = {
     /** 文字から中身を起こす（書き方は自動で見分ける）。{items, deckName} */
     parse: parseAny,
@@ -909,6 +1182,12 @@
     drillPrompt: DRILL_PROMPT,
     /** 決まった書き方の見本 */
     cardTemplate: CARD_TEMPLATE,
+    /** フレーズ。表は **日本語が先**（カードと 1 列目が逆） */
+    parsePhrase: parsePhraseAny,
+    parsePhraseTable: parsePhraseTable,
+    toPhraseItems: toPhraseItems,
+    phrasePrompt: PHRASE_PROMPT,
+    phraseTemplate: PHRASE_TEMPLATE,
     drillTemplate: DRILL_TEMPLATE
   };
 

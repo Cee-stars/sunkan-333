@@ -22,6 +22,13 @@
   var LS_LEVELS = 'sunkan:levels'; // どれくらい言えるか（40 / 80 / 100。0 は外した印）
   var LS_DRILL_SRS = 'sunkan:drill:srs'; // 瞬間英作文の復習の予定。落とすと忘却曲線が消える
   var LS_GAPS = 'sunkan:gaps';           // つまずいた所（言えなかった語）
+
+  // フレーズ（かたまりを言う練習）。セットは持たず、場面（scene）で分ける。
+  // `sunkan:phrase:ui` は端末ごとの好みなので**送らない**
+  var LS_PHRASE_ITEMS = 'sunkan:phrase:items';
+  var LS_PHRASE_STARS = 'sunkan:phrase:stars';
+  var LS_PHRASE_LEVELS = 'sunkan:phrase:levels';
+  var LS_PHRASE_SRS = 'sunkan:phrase:srs';
   var LS_STARS = 'sunkan:stars';
   var LS_PARA_GENRES = 'sunkan:para:genres';
   var LS_PARA_CARDS = 'sunkan:para:cards';
@@ -40,8 +47,16 @@
 
   var LS_TOKEN = 'sunkan:sync:token';
   var LS_GIST = 'sunkan:sync:gistId';
+
+  // 自分の置き場（Cloudflare Worker）。GitHub のトークンの代わりに **合言葉だけ**を持つ。
+  // この 2 つは端末ごとの設定なので **同期に載せない**（載せたら鍵を配ることになる）。
+  var LS_CF_URL = 'sunkan:sync:cfUrl';
+  var LS_CF_ROOM = 'sunkan:sync:cfRoom';
   var LS_AUTO = 'sunkan:sync:auto';
   var LS_LAST = 'sunkan:sync:last';
+
+  /** 合言葉の形。置き場（worker.mjs）の CODE_OK と**必ず同じにする** */
+  var CF_ROOM_OK = /^[a-z0-9-]{16,64}$/;
   var LS_ERR = 'sunkan:sync:error';   // 最後に失敗した理由。黙って止まらないよう残す
   var LS_TOMBS = 'sunkan:sync:tombs';
 
@@ -242,6 +257,12 @@
         decks: isArray(readJSON(LS_SHADOW_DECKS, [])) ? readJSON(LS_SHADOW_DECKS, []) : [],
         items: isArray(readJSON(LS_SHADOW_ITEMS, [])) ? readJSON(LS_SHADOW_ITEMS, []) : []
       },
+      phrase: {
+        items: isArray(readJSON(LS_PHRASE_ITEMS, [])) ? readJSON(LS_PHRASE_ITEMS, []) : [],
+        stars: isArray(readJSON(LS_PHRASE_STARS, [])) ? readJSON(LS_PHRASE_STARS, []) : [],
+        levels: isObject(readJSON(LS_PHRASE_LEVELS, {})) ? readJSON(LS_PHRASE_LEVELS, {}) : {},
+        srs: isObject(readJSON(LS_PHRASE_SRS, {})) ? readJSON(LS_PHRASE_SRS, {}) : {}
+      },
       inbox: isArray(readJSON(LS_INBOX, [])) ? readJSON(LS_INBOX, []) : [],
       tombs: readTombs()
     };
@@ -262,6 +283,17 @@
     };
   }
 
+  /** 古い版が書き出したぶんには phrase が無い。読むときはここを通して形を揃える */
+  function phrasePart(snap) {
+    var c = (snap && isObject(snap.phrase)) ? snap.phrase : {};
+    return {
+      items: isArray(c.items) ? c.items : [],
+      stars: isArray(c.stars) ? c.stars : [],
+      levels: isObject(c.levels) ? c.levels : {},
+      srs: isObject(c.srs) ? c.srs : {}
+    };
+  }
+
   /** 古い版が書き出したぶんには cards が無い。読むときはここを通して形を揃える */
   function cardsPart(snap) {
     var c = (snap && isObject(snap.cards)) ? snap.cards : {};
@@ -278,7 +310,7 @@
   // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
   // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
   // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'media', 'inbox', 'tombs', 'handed'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'phrase', 'media', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -320,6 +352,7 @@
       // 届いたぶんが黙って落ちる（実際それでカードが復元できなかった）。
       cards: cardsPart(d),
       shadow: shadowPart(d),
+      phrase: phrasePart(d),
       // 写真の中身。バックアップにだけ入っている（同期には載せない）
       media: isObject(d.media) ? d.media : {},
       inbox: isArray(d.inbox) ? d.inbox : [],
@@ -336,7 +369,7 @@
   function apply(merged) {
     // failed … この端末に書けなかったもの。保存領域がいっぱいだと起きる。
     // 黙って通すと「同期しました」と言いながら相手のぶんがどこにも無い、になる
-    var hit = { drill: false, para: false, cards: false, shadow: false, inbox: false, failed: [] };
+    var hit = { drill: false, para: false, cards: false, shadow: false, phrase: false, inbox: false, failed: [] };
 
     function put(key, value, empty, group, label) {
       var next = JSON.stringify(value);
@@ -364,6 +397,11 @@
     var ms = shadowPart(merged);
     put(LS_SHADOW_DECKS, ms.decks, [], 'shadow', 'シャドーイングのセット');
     put(LS_SHADOW_ITEMS, ms.items, [], 'shadow', 'シャドーイングの文');
+    var mp = phrasePart(merged);
+    put(LS_PHRASE_ITEMS, mp.items, [], 'phrase', 'フレーズ');
+    put(LS_PHRASE_STARS, mp.stars, [], 'phrase', 'フレーズの「もう一度」');
+    put(LS_PHRASE_LEVELS, mp.levels, {}, 'phrase', 'フレーズのどれくらい言えるか');
+    put(LS_PHRASE_SRS, mp.srs, {}, 'phrase', 'フレーズの復習の予定');
     put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
@@ -600,6 +638,55 @@
     return out;
   }
 
+  /**
+   * フレーズの段階（`{itemId: {v,at}}`）。**`at` が新しいほうを採る**。
+   * 瞬間英作文の `mergeLevels` と同じ考え方だが、フレーズはセットを持たないので
+   * 入れ物が 1 段ひらたい（`{deckId: {itemId: …}}` ではない）。
+   */
+  function mergePhraseLevels(mine, theirs, liveIds) {
+    var out = {};
+    function take(src) {
+      for (var id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!liveIds[id]) continue;             // 消えたフレーズの印は連れて戻さない
+        var it = src[id];
+        if (!isObject(it)) continue;
+        var v = Number(it.v);
+        if (v !== 0 && v !== 40 && v !== 80 && v !== 100) continue;
+        var at = Number(it.at) || 0;
+        var cur = out[id];
+        if (cur && (cur.at || 0) >= at) continue;
+        out[id] = { v: v, at: at };
+      }
+    }
+    take(mine);
+    take(theirs);
+    return out;
+  }
+
+  /**
+   * フレーズの復習の予定（`{itemId: srs}`）。**`last` が新しいほうを残す**
+   *（カードの `mergeCardSrs` と同じ考え方。ただし面を持たないぶん 1 段浅い）。
+   */
+  function mergePhraseSrs(mine, theirs, liveIds) {
+    var out = {}, id;
+    function take(src) {
+      for (id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!liveIds[id]) continue;
+        var it = src[id];
+        if (!isObject(it)) continue;
+        var cur = out[id];
+        // 同じ時刻なら手元を残す（take(mine) が先に入っている）
+        if (cur && (Number(cur.last) || 0) >= (Number(it.last) || 0)) continue;
+        out[id] = it;
+      }
+    }
+    take(mine);
+    take(theirs);
+    return out;
+  }
+
   function mergeStars(mine, theirs, tombs) {
     var out = {};
     function take(src) {
@@ -771,6 +858,20 @@
           })
         };
       })(),
+      phrase: (function () {
+        var mp = phrasePart(mine), tp = phrasePart(theirs);
+        var items = mergeById(mp.items, tp.items, map, 'phraseitem:');
+        var liveIds = {}, n;
+        for (n = 0; n < items.length; n++) liveIds[trim(items[n].id)] = true;
+        return {
+          items: items,
+          stars: mergeStrings(mp.stars, tp.stars, function (id) {
+            return !!liveIds[id] && !isDeleted(map, 'phrasestar:' + id);
+          }),
+          levels: mergePhraseLevels(mp.levels, tp.levels, liveIds),
+          srs: mergePhraseSrs(mp.srs, tp.srs, liveIds)
+        };
+      })(),
       shadow: (function () {
         var mi = shadowPart(mine), ti = shadowPart(theirs);
         var sDecks = mergeById(mi.decks, ti.decks, map, 'shadowdeck:');
@@ -871,7 +972,7 @@
     var hit = apply(merged);
     refreshViews(hit);
     state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
-    return hit.drill || hit.para || hit.cards || hit.shadow || hit.inbox;
+    return hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
   }
 
   function handoffLink() {
@@ -1152,7 +1253,8 @@
         name = deckNameById(data, id);
         if (!best || n > best.n) best = { name: name, n: n };
       }
-    } else if (key === 'para') {
+    } else if (key === 'para' || key === 'phrase') {
+      // セット名を持たないので「うち『○○』が」の内訳は出せない。総量だけ出す
       return null;
     }
     return (best && best.n > 1024) ? best : null;
@@ -1406,7 +1508,14 @@
   function token() { return normalizeToken(lsGet(LS_TOKEN)); }
   function gistId() { return normalizeGistId(lsGet(LS_GIST)); }
   function autoOn() { return lsGet(LS_AUTO) === '1'; }
-  function ready() { return !!(token() && gistId()); }
+  function cfUrl() { return trim(lsGet(LS_CF_URL)).replace(/\/+$/, ''); }
+  function cfRoom() { return trim(lsGet(LS_CF_ROOM)).toLowerCase(); }
+
+  function gistReady() { return !!(token() && gistId()); }
+  function cfReady() { return !!(cfUrl() && CF_ROOM_OK.test(cfRoom())); }
+
+  /** どちらかの道が通っていれば「設定済み」。自動同期も状態表示もこれで決まる */
+  function ready() { return cfReady() || gistReady(); }
 
   /** セットごとの「足した文」の数 */
   function countAdded(added) {
@@ -1483,12 +1592,152 @@
     if (hit.cards && cards && typeof cards.reload === 'function') cards.reload();
     var shadow = window.SUNKAN_SHADOW;
     if (hit.shadow && shadow && typeof shadow.reload === 'function') shadow.reload();
+    var phrase = window.SUNKAN_PHRASE;
+    if (hit.phrase && phrase && typeof phrase.reload === 'function') phrase.reload();
     if (hit.inbox && inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
+  /* ---- 自分の置き場（Cloudflare Worker）とのやりとり -------------
+   * 置き場は中身を解釈しない。預かって返すだけ。
+   * 突き合わせは今までどおりこちら側の merge がやる。
+   */
+
+  /** 合言葉を作る。人が打てる形にしつつ、総当たりでは当たらない長さにする */
+  function makeRoomCode() {
+    var ABC = 'abcdefghijkmnpqrstuvwxyz23456789';   // 紛らわしい l1o0 を抜く
+    var out = [], i, j, g;
+    for (g = 0; g < 4; g++) {
+      var part = '';
+      for (i = 0; i < 5; i++) {
+        j = Math.floor(Math.random() * ABC.length);
+        if (window.crypto && window.crypto.getRandomValues) {
+          var buf = new Uint32Array(1);
+          window.crypto.getRandomValues(buf);
+          j = buf[0] % ABC.length;
+        }
+        part += ABC.charAt(j);
+      }
+      out.push(part);
+    }
+    return out.join('-');   // 例 k7m2p-9xq4r-... 23 文字
+  }
+
+  function cfCall(body) {
+    var url = cfUrl();
+    if (!url) return Promise.reject(new Error('置き場の URL が入っていません'));
+    return window.fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store'
+    }).then(function (res) {
+      return res.json().then(function (json) { return { res: res, json: json }; }, function () {
+        throw new Error('置き場から読めない返事が来ました（' + res.status + '）');
+      });
+    }).then(function (got) {
+      if (got.res.ok) return got.json;
+      var e = new Error((got.json && got.json.error) || ('置き場が ' + got.res.status + ' を返しました'));
+      // 409 … こちらが取ってから、もう片方が先に書いた
+      if (got.res.status === 409) { e.stale = true; e.updated = got.json && got.json.updated; }
+      if (got.res.status === 413) e.message = '同期データが大きすぎます（1MB まで）。いらないセットを消すと入ります。';
+      throw e;
+    });
+  }
+
+  /**
+   * 取って・合わせて・返す。返すときに「取ったときから変わっていないか」を見る。
+   * 先を越されていたら **取り直して合わせ直す**（上書きして相手のぶんを消さない）。
+   */
+  function cfRound(silent, attempt) {
+    return cfCall({ op: 'get', room: cfRoom() }).then(function (got) {
+      var theirs = clean(got && got.found ? got.data : null);
+      var mine = snapshot();
+      var before = countAdded(mine.added);
+      var merged = merge(mine, theirs);
+      var hit = apply(merged);
+      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
+      refreshViews(hit);
+      state.saveNote = saveFailNote(hit);
+      if (hit.drill) announceArrivals(before, merged);
+
+      return cfCall({
+        op: 'put', room: cfRoom(), seen: (got && got.updated) || 0, data: merged
+      }).then(function () {
+        return changed;
+      }, function (err) {
+        if (err && err.stale && attempt < 2) {
+          // もう片方が先に書いた。手元はもう合わせ済みなので、取り直してもう一度
+          return cfRound(silent, attempt + 1);
+        }
+        throw err;
+      });
+    });
+  }
+
+  /** 置き場が生きているか、合言葉が合っているかを 1 つずつ見る。
+      2 台が繋がらないとき、どこで止まっているか分からないのがいちばん困る */
+  function cfDiagnose() {
+    if (!cfUrl()) { setStatus('置き場の URL を入れてください。', true); return Promise.resolve(); }
+    if (!CF_ROOM_OK.test(cfRoom())) {
+      setStatus('合言葉の形が違います。「合言葉を作る」で作り直せます。', true);
+      return Promise.resolve();
+    }
+    setStatus('置き場を調べています…', false);
+    return cfCall({ op: 'get', room: cfRoom() }).then(function (got) {
+      setStatus('置き場につながりました。' + (got && got.found
+        ? '\n向こうにデータがあります（最後の書き込み ' + stamp(got.updated) + '）。'
+          + '\n2 台目なら、このまま「いま同期する」で取り込めます。'
+        : '\nまだ何も置かれていません。1 台目ならこれで正常です。'
+          + '\n2 台目のつもりなら、**合言葉が 1 台目と違っています**。'), false);
+    }, function (err) {
+      setStatus('置き場につながりませんでした: ' + ((err && err.message) || '通信エラー')
+        + '\n・URL が合っているか（末尾の / は要りません）'
+        + '\n・2 台で同じ合言葉を入れているか'
+        + '\n・置き場の側で、D1 の変数名が DB になっているか', true);
+    });
+  }
+
+  function cfSync(silent) {
+    if (isBusy()) {
+      if (!silent) setStatus('いま同期しています。少し待ってからもう一度押してください。', false);
+      return Promise.resolve(false);
+    }
+    if (window.navigator.onLine === false) {
+      if (!silent) setStatus('オフラインなので同期できません。', true);
+      return Promise.resolve(false);
+    }
+    state.busy = true;
+    state.busyAt = Date.now();
+    if (!silent) setStatus('同期しています…', false);
+
+    return cfRound(silent, 0).then(function (changed) {
+      lsSet(LS_LAST, String(Date.now()));
+      var saveNote = state.saveNote;
+      state.saveNote = '';
+      if (saveNote) lsSet(LS_ERR, saveNote + '\n' + Date.now()); else lsRemove(LS_ERR);
+      state.fingerprint = fingerprint();
+      var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
+      if (saveNote) msg += '\n⚠ ' + saveNote;
+      if (!silent || changed || saveNote) setStatus(msg, !!saveNote);
+      renderState();
+      return true;
+    }, function (err) {
+      var why = (err && err.message) ? err.message : '通信エラー';
+      lsSet(LS_ERR, why + '\n' + Date.now());
+      renderState();
+      if (!silent) setStatus('同期できませんでした: ' + why, true);
+      return false;
+    }).then(function (ok) {
+      state.busy = false;
+      return ok;
+    });
+  }
+
   function sync(silent) {
-    if (!ready()) {
-      if (!silent) setStatus('トークンと Gist ID を入れてください。', true);
+    // 置き場のほうが設定してあれば、そちらを使う（トークンを持たせない道を優先）
+    if (cfReady()) return cfSync(silent);
+    if (!gistReady()) {
+      if (!silent) setStatus('置き場の URL と合言葉（または GitHub のトークンと Gist ID）を入れてください。', true);
       return Promise.resolve(false);
     }
     if (isBusy()) {
@@ -1521,7 +1770,7 @@
         : '';
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.inbox;
+      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
       refreshViews(hit);
       // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
       // 「同期しました」で流すと、届いていないのに届いた気になる
@@ -1655,7 +1904,8 @@
   /* --- 変更を見張る（app.js の保存に手を入れずに済ませる） --- */
 
   function fingerprint() {
-    return [LS_DECKS, LS_ADDED, LS_EDITS, LS_LEVELS, LS_DRILL_SRS, LS_GAPS, LS_STARS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
+    return [LS_DECKS, LS_ADDED, LS_EDITS, LS_LEVELS, LS_DRILL_SRS, LS_GAPS, LS_STARS, LS_PHRASE_ITEMS, LS_PHRASE_STARS,
+            LS_PHRASE_LEVELS, LS_PHRASE_SRS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }
@@ -1692,6 +1942,10 @@
   var elStateLabel = $('sync-state');
   var elToken = $('sync-token');
   var elGist = $('sync-gist');
+  var elCfUrl = $('sync-cf-url');
+  var elCfRoom = $('sync-cf-room');
+  var elCfMake = $('btn-sync-cf-make');
+  var elCfCopy = $('btn-sync-cf-copy');
   var elAuto = $('opt-sync-auto');
   var elStatus = $('sync-status');
   var elSettingsDialog = $('settings-dialog');
@@ -1730,7 +1984,7 @@
    * トークンも混ぜるので、片方だけ違っていても印が変わる。中身は復元できない。
    */
   function pairCode() {
-    if (!ready()) return '';
+    if (!gistReady()) return '';
     var h = 5381, src = token() + '\n' + gistId(), i;
     for (i = 0; i < src.length; i++) h = ((h << 5) + h + src.charCodeAt(i)) | 0;
     return (h >>> 0).toString(36).toUpperCase().slice(-4);
@@ -1743,7 +1997,11 @@
     var total = sizeOf(snap);
     var text = last ? '最後の同期 ' + stamp(last) : 'まだ同期していません';
     text += ' ・ ' + snap.decks.length + ' セット ・ 同期データ ' + kb(total);
-    if (ready()) {
+    if (cfReady()) {
+      // 合言葉そのものは出さない。末尾だけで「同じものを入れたか」は照合できる
+      text += '\n置き場 ' + cfUrl().replace(/^https?:\/\//, '') + ' ／ 合言葉 …' + cfRoom().slice(-4);
+    }
+    if (gistReady()) {
       // 保存先そのものを見せる。畳んだ印だけだと、トークンが違うのか
       // 保存先が違うのか区別が付かず、直しようがない
       text += '\n保存先 …' + gistId().slice(-6) + ' ／ 照合コード ' + pairCode();
@@ -1767,6 +2025,8 @@
   function openSync() {
     if (elToken) elToken.value = token();
     if (elGist) elGist.value = gistId();
+    if (elCfUrl) elCfUrl.value = cfUrl();
+    if (elCfRoom) elCfRoom.value = cfRoom();
     if (elAuto) elAuto.checked = autoOn();
     setStatus(whenText(), !!lastError());
     if (elSettingsDialog && elSettingsDialog.open) elSettingsDialog.close();
@@ -1791,6 +2051,17 @@
       var id = normalizeGistId(elGist.value);
       lsSet(LS_GIST, id);
       if (elGist.value !== id) elGist.value = id;
+    }
+    if (elCfUrl) {
+      // 末尾の / と、前後の空白を落とす。打ち間違いで繋がらないのを防ぐ
+      var u = trim(elCfUrl.value).replace(/\/+$/, '');
+      lsSet(LS_CF_URL, u);
+      if (elCfUrl.value !== u) elCfUrl.value = u;
+    }
+    if (elCfRoom) {
+      var r = trim(elCfRoom.value).toLowerCase();
+      lsSet(LS_CF_ROOM, r);
+      if (elCfRoom.value !== r) elCfRoom.value = r;
     }
     renderState();
   }
@@ -1896,6 +2167,34 @@
       else if (warned) { warned = false; setStatus(whenText(), !!lastError()); }
     });
     if (elGist) elGist.addEventListener('change', saveFields);
+    if (elCfUrl) elCfUrl.addEventListener('change', saveFields);
+    if (elCfRoom) elCfRoom.addEventListener('change', saveFields);
+
+    if (elCfMake) elCfMake.addEventListener('click', function () {
+      if (!elCfRoom) return;
+      // すでに繋いである合言葉を黙って作り直すと、**もう片方の端末と切れる**
+      if (trim(elCfRoom.value) && !window.confirm(
+        '合言葉を作り直すと、いまの合言葉で繋いである端末とは繋がらなくなります。よろしいですか？'
+      )) return;
+      elCfRoom.value = makeRoomCode();
+      saveFields();
+      setStatus('合言葉を作りました。2 台目には、同じ URL とこの合言葉を入れてください。'
+        + '\n人に見える所には貼らないでください（これが唯一の鍵です）。', false);
+    });
+
+    if (elCfCopy) elCfCopy.addEventListener('click', function () {
+      saveFields();
+      var code = cfRoom();
+      if (!code) { setStatus('先に合言葉を作ってください。', true); return; }
+      var api = window.SUNKAN_DRILL;
+      var done = function (ok) {
+        setStatus(ok
+          ? '合言葉をコピーしました。AirDrop か自分宛てのメモで 2 台目へ渡してください。'
+          : 'コピーできませんでした: ' + code, !ok);
+      };
+      if (api && typeof api.copyText === 'function') api.copyText(code, done);
+      else done(false);
+    });
 
     var close = $('btn-sync-close');
     if (close) close.addEventListener('click', closeSync);
@@ -1904,7 +2203,12 @@
     if (now) now.addEventListener('click', function () { saveFields(); sync(false); });
 
     var check = $('btn-sync-check');
-    if (check) check.addEventListener('click', function () { saveFields(); diagnose(); });
+    if (check) check.addEventListener('click', function () {
+      saveFields();
+      // 置き場を使っているなら、GitHub を調べても仕方がない
+      if (cfReady() || (cfUrl() && !gistReady())) cfDiagnose();
+      else diagnose();
+    });
 
     var create = $('btn-sync-create');
     if (create) create.addEventListener('click', function () {
@@ -1937,7 +2241,8 @@
     var pair = $('btn-pair-copy');
     if (pair) pair.addEventListener('click', function () {
       saveFields();
-      if (!ready()) { setStatus('先にこの端末の設定を済ませてください。', true); return; }
+      // つなぐリンクは GitHub のトークンを載せる仕組み。こちらが未設定なら作れない
+      if (!gistReady()) { setStatus('先に GitHub の設定を済ませてください。', true); return; }
       var url = pairLink();
       var api = window.SUNKAN_DRILL;
       var id = gistId(), tk = token();

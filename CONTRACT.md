@@ -10,12 +10,13 @@
 | `assets/style.css` | A | 全スタイル（iPhone / MacBook 対応、ライト/ダーク） |
 | `assets/data.js` | B | 例文データ `window.SUNKAN_DECKS` |
 | `assets/app.js` | C | 瞬間英作文の動作すべて（描画・隠す/表示・検索・取り込み・保存） |
-| `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋モード切り替え（3 モードぶん） |
+| `assets/paraphrase.js` | D | パラフレ帳の動作すべて＋**モード切り替え（5 モードぶん）** |
 | `assets/srs.js` | I | 忘却曲線（FSRS-5）。予定の計算だけ。DOM も localStorage も触らない。**カードと瞬間英作文の両方**が使う |
 | `assets/cards.js` | J | カードの動作すべて（3 つの面・めくり・一覧・設定） |
 | `assets/import.js` | K | 取り込み（PDF・テキスト・表・AI への指示）。**カードと瞬間英作文の両方**が通る |
 | `assets/media.js` | L | 写真（IndexedDB）。縮めて詰めるのもここ。画面は触らない |
 | `assets/shadow.js` | M | シャドーイング（続けて流す・速さ・くり返し・隠す） |
+| `assets/phrase.js` | N | フレーズ（かたまりを言う練習）。瞬間英作文と同じ操作感で、セットではなく**場面**で分ける |
 | `assets/vendor/pdf.min.js` | 外 | pdf.js（Mozilla / Apache-2.0）。手を入れない。差し替えは版ごと |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 | `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
@@ -24,6 +25,10 @@
 | `version.json` | 共通 | 公開されている版。`APP_VERSION` と同じ文字列を入れる |
 | `tests/srstest.mjs` | 共通 | 復習の予定の確かめ（Playwright）。**390px と 1180px の両方**で走る。`python3 -m http.server 8599` を上げてから `node tests/srstest.mjs` |
 | `tests/gaptest.mjs` | 共通 | つまずいた所の確かめ。同じ上げ方で `node tests/gaptest.mjs` |
+| `tests/phrasetest.mjs` | 共通 | フレーズの確かめ（足す・ファイルから読む・同期）。`node tests/phrasetest.mjs` |
+| `tests/fake-worker.mjs` | 共通 | 確かめ用の置き場。**`cloudflare/worker.mjs` をそのまま**動かす（D1 の代わりにその場かぎりの SQLite）。`node tests/fake-worker.mjs 8600` |
+| `tests/synctest.mjs` | 共通 | 2 台が揃うかの確かめ。アプリと置き場の両方を上げてから `node tests/synctest.mjs` |
+| `cloudflare/worker.mjs` | 共通 | 同期の置き場（Cloudflare Worker）。**アプリの一式ではない**ので `index.html` からは読まない。管理画面に貼って使う（npm もビルドも要らない）。中身は解釈せず、合言葉ごとに JSON を 1 つ預かって返すだけ |
 
 `app.js` と `paraphrase.js` と `cards.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
 `<html data-mode>` と下の `window.SUNKAN_*` だけで、`app.js` は `data-mode` が `drill` 以外の間
@@ -112,13 +117,31 @@
 | `cardTemplate` / `drillTemplate` | 決まった書き方の見本（モードごとに別） |
 
 **表はモードごとに列の並びが違う。** カードは `英語 / 意味 / 例文 / 訳 / メモ`、
-瞬間英作文は `日本語 / 英語 / メモ`。**1 列目が逆**なので、`parseTable` を
-瞬間英作文に使ってはいけない（日本語と英語が入れ替わる）。
+瞬間英作文は `日本語 / 英語 / メモ`、フレーズは `日本語 / 英語 / 場面 / メモ`。
+**カードだけ 1 列目が英語**なので、`parseTable` を瞬間英作文やフレーズに
+使ってはいけない（日本語と英語が入れ替わる）。フレーズは `parsePhraseTable` が自分で解く。
 app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は自分で解く。
 
 カードの取り込みは import.js が最後まで面倒を見る（`SUNKAN_CARDS.addCards` へ渡す）。
 瞬間英作文のほうは **PDF を文字にして欄へ入れるところまで**で、
 そのあとは `input` を投げて app.js の下読みに拾わせる（二重に解かない）。
+
+### `window.SUNKAN_PHRASE`（phrase.js が開けている口）
+
+| 関数 | 内容 |
+| --- | --- |
+| `onShow()` | 画面を開いたとき（`paraphrase.js` の `setMode` から） |
+| `onHide()` | ほかの画面へ移るとき。鳴らしっぱなしにしない |
+| `reload()` | localStorage を読み直して作り直す（同期のあとに呼ぶ） |
+| `addPhrases(items)` | 取り込みから足す。同じ `(ja, en)` は飛ばす。`{added, skipped}` |
+| `scenes()` | 場面の一覧 `[{name, count}]` |
+
+**`import.js` はフレーズを直に保存しない。** 足すのは `addPhrases` 越しに限る。
+
+**`phrase.js` は自分の init で `data-mode` を見る。** `index.html` のスクリプトは
+2 ブロックに分かれていて、`paraphrase.js` の init が `setMode` を呼ぶ時点では
+`window.SUNKAN_PHRASE` がまだ無い。見ないと、フレーズを最後に開いた状態で
+起動したとき画面が空になる（`cards.js` / `shadow.js` も同じことをしている）。
 
 ### `window.SUNKAN_SHADOW`（shadow.js が開けている口）
 
@@ -624,6 +647,7 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
   levels: { /* sunkan:levels と同じ形 */ },
   drillSrs: { /* sunkan:drill:srs と同じ形 */ },
   gaps: { /* sunkan:gaps と同じ形 */ },
+  phrase: { items, stars, levels, srs },
   stars: { /* sunkan:stars と同じ形 */ },
   para:  { genres: [...], cards: [...], stars: [...] },
   tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
@@ -657,6 +681,28 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 **同期しないもの**: `sunkan:settings`（隠し方・文字サイズなどは端末ごとの好み）、
 `sunkan:voice`（入っている声が端末ごとに違うので、揃えても意味がない）、
 `sunkan:mode`、`sunkan:para:ui`、収録例文（`data.js` にあるので送る意味がない）。
+
+### 同期の道は 2 つある
+
+`ready()` は**どちらかが設定されていれば真**。`sync()` は
+**置き場（Cloudflare）が設定してあればそちらを使う**（トークンを端末に持たせない道を優先）。
+
+| | 持たせるもの | My Dictionary の受け渡し |
+| --- | --- | --- |
+| 置き場（`cfSync`） | 置き場の URL ＋ 合言葉 | **使えない** |
+| GitHub（`sync` の後半） | PAT ＋ Gist ID | 使える |
+
+**Gist を消してはいけない。** 同じ Gist の `sunkan-inbox.json` が
+My Dictionary からの受け渡し口を兼ねている。置き場はその代わりではなく**追加**。
+
+`pairCode()` / つなぐリンク / `whenText()` の保存先表示は **GitHub 専用**なので
+`gistReady()` で見る。ここを `ready()` にすると、置き場だけ設定した端末で
+トークンの無いリンクを作ってしまう。
+
+置き場との往復は **取る → 合わせる → 返す**。返すときに「取ったときから
+変わっていないか」を見て、先を越されていたら **取り直して合わせ直す**（`cfRound`）。
+これが無いと、2 台がほぼ同時に同期したとき、あとから書いたほうが相手のぶんを消す。
+合言葉の形（`CF_ROOM_OK`）は `cloudflare/worker.mjs` の `CODE_OK` と**必ず同じにする**。
 
 ### つなぐリンク（`#pair=`）
 
@@ -705,6 +751,14 @@ JS が古いまま当たっても空の欄にならないようにするため�
 
 **1 件ごとに `at` が新しいほうを採る**（`mergeGaps`。`mergeLevels` と同じ考え方）。
 足し算にすると、片方で外した語がもう片方から戻ってきて、いつまでも消せなくなる。
+
+### フレーズの突き合わせ
+
+本体は `mergeById(..., 'phraseitem:')`、★は `'phrasestar:'`。
+段階（`mergePhraseLevels`）は **`at` が新しいほう**、予定（`mergePhraseSrs`）は
+**`last` が新しいほう**を採る。考え方は瞬間英作文・カードと同じだが、
+**フレーズはセットを持たないので入れ物が 1 段ひらたい**（`{deckId: {itemId: …}}` ではない）。
+消えたフレーズの印と予定は連れて戻さない（`liveIds` に無い id は落とす）。
 
 ### カードの覚えた記録の突き合わせ
 
@@ -774,6 +828,11 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:stars` | `{ [deckId]: string[] }` … 「もう一度」を付けた項目の id。**画面では ↻「もう一度」**（間違えた文に付けて、言えるようになったら外す）。中の名前が `star` のままなのは、保存の鍵も同期の記録（`star:` / `parastar:` / `cardstar:`）もそれで動いているから。変えると今まで付けたぶんが消える |
 | `sunkan:levels` | `{ [deckId]: { [itemId]: {v,at} } }` … どれくらい言えるか。`v` は 40/80/100、**0 は「外した」印**。`at` は付けた時刻 |
 | `sunkan:drill:srs` | `{ [deckId]: { [itemId]: srs の状態 } }` … 瞬間英作文の復習の予定。中身の形は `srs.js` の `newState()` が正。`levels` と同じ入れ物の形にしてあるので、セットを消すときも文を直して id が変わったときも、★・段階とまったく同じ手順で片付く |
+| `sunkan:phrase:items` | `[{id, ja, en, scene, note, created}]` … フレーズ。**セットを持たず `scene`（場面）で分ける**ので、入れ物は 1 段ひらたい |
+| `sunkan:phrase:stars` | `string[]` … ↻ |
+| `sunkan:phrase:levels` | `{ [itemId]: {v,at} }` … どれくらい言えるか |
+| `sunkan:phrase:srs` | `{ [itemId]: srs の状態 }` … 復習の予定 |
+| `sunkan:phrase:ui` | `{scene, query}` など。**同期しない**（端末ごとの好み） |
 | `sunkan:gaps` | `{ [deckId]: { [itemId]: {w,at} } }` … つまずいた所。`w` は**均した語**（小文字・前後の記号を落とす）の配列。`"Brother." と "brother" を別に数えると集計が意味を持たない`ため。**空配列は「外した」印**として残す（同期で「外した」を伝えるのに要る） |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
@@ -793,6 +852,8 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:para:stars` | ★を付けたパラフレの id `string[]` |
 | `sunkan:para:ui` | `{ genreId, mask, sort, starredOnly }` … 表示の状態（シャッフルは持ち越さない） |
 | `sunkan:inbox` | 別アプリから届いた取り込み待ちのカード（上の「受信箱」を参照）。書くのは送り手、消すのは `inbox.js` |
+| `sunkan:sync:cfUrl` | 自分の置き場（Cloudflare Worker）の URL。**同期しない** |
+| `sunkan:sync:cfRoom` | 合言葉。**この仕組みの唯一の鍵**なので、同期にもバックアップにも載せない |
 | `sunkan:sync:token` | GitHub のアクセストークン。**この端末の中だけ**。GitHub 以外へは送らない |
 | `sunkan:sync:gistId` | 置き場の Gist ID |
 | `sunkan:sync:auto` | `'1'` / `'0'` … 自動で同期するか |

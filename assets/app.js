@@ -51,7 +51,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 52 (2026-10-12)';
+  var APP_VERSION = 'build 54 (2026-10-14)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -2473,6 +2473,12 @@
         if (cards.length) parts.push('カード ' + cards.length);
         var para = JSON.parse(window.localStorage.getItem('sunkan:para:cards') || '[]');
         if (para.length) parts.push('パラフレ ' + para.length);
+        var phrase = JSON.parse(window.localStorage.getItem('sunkan:phrase:items') || '[]');
+        if (phrase.length) parts.push('フレーズ ' + phrase.length);
+        // シャドーイングの文はもともと数に入っていなかった。
+        // 「ぜんぶ」と言いながら数に出ないと、入っていないのかと疑わせる
+        var shadow = JSON.parse(window.localStorage.getItem('sunkan:shadow:items') || '[]');
+        if (shadow.length) parts.push('シャドー ' + shadow.length);
       } catch (e) { /* 読めなければ数は出さない */ }
       elBackupOutHint.textContent = parts.length ? parts.join('・') + ' など ぜんぶ' : 'ぜんぶ';
     }
