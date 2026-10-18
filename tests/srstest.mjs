@@ -152,6 +152,32 @@ for (const [label, width, height] of [['iPhone 390', 390, 844], ['Mac 1180', 118
   }, firstId);
   ok('読み直しても答えた回数が残っている', keptReps === 2, String(keptReps));
 
+  // --- 英文がボタンの下に隠れていないか（広い画面）---
+  // ボタンを足すたびに `--tools-space` を測り直さないと、英文が潜って読めなくなる。
+  // % と △ を足したとき実際に 125px ぶん隠れたので、ここで止める。
+  await page.click('#btn-toggle-all');        // ぜんぶ開く
+  await page.waitForTimeout(350);
+  const hidden = await page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('.row').forEach((li, i) => {
+      if (li.hidden) return;
+      const en = li.querySelector('.en-text'), t = li.querySelector('.row-tools');
+      if (!en || !t) return;
+      const a = en.getBoundingClientRect(), b = t.getBoundingClientRect();
+      if (!a.width) return;
+      // **左右と上下の両方**が重なって初めて「隠れている」。
+      // 狭い画面では開いた行のボタンが 2 段目へ下りるので、
+      // 左右だけ見ると下の段と重なって見えて誤判定する。
+      var x = a.right > b.left + 1 && a.left < b.right - 1;
+      var y = a.bottom > b.top + 1 && a.top < b.bottom - 1;
+      if (x && y) out.push(i + 1);
+    });
+    return out;
+  });
+  ok('英文がボタンの下に隠れていない', hidden.length === 0, '隠れている行: ' + hidden.slice(0, 8).join(','));
+  await page.click('#btn-toggle-all');        // 元に戻す
+  await page.waitForTimeout(300);
+
   // --- build 50 を壊していないか（隠したままでも ↻ と % が押せる）---
   const vis = await page.evaluate(() => {
     const li = document.querySelector('.row');
