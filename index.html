@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 56 (2026-10-21)">
+<meta name="sunkan-build" content="build 57 (2026-10-21)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=56">
+<link rel="stylesheet" href="assets/style.css?v=57">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -1500,12 +1500,12 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=56"></script>
-<script src="assets/data.js?v=56"></script>
-<script src="assets/app.js?v=56"></script>
-<script src="assets/paraphrase.js?v=56"></script>
+<script src="assets/speech.js?v=57"></script>
+<script src="assets/data.js?v=57"></script>
+<script src="assets/app.js?v=57"></script>
+<script src="assets/paraphrase.js?v=57"></script>
 <!-- フレーズの本体。?v= は付けない（版は最後にまとめてそろえる） -->
-<script src="assets/phrase.js?v=56"></script>
+<script src="assets/phrase.js?v=57"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1596,14 +1596,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=56"></script>
-<script src="assets/srs.js?v=56"></script>
-<script src="assets/cards.js?v=56"></script>
-<script src="assets/shadow.js?v=56"></script>
-<script src="assets/import.js?v=56"></script>
-<script src="assets/inbox.js?v=56"></script>
-<script src="assets/sync.js?v=56"></script>
-<script src="assets/update.js?v=56"></script>
+<script src="assets/media.js?v=57"></script>
+<script src="assets/srs.js?v=57"></script>
+<script src="assets/cards.js?v=57"></script>
+<script src="assets/shadow.js?v=57"></script>
+<script src="assets/import.js?v=57"></script>
+<script src="assets/inbox.js?v=57"></script>
+<script src="assets/sync.js?v=57"></script>
+<script src="assets/update.js?v=57"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
