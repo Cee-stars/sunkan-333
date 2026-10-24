@@ -1,4 +1,4 @@
-/* Duo — フレーズ
+/* Duo — 場面（その時に言えるようにする）
  *
  * 場面ごとの言い回しを溜めて、日本語を見て英語を言う練習。
  * 手触りは瞬間英作文（app.js）とそろえる — 隠す / 開く / ↻ / % / 検索 / 現在行。
@@ -14,7 +14,7 @@
  *
  * DOM の定義は index.html、取り決めは CONTRACT.md を参照（どちらも変更しない）。
  * 別の担当者が index.html を用意するので、**要素が無くても落ちない**ように書く
- * （この版の index.html にフレーズの画面がまだ無くても、読み込めるだけで害が無い）。
+ * （この版の index.html に場面の画面がまだ無くても、読み込めるだけで害が無い）。
  */
 (function () {
   'use strict';
@@ -137,6 +137,20 @@
    *  1=もう一度 2=むずかしい 3=できた 4=かんたん */
   var LEVEL_GRADES = { 0: 1, 40: 2, 80: 3, 100: 4 };
 
+  /** 印を画面に出すときの短い印。**数字は出さない**（小さくて読めないため）。
+   *  言葉は行の欄（.row-level）が出しているので、ここは色と形だけで足りる。 */
+  var LEVEL_MARKS = { 40: '×', 80: '△', 100: '○' };
+
+  /** 知らせに出す言葉。行の欄（.row-level）の選択肢と**同じ言い方にそろえる** */
+  var LEVEL_WORDS = { 0: '「まだ」', 40: '「出なかった」', 80: '「詰まった」', 100: '「言えた」' };
+
+  /** 写真は media.js（IndexedDB）が持つ。無い端末でも落ちないように毎回見る */
+  function mediaPort() { return window.SUNKAN_MEDIA || null; }
+
+  /** 言い方 3 本の方向。**上下ではなく横並び**なので、どれを言っても外れにならない。
+   *  1 本しか無ければ札は出さない（埋めろという催促にしない）。 */
+  var SAY_LABELS = ['短く', 'やわらかく', '遠回しに'];
+
   /** 「外した」印（v:0）を 90 日より古いぶんまで持ち続けない。残しても誰の役にも立たない */
   var LEVEL_ZERO_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
 
@@ -174,8 +188,10 @@
     for (var i = 0; i < raw.length; i++) {
       var it = raw[i];
       if (!isObj(it)) continue;
-      var en = trim(it.en);
-      if (!en) continue;
+      // **セリフ（ja）があれば成立する。**英語が無くても捨てない —
+      // その「時」は突然来るので、英語は後から足せないと入れてもらえない
+      var ja = trim(it.ja);
+      if (!ja) continue;
       // id が無い / ぶつかっているものには振り直す。id は★・段階・予定の拠り所なので、
       // 同じ id が 2 件あると片方の記録がもう片方に見えてしまう。
       var id = trim(it.id);
@@ -183,10 +199,13 @@
       seen[id] = 1;
       out.push({
         id: id,
-        ja: trim(it.ja),
-        en: en,
+        ja: ja,
+        en: trim(it.en),
+        en2: trim(it.en2),
+        en3: trim(it.en3),
         scene: sceneName(it.scene),
         note: trim(it.note),
+        img: trim(it.img),        // 写真の id。中身は media.js（IndexedDB）にある
         created: Number(it.created) || 0
       });
     }
@@ -273,6 +292,8 @@
     speechOK: false,
     speakingId: null,
     editingId: null,    // 直している行の id（新しく足すときは null）
+    editingImg: '',     // ダイアログで選んでいる写真の id（保存するまで確定しない）
+    photoShowing: '',   // 大きく出している写真の id（取り違え防止）
     started: false,     // いちどでも画面を開いたか（開くまで行を作らない）
     flashTimer: null,
     lastFocus: null
@@ -296,6 +317,19 @@
   var elEditDialog = $('phrase-edit-dialog');
   var elFieldJa = $('phrase-ja');
   var elFieldEn = $('phrase-en');
+  var elFieldEn2 = $('phrase-en2');
+  var elPhotoField = $('phrase-photo-field');
+  var elPhotoPreview = $('phrase-photo-preview');
+  var elPhotoImg = $('phrase-photo-img');
+  var elPhotoBtn = $('btn-phrase-photo');
+  var elPhotoClear = $('btn-phrase-photo-clear');
+  var elPhotoFile = $('phrase-photo-file');
+  var elPhotoStatus = $('phrase-photo-status');
+  var elPhotoDialog = $('phrase-photo-dialog');
+  var elPhotoBig = $('phrase-photo-big');
+  var elPhotoCaption = $('phrase-photo-caption');
+  var elPhotoDialogClose = $('btn-phrase-photo-close');
+  var elFieldEn3 = $('phrase-en3');
   var elFieldScene = $('phrase-scene-input');
   var elFieldNote = $('phrase-note');
   var elEditStatus = $('phrase-edit-status');
@@ -544,7 +578,23 @@
       }
     }
 
-    if (enTextEl) enTextEl.textContent = item.en;
+    // セリフは「『◯◯』と言ってみよう」の形で出す。
+    // 「答え」ではなく「促し」にするため。照合を求めると、書いてある英語と
+    // 違ったときに減点に感じる。促しなら、どう言っても前に進める。
+    if (jaEl) {
+      var jaSpan = jaEl.querySelector('.ja-text');
+      if (jaSpan && item.ja) {
+        jaSpan.textContent = '「' + item.ja + '」';
+        var lead = document.createElement('small');
+        lead.className = 'say-lead';
+        lead.textContent = 'と言ってみよう';
+        jaSpan.parentNode.insertBefore(lead, jaSpan.nextSibling);
+      }
+    }
+
+    // 言い方は最大 3 本。**同じ太さで**並べる。
+    // 1 本目を太字にすると、それが「正解」になり、残りが間違いに見える。
+    if (enTextEl) renderSays(enTextEl, item);
 
     row.el = li;
     row.numEl = li.querySelector('.cell--num');
@@ -552,12 +602,13 @@
     row.starEl = li.querySelector('.row-star');
     row.levelEl = li.querySelector('.row-level');
     row.sceneTagEl = li.querySelector('.phrase-scene-tag');
+    row.photoEl = li.querySelector('.row-photo');
 
     // 読み上げが使えない端末ではボタンごと隠す（押しても鳴らないものを出さない）
     var speakEl = li.querySelector('.row-speak');
     if (speakEl && !state.speechOK) speakEl.hidden = true;
 
-    // フレーズはぜんぶ自分で入れた文なので、どの行も消せる。
+    // 場面はぜんぶ自分で入れた文なので、どの行も消せる。
     // テンプレート側で hidden になっていても外す。
     var delEl = li.querySelector('.row-delete');
     if (delEl) delEl.hidden = false;
@@ -565,7 +616,44 @@
     renderStar(row);
     renderLevel(row);
     renderSceneTag(row);
+    renderPhotoBtn(row);
     return li;
+  }
+
+  /** 言い方を並べる。1 本なら札なし、2 本以上なら方向の札を添える */
+  function renderSays(box, item) {
+    while (box.firstChild) box.removeChild(box.firstChild);
+    var says = saysOf(item);
+    if (!says.length) {
+      // 英語がまだ無い場面。催促ではなく、ただの覚え書きとして出す
+      var yet = document.createElement('span');
+      yet.className = 'say-yet';
+      yet.textContent = '英語まだ';
+      box.appendChild(yet);
+      return;
+    }
+    for (var i = 0; i < says.length; i++) {
+      var line = document.createElement('span');
+      line.className = 'say-line';
+      if (says.length > 1) {
+        var tag = document.createElement('small');
+        tag.className = 'say-tag';
+        tag.textContent = SAY_LABELS[i] || '';
+        line.appendChild(tag);
+      }
+      var txt = document.createElement('span');
+      txt.className = 'say-text';
+      txt.textContent = says[i];
+      line.appendChild(txt);
+      box.appendChild(line);
+    }
+  }
+
+  /** 入っている言い方だけを順に。空の欄は詰める（途中が空でもずれない） */
+  function saysOf(item) {
+    var out = [], i, v, src = [item.en, item.en2, item.en3];
+    for (i = 0; i < src.length; i++) { v = trim(src[i]); if (v) out.push(v); }
+    return out;
   }
 
   /** いまの段階を、札とボタンの値に出す */
@@ -577,7 +665,7 @@
       else row.el.removeAttribute('data-level');
     }
     if (row.lvTagEl) {
-      row.lvTagEl.textContent = v ? String(v) : '';
+      row.lvTagEl.textContent = v ? (LEVEL_MARKS[v] || '') : '';
       row.lvTagEl.hidden = !v;
     }
     if (row.levelEl) row.levelEl.value = String(v);
@@ -594,6 +682,89 @@
       row.starEl.setAttribute('aria-pressed', on ? 'true' : 'false');
       row.starEl.setAttribute('aria-label', on ? '「もう一度」から外す' : '「もう一度」に入れる');
     }
+  }
+
+  /** 写真が付いている行にだけ 🖼 を出す。無い行には何も出さない */
+  function renderPhotoBtn(row) {
+    if (!row || !row.photoEl) return;
+    var media = mediaPort();
+    var has = !!(media && media.supported() && trim(row.item.img));
+    row.photoEl.hidden = !has;
+  }
+
+  /** 写真を大きく見る */
+  function openPhoto(row) {
+    var media = mediaPort();
+    if (!media || !row || !elPhotoDialog) return;
+    var want = trim(row.item.img);
+    if (!want) return;
+    if (elPhotoCaption) elPhotoCaption.textContent = '「' + row.item.ja + '」';
+    if (elPhotoBig) elPhotoBig.removeAttribute('src');
+    media.url(want).then(function (url) {
+      // 待っているあいだに別の行を開いていたら、古いほうを貼らない
+      if (!elPhotoBig || trim(state.photoShowing) !== want) return;
+      if (url) elPhotoBig.src = url;
+    });
+    state.photoShowing = want;
+    openDialog(elPhotoDialog, row.photoEl);
+  }
+
+  /** ダイアログの写真の欄を、いまの state.editingImg に合わせる */
+  function renderPhotoField() {
+    var media = mediaPort();
+    if (elPhotoField) elPhotoField.hidden = !(media && media.supported());
+
+    var has = !!trim(state.editingImg);
+    if (elPhotoClear) elPhotoClear.hidden = !has;
+    if (elPhotoBtn) elPhotoBtn.textContent = has ? '写真を替える' : '写真を選ぶ';
+    if (elPhotoPreview) elPhotoPreview.hidden = !has;
+    if (!has) {
+      if (elPhotoImg) elPhotoImg.removeAttribute('src');
+      return;
+    }
+    if (!media || !elPhotoImg) return;
+    var want = state.editingImg;
+    media.url(want).then(function (url) {
+      if (state.editingImg !== want || !elPhotoImg) return;
+      if (url) elPhotoImg.src = url;
+    });
+  }
+
+  /**
+   * 選ばれた写真を縮めてしまう。
+   * **入れ替えたぶんはすぐ消さない。**「閉じる」で取り消すかもしれないので、
+   * 保存するときに要らなくなったほうを捨てる（cards.js と同じ作法）。
+   */
+  function takePhoto(file) {
+    var media = mediaPort();
+    if (!media || !file) return;
+    if (elPhotoStatus) elPhotoStatus.textContent = '写真を取り込んでいます…';
+    if (elPhotoBtn) elPhotoBtn.disabled = true;
+    media.add(file).then(function (info) {
+      if (elPhotoBtn) elPhotoBtn.disabled = false;
+      state.editingImg = info.id;
+      renderPhotoField();
+      if (elPhotoStatus) {
+        elPhotoStatus.textContent = '取り込みました（' + media.humanBytes(info.bytes) + '）。';
+      }
+    })['catch'](function (err) {
+      if (elPhotoBtn) elPhotoBtn.disabled = false;
+      if (elPhotoStatus) {
+        elPhotoStatus.textContent = '取り込めませんでした（'
+          + ((err && err.message) || '理由は分かりません') + '）。';
+      }
+    });
+  }
+
+  /** 使われなくなった写真を捨てる。ほかの場面が使っていれば残す */
+  function dropPhotoIfUnused(id, keepId) {
+    var media = mediaPort();
+    var target = trim(id);
+    if (!media || !target || target === trim(keepId)) return;
+    for (var i = 0; i < state.items.length; i++) {
+      if (trim(state.items[i].img) === target) return;
+    }
+    media.remove(target);
   }
 
   /** 場面の札。「すべて」で見ているときだけ意味があるので、名前が無ければ畳む */
@@ -757,14 +928,14 @@
 
   /** 読み上げる。タップから同期で呼ぶこと（あいだに setTimeout を挟むと iOS で鳴らない） */
   function speakRow(row) {
-    if (!row || !row.item.en) return;
+    if (!row || !saysOf(row.item).length) return;
     var port = speechPort();
     if (!port) return;
     if (!state.speechOK) {
       flashStatus('読み上げ: この端末では読み上げが使えません。');
       return;
     }
-    state.speakingId = port.speak(row.item.en) ? row.id : null;
+    state.speakingId = port.speak(saysOf(row.item)[0]) ? row.id : null;
   }
 
   function stopSpeech() {
@@ -803,10 +974,10 @@
     if (elEmpty) {
       if (!state.items.length) {
         // 作りたてのときは空。何をすればいいか書いておく
-        elEmpty.textContent = 'まだフレーズがありません。「＋ フレーズを追加」から足せます。';
+        elEmpty.textContent = 'まだ場面がありません。「＋ 場面を足す」から足せます。';
         elEmpty.hidden = false;
       } else if (!visible) {
-        elEmpty.textContent = '該当するフレーズがありません。';
+        elEmpty.textContent = '該当する場面がありません。';
         elEmpty.hidden = false;
       } else {
         elEmpty.hidden = true;
@@ -973,7 +1144,12 @@
 
     if (elFieldJa) elFieldJa.value = item ? item.ja : '';
     if (elFieldEn) elFieldEn.value = item ? item.en : '';
+    if (elFieldEn2) elFieldEn2.value = item ? (item.en2 || '') : '';
+    if (elFieldEn3) elFieldEn3.value = item ? (item.en3 || '') : '';
     if (elFieldNote) elFieldNote.value = item ? item.note : '';
+    state.editingImg = item ? trim(item.img) : '';
+    if (elPhotoStatus) elPhotoStatus.textContent = '';
+    renderPhotoField();
     if (elFieldScene) {
       // 新しく足すときは、いま見ている場面を入れておく。
       // 場面で絞って眺めているときに足すものは、まずその場面のものなので。
@@ -1002,30 +1178,37 @@
   function submitEdit() {
     var ja = elFieldJa ? trim(elFieldJa.value) : '';
     var en = elFieldEn ? trim(elFieldEn.value) : '';
+    var en2 = elFieldEn2 ? trim(elFieldEn2.value) : '';
+    var en3 = elFieldEn3 ? trim(elFieldEn3.value) : '';
     var scene = elFieldScene ? sceneName(elFieldScene.value) : '';
     var note = elFieldNote ? trim(elFieldNote.value) : '';
 
-    if (!ja || !en) {
-      setEditStatus('日本語と英語の両方を入れてください。', true);
-      var focusEl = (!ja && elFieldJa) ? elFieldJa : elFieldEn;
-      if (focusEl) focusEl.focus();
+    // **言いたかったことだけで保存できる。**英語は後から足せる
+    if (!ja) {
+      setEditStatus('言いたかったことを入れてください。英語は後からで大丈夫です。', true);
+      if (elFieldJa) elFieldJa.focus();
       return;
     }
     if (hasSame(state.editingId, ja, en)) {
-      setEditStatus('同じフレーズがすでにあります。', true);
+      setEditStatus('同じ場面がすでにあります。', true);
       return;
     }
 
     if (state.editingId) {
       var item = findItem(state.editingId);
       if (!item) {   // 直している最中に同期で消えた
-        setEditStatus('このフレーズは見つかりませんでした。', true);
+        setEditStatus('この場面は見つかりませんでした。', true);
         return;
       }
       // 本文を直しても **id は変えない**。★・段階・予定はこの id に付いているので、
       // 直したとたんに「まだ」へ戻ったように見えてしまう。
       item.ja = ja;
+      var oldImg = trim(item.img);
       item.en = en;
+      item.en2 = en2;
+      item.en3 = en3;
+      item.img = trim(state.editingImg);
+      dropPhotoIfUnused(oldImg, item.img);   // 替えたなら、古いほうは要らない
       item.scene = scene;
       item.note = note;
       saveItems();
@@ -1039,7 +1222,8 @@
 
     var fresh = {
       id: makeId('phrase'),
-      ja: ja, en: en, scene: scene, note: note,
+      ja: ja, en: en, en2: en2, en3: en3, scene: scene, note: note,
+      img: trim(state.editingImg),
       created: Date.now()
     };
     state.items.push(fresh);
@@ -1050,6 +1234,10 @@
     // 場面はそのまま残す（同じ場面の言い回しは続けて入れるもの）。
     if (elFieldJa) elFieldJa.value = '';
     if (elFieldEn) elFieldEn.value = '';
+    if (elFieldEn2) elFieldEn2.value = '';
+    if (elFieldEn3) elFieldEn3.value = '';
+    state.editingImg = '';
+    renderPhotoField();
     if (elFieldNote) elFieldNote.value = '';
     if (elFieldJa) elFieldJa.focus();
 
@@ -1075,6 +1263,8 @@
     for (var i = 0; i < state.items.length; i++) {
       if (state.items[i].id === id) { state.items.splice(i, 1); break; }
     }
+    // この 1 件しか使っていなければ、写真も捨てる
+    dropPhotoIfUnused(item.img, '');
     // 消したことを同期に覚えさせないと、もう片方の端末から戻ってくる
     noteDelete('phraseitem:' + id);
     saveItems();
@@ -1111,6 +1301,13 @@
     var starBtn = target.closest('.row-star');
     if (starBtn && elRows.contains(starBtn)) {
       toggleStar(rowFromEvent(starBtn));
+      return;
+    }
+
+    var photoBtn = target.closest('.row-photo');
+    if (photoBtn && elRows.contains(photoBtn)) {
+      var recP = rowFromEvent(photoBtn);
+      if (recP) openPhoto(recP);
       return;
     }
 
@@ -1171,7 +1368,8 @@
     setLevel(row.id, v);
     var when = recordReview(row.id, v);
     renderLevel(row);
-    flashStatus((v ? v + '% にしました。' : 'まだ にしました。')
+    // **数字は出さない。**画面の欄と同じ言葉で言う
+    flashStatus(LEVEL_WORDS[v] + 'にしました。'
       + (when ? '次は ' + when + '。' : ''));
   }
 
@@ -1257,8 +1455,34 @@
 
     bindEnterToSave(elFieldJa);
     bindEnterToSave(elFieldEn);
+    bindEnterToSave(elFieldEn2);
+    bindEnterToSave(elFieldEn3);
     bindEnterToSave(elFieldScene);
     bindEnterToSave(elFieldNote);
+
+    // --- 写真 ---
+    if (elPhotoBtn && elPhotoFile) {
+      elPhotoBtn.addEventListener('click', function () { elPhotoFile.click(); });
+      elPhotoFile.addEventListener('change', function () {
+        var f = elPhotoFile.files && elPhotoFile.files[0];
+        elPhotoFile.value = '';   // 同じ写真を選び直せるように
+        if (f) takePhoto(f);
+      });
+    }
+    if (elPhotoClear) {
+      elPhotoClear.addEventListener('click', function () {
+        // ここでは消さない。保存したときに要らなくなったほうを捨てる
+        state.editingImg = '';
+        renderPhotoField();
+        if (elPhotoStatus) elPhotoStatus.textContent = '外しました（保存すると確定します）。';
+      });
+    }
+    if (elPhotoDialogClose) {
+      elPhotoDialogClose.addEventListener('click', function () { closeDialog(elPhotoDialog); });
+    }
+    if (elPhotoDialog) {
+      elPhotoDialog.addEventListener('close', function () { state.photoShowing = ''; });
+    }
 
     // 行の開閉はキーボードからも。ほかのモードを開いている間は
     // この一覧が画面に無いので、キー操作はそちらに任せる。
@@ -1306,8 +1530,8 @@
     for (i = 0; i < list.length; i++) {
       var raw = isObj(list[i]) ? list[i] : {};
       var ja = trim(raw.ja), en = trim(raw.en);
-      // 日本語が無いと出題にならず、英語が無いと答えが無い。どちらも要る
-      if (!ja || !en) { skipped++; continue; }
+      // セリフが無いと場面にならない。英語は後から足せるので無くてよい
+      if (!ja) { skipped++; continue; }
       var key = dupKey(ja, en);
       if (seen[key]) { skipped++; continue; }
       seen[key] = 1;
@@ -1316,6 +1540,8 @@
         id: lastId,
         ja: ja,
         en: en,
+        en2: trim(raw.en2),
+        en3: trim(raw.en3),
         scene: sceneName(raw.scene),
         note: trim(raw.note),
         created: now + i      // 取り込んだ順を保つ

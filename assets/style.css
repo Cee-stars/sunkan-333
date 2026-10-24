@@ -1626,7 +1626,7 @@ legend.field-label {
 
 
 /* =============================================================
-   13. モード切り替え（瞬間英作文 / フレーズ / パラフレ帳 / カード / シャドー）
+   13. モード切り替え（瞬間英作文 / 場面 / パラフレ帳 / カード / シャドー）
    ============================================================= */
 
 /* いま開いていないモードの部品はまとめて畳む。JS は <html data-mode> を替えるだけでよい。
@@ -2798,6 +2798,13 @@ legend.field-label {
        閉じた行は ↻ と % だけで足りるが、**そのぶんで詰めると開いた瞬間に
        英文が隠れる**。常に開いたときの幅を空けておく。 */
     --tools-space: 224px;
+  }
+
+  /* 場面は印の欄が言葉（「出なかった」など）なぶん広く、🖼 も増えるので
+     道具列が 282px ある。瞬間英作文と同じ 224px のままだと、
+     **長い言い方がボタンの下に潜る**。モードごとに空ける幅を変える。 */
+  :root[data-mode="phrase"] {
+    --tools-space: 290px;
     --cell-pad-x: 16px;
     --row-pad-y: 13px;
   }
@@ -3032,17 +3039,27 @@ legend.field-label {
 
 
 /* =============================================================
-   14d. フレーズ（かたまりで言う練習）
+   14d. 場面（かたまりで言う練習）
    方針: 行は瞬間英作文の .row / .row-tools をそのまま使い回す。
         ここに書くのは「瞬間英作文には無いもの」＝場面の札と、
         # 列が無いぶんの列指定だけ。**瞬間英作文の見た目は変えない。**
    ============================================================= */
 
-/* フレーズの行には # 列が無い（番号を振らない）。そのぶん 1 列目を場面の札に使う。
+/* 場面の行には # 列が無い（番号を振らない）。そのぶん 1 列目を場面の札に使う。
    .row-main は var(--sheet-cols) を使っているので、ここだけ直に上書きする
    （変数ごと書き換えると .sheet-head まで動いて瞬間英作文に効いてしまう）。 */
 .phrase-row .row-main {
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  /* 1 列目は **上限つき**にする。`auto` のままだと札の長さぶん列が伸びて、
+     「どんな時」が長いときに表ごと画面の外へ押し出される（横スクロールが出た）。
+     minmax の下限を 0 にしてあるので、狭いときは札のほうが縮む。 */
+  grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+/* 狭い画面は 2 列しか無く、札に割ける幅も小さい */
+@media (max-width: 560px) {
+  .phrase-row .row-main {
+    grid-template-columns: minmax(0, 4.5em) minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 
 /* 場面の札。寸法は .lv-tag（どれくらい言えるか）にそろえてあり、
@@ -3052,22 +3069,26 @@ legend.field-label {
   align-self: start;
   margin-block-start: 0.2em;
   margin-inline-start: var(--cell-pad-x);
-  max-width: 5em;
+  /* 「どんな時」は「電話」のような短い札ではなく「トイレが空いてない」のような
+     一言になる。5em だと「トイ…」で切れて何の札か分からない。
+     行は 1 段も高くならないので、折り返して 2 行まで見せる */
+  max-width: 7.5em;
   padding: 1px 6px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--surface-sunken);
   color: var(--text-faint);
   font-size: 0.625rem;
   font-weight: 700;
   line-height: 1.5;
   letter-spacing: -0.02em;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* 場面が無いフレーズでは列ごと畳む（1 列目が auto なので幅 0 になる）。
+/* 場面が無い場面では列ごと畳む（1 列目が auto なので幅 0 になる）。
    [hidden] も自分で畳む — display を持たせたぶん、
    ブラウザ既定の display:none を打ち消してしまうため。 */
 .phrase-scene-tag:empty,
@@ -3078,4 +3099,60 @@ legend.field-label {
 @media (max-width: 480px) {
   #btn-phrase-import .btn-label { display: inline; }
   #btn-phrase-import { padding-inline: 8px; font-size: 0.8125rem; }
+}
+
+/* ============================================================
+   場面：セリフと言い方
+   ============================================================ */
+
+/* 「『◯◯』と言ってみよう」の“と言ってみよう”のほう。
+   セリフ本体より弱くして、読む順を セリフ → 促し にする */
+.say-lead {
+  display: block;
+  margin-block-start: 1px;
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+}
+
+/* 言い方は 1 本ずつ行にする。**同じ太さ**で並べる —
+   1 本目を太くすると、それが「正解」になり残りが間違いに見える */
+.say-line {
+  display: block;
+}
+
+.say-line + .say-line { margin-block-start: 4px; }
+
+/* 方向の札。上下ではなく横並びの目印なので、小さく淡く */
+.say-tag {
+  display: inline-block;
+  min-width: 4.5em;
+  margin-inline-end: 6px;
+  color: var(--text-faint);
+  font-family: var(--font-ja, inherit);
+  font-size: 0.75rem;
+  vertical-align: baseline;
+}
+
+.say-text { font-family: var(--font-en); }
+
+/* 英語をまだ入れていない場面。催促にしないため、淡いただの覚え書きにする */
+.say-yet {
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+}
+
+/* 狭い画面では札を行の上に逃がす。横に並べると言い方が 1〜2 語で折り返す */
+@media (max-width: 560px) {
+  .say-tag { display: block; min-width: 0; margin-inline-end: 0; }
+}
+
+/* 場面の写真を大きく見るとき。画面からはみ出させない */
+.phrase-photo-big {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  margin-block: 8px;
+  border-radius: var(--radius);
+  object-fit: contain;
+  background: var(--surface-sunken);
 }
