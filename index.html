@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 58 (2026-10-24)">
+<meta name="sunkan-build" content="build 59 (2026-10-24)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=58">
+<link rel="stylesheet" href="assets/style.css?v=59">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -106,10 +106,10 @@
     <button type="button" id="btn-settings" class="btn btn--icon" aria-label="設定" aria-haspopup="dialog">⚙</button>
   </div>
 
-  <!-- ===== 場面の操作列（「どんな時」で絞る → 隠す/表示 → 検索） ===== -->
+  <!-- ===== 場面の操作列（「〜な時に」で絞る → 隠す/表示 → 検索） ===== -->
   <div class="header-row header-row--main" data-mode-view="phrase">
     <div class="deck-picker">
-      <label class="visually-hidden" for="phrase-scene">どんな時</label>
+      <label class="visually-hidden" for="phrase-scene">〜な時に</label>
       <!-- 選択肢は phrase.js が作る（使う人が入れたものしか無いため、HTML では空） -->
       <select id="phrase-scene" class="deck-select"></select>
     </div>
@@ -139,7 +139,7 @@
     <div class="genre-field">
       <label class="visually-hidden" for="genre-input">ジャンル</label>
       <input type="search" id="genre-input" class="genre-input" placeholder="ジャンルを探す・作る"
-        autocomplete="off" enterkeyhint="done">
+        autocomplete="off" enterkeyhint="search">
       <button type="button" id="btn-genre-add" class="btn btn--primary genre-add">
         <span aria-hidden="true">＋</span><span class="btn-label">作る</span>
       </button>
@@ -473,13 +473,15 @@
 <template id="phrase-row-template">
   <li class="row phrase-row" data-id="">
     <button type="button" class="row-main" aria-expanded="false">
-      <!-- 「どんな時」の札。瞬間英作文の # 列と同じ位置（1 列目）に置く。
-           ここなら行が 1 段も高くならず、右の .row-tools とも重ならない。
-           空のまま（指定なし）なら CSS が幅ごと畳む。
-           .cell--ja / .en-text の外に置いてあるので、そこへ textContent を
-           入れても消えない（app.js は jaEl.textContent で中身を入れている）。 -->
-      <span class="phrase-scene-tag"></span>
-      <span class="cell cell--ja"></span>
+      <span class="cell cell--ja">
+        <!-- 「〜な時に」。**言いたかったことの真上**に置く。
+             前は 1 列目の細い札だったが、「トイレが空いてなくて人に聞く時」の
+             ような長い状況が「トイレが空い…」で切れて、何の場面か読めなかった。
+             .ja-text の外に置いてあるので、そこへ textContent を入れても消えない
+             （phrase.js は .ja-text に文字を入れている）。
+             空のままなら CSS が畳むので、場面を書いていない行は 1 段も高くならない。 -->
+        <small class="phrase-when"></small>
+      </span>
       <span class="cell cell--en">
         <span class="en-text"></span>
         <span class="en-mask" aria-hidden="true"></span>
@@ -551,13 +553,13 @@
     <label class="field">
       <span class="field-label">日本語</span>
       <input type="text" id="add-ja" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：もう一度言ってもらえますか。">
+        placeholder="例：もう一度言ってもらえますか。">
     </label>
 
     <label class="field">
       <span class="field-label">英語</span>
       <input type="text" id="add-en" class="field-input" autocomplete="off"
-        enterkeyhint="done" placeholder="例：Could you say that again?">
+        placeholder="例：Could you say that again?">
     </label>
 
     <label class="field">
@@ -584,7 +586,7 @@
       <div class="new-deck-row">
         <label class="visually-hidden" for="new-deck-name">新しいセットの名前</label>
         <input type="text" id="new-deck-name" class="field-input" autocomplete="off"
-          enterkeyhint="done" placeholder="例：仕事で使う言い回し">
+          placeholder="例：仕事で使う言い回し">
         <button type="button" id="btn-new-deck" class="btn btn--ghost">作る</button>
       </div>
 
@@ -606,12 +608,12 @@
 
     <label class="field">
       <span class="field-label">日本語</span>
-      <input type="text" id="edit-ja" class="field-input" autocomplete="off" enterkeyhint="next">
+      <input type="text" id="edit-ja" class="field-input" autocomplete="off">
     </label>
 
     <label class="field">
       <span class="field-label">英語</span>
-      <input type="text" id="edit-en" class="field-input" autocomplete="off" enterkeyhint="done">
+      <input type="text" id="edit-en" class="field-input" autocomplete="off">
     </label>
 
     <label class="field">
@@ -636,16 +638,25 @@
   <form method="dialog" class="dialog-inner">
     <h2 id="phrase-edit-dialog-title" class="dialog-title">場面</h2>
     <p class="dialog-desc">
-      かたまりのまま言えるようにしたい 1 組を入れます。
-      「どんな時」を入れておくと、あとでそれごとに絞って練習できます。
+      「<strong>〜な時に</strong>」と「言いたかったこと」で 1 組です。
+      入れておくと、あとでその時ごとに絞って練習できます。
     </p>
 
-    <!-- **ここだけ埋めれば保存できる。** その「時」は突然来るので、
-         いくつも欄を埋めさせると入れなくなる。英語も「どんな時」も後から足せる -->
+    <!-- 状況が先。言いたかったことだけだと、あとで見たときに
+         どの場面の話だったのか分からなくなる（本人の申し出で上へ移した）。
+         ここに入れた言葉ごとに、あとで絞って練習できる。 -->
+    <label class="field">
+      <span class="field-label">〜な時に（任意）</span>
+      <input type="text" id="phrase-scene-input" class="field-input" autocomplete="off"
+        placeholder="例：トイレが空いてなくて人に聞く時">
+    </label>
+
+    <!-- **言いたかったことだけで保存できる。** その「時」は突然来るので、
+         いくつも欄を埋めさせると入れなくなる。英語も写真も後から足せる -->
     <label class="field">
       <span class="field-label">言いたかったこと（これだけでOK）</span>
       <input type="text" id="phrase-ja" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：他にトイレありますか？">
+        placeholder="例：他にトイレありますか？">
     </label>
 
     <!-- 言い方は 3 本まで。**上下ではなく方向**で分ける。
@@ -653,31 +664,25 @@
     <label class="field">
       <span class="field-label">英語・短く（任意）</span>
       <input type="text" id="phrase-en" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：Any other restrooms?">
+        placeholder="例：Any other restrooms?">
     </label>
 
     <label class="field">
       <span class="field-label">英語・やわらかく（任意）</span>
       <input type="text" id="phrase-en2" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：Is there another one I could use?">
+        placeholder="例：Is there another one I could use?">
     </label>
 
     <label class="field">
       <span class="field-label">英語・遠回しに（任意）</span>
       <input type="text" id="phrase-en3" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：Do you know if there's another restroom?">
-    </label>
-
-    <label class="field">
-      <span class="field-label">どんな時（任意）</span>
-      <input type="text" id="phrase-scene-input" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：電話で">
+        placeholder="例：Do you know if there's another restroom?">
     </label>
 
     <label class="field">
       <span class="field-label">メモ（任意）</span>
       <input type="text" id="phrase-note" class="field-input" autocomplete="off"
-        enterkeyhint="done" placeholder="つまずきやすい所があれば">
+        placeholder="つまずきやすい所があれば">
     </label>
 
     <fieldset class="field photo-field" id="phrase-photo-field">
@@ -927,12 +932,12 @@ MEMO: take after = 〜に似ている</pre>
       <label class="field">
         <span class="visually-hidden">見出しの英文</span>
         <input type="text" id="para-head-en" class="field-input" autocomplete="off"
-          enterkeyhint="next" placeholder="例：It is important to keep trying.">
+          placeholder="例：It is important to keep trying.">
       </label>
       <label class="field">
         <span class="visually-hidden">見出しの意味</span>
         <input type="text" id="para-head-ja" class="field-input" autocomplete="off"
-          enterkeyhint="next" placeholder="例：やり続けることが大切だ。">
+          placeholder="例：やり続けることが大切だ。">
       </label>
     </fieldset>
 
@@ -983,7 +988,7 @@ MEMO: take after = 〜に似ている</pre>
       <div class="new-deck-row">
         <label class="visually-hidden" for="para-new-genre">新しいジャンルの名前</label>
         <input type="text" id="para-new-genre" class="field-input" autocomplete="off"
-          enterkeyhint="done" placeholder="例：会議で使う言い換え">
+          placeholder="例：会議で使う言い換え">
         <button type="button" id="btn-para-new-genre" class="btn btn--ghost">作る</button>
       </div>
       <ul class="deck-manage-list" id="genre-manage-list"></ul>
@@ -1250,25 +1255,25 @@ MEMO: take after = 〜に似ている</pre>
     <label class="field">
       <span class="field-label">英語（語・表現）</span>
       <input type="text" id="card-en" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：take after">
+        placeholder="例：take after">
     </label>
 
     <label class="field">
       <span class="field-label">日本語の意味</span>
       <input type="text" id="card-ja" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：〜に似ている">
+        placeholder="例：〜に似ている">
     </label>
 
     <label class="field">
       <span class="field-label">英語の例文</span>
       <input type="text" id="card-ex-en" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：She takes after her mother.">
+        placeholder="例：She takes after her mother.">
     </label>
 
     <label class="field">
       <span class="field-label">例文の日本語訳</span>
       <input type="text" id="card-ex-ja" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：彼女は母親似だ。">
+        placeholder="例：彼女は母親似だ。">
     </label>
 
     <label class="field">
@@ -1313,7 +1318,7 @@ MEMO: take after = 〜に似ている</pre>
       <div class="new-deck-row">
         <label class="visually-hidden" for="card-new-deck">新しいセットの名前</label>
         <input type="text" id="card-new-deck" class="field-input" autocomplete="off"
-          enterkeyhint="done" placeholder="例：英検準1級 動詞">
+          placeholder="例：英検準1級 動詞">
         <button type="button" id="btn-card-new-deck" class="btn btn--ghost">作る</button>
       </div>
     </div>
@@ -1373,7 +1378,7 @@ MEMO: take after = 〜に似ている</pre>
     </p>
 
     <label class="field">
-      <span class="field-label">どんな時（ファイルに書いていないぶんに付ける）</span>
+      <span class="field-label">〜な時に（ファイルに書いていないぶんに付ける）</span>
       <input type="text" id="phrase-import-scene" class="field-input"
         placeholder="例：電話" autocomplete="off">
     </label>
@@ -1554,12 +1559,12 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=58"></script>
-<script src="assets/data.js?v=58"></script>
-<script src="assets/app.js?v=58"></script>
-<script src="assets/paraphrase.js?v=58"></script>
+<script src="assets/speech.js?v=59"></script>
+<script src="assets/data.js?v=59"></script>
+<script src="assets/app.js?v=59"></script>
+<script src="assets/paraphrase.js?v=59"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=58"></script>
+<script src="assets/phrase.js?v=59"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1572,13 +1577,13 @@ EXJA: 会議を金曜まで延期した。</pre>
     <label class="field">
       <span class="field-label">英文</span>
       <input type="text" id="shadow-en-input" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：I drink coffee every morning.">
+        placeholder="例：I drink coffee every morning.">
     </label>
 
     <label class="field">
       <span class="field-label">日本語（任意）</span>
       <input type="text" id="shadow-ja-input" class="field-input" autocomplete="off"
-        enterkeyhint="done" placeholder="例：私は毎朝コーヒーを飲みます。">
+        placeholder="例：私は毎朝コーヒーを飲みます。">
     </label>
 
     <p class="dialog-note" id="shadow-dialog-status" role="status" aria-live="polite"></p>
@@ -1597,7 +1602,7 @@ EXJA: 会議を金曜まで延期した。</pre>
       <div class="new-deck-row">
         <label class="visually-hidden" for="shadow-new-deck">新しいセットの名前</label>
         <input type="text" id="shadow-new-deck" class="field-input" autocomplete="off"
-          enterkeyhint="done" placeholder="例：オンライン英会話">
+          placeholder="例：オンライン英会話">
         <button type="button" id="btn-shadow-new-deck" class="btn btn--ghost">作る</button>
       </div>
     </div>
@@ -1650,14 +1655,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=58"></script>
-<script src="assets/srs.js?v=58"></script>
-<script src="assets/cards.js?v=58"></script>
-<script src="assets/shadow.js?v=58"></script>
-<script src="assets/import.js?v=58"></script>
-<script src="assets/inbox.js?v=58"></script>
-<script src="assets/sync.js?v=58"></script>
-<script src="assets/update.js?v=58"></script>
+<script src="assets/media.js?v=59"></script>
+<script src="assets/srs.js?v=59"></script>
+<script src="assets/cards.js?v=59"></script>
+<script src="assets/shadow.js?v=59"></script>
+<script src="assets/import.js?v=59"></script>
+<script src="assets/inbox.js?v=59"></script>
+<script src="assets/sync.js?v=59"></script>
+<script src="assets/update.js?v=59"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。

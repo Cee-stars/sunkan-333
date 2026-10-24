@@ -1392,11 +1392,18 @@
     setMode(MODES[next], { focusTab: true });
   }
 
-  /** 言い換えの欄で Enter を押したら、そのまま保存する */
-  function bindEnterToSave(input) {
-    if (!input) return;
+  /**
+   * 入力欄の Enter を止める。
+   * **Enter では追加も保存もしない。** 日本語を変換して確定するときの Enter で
+   * 勝手に追加されるのが、入れている途中でいちばん邪魔だったため。
+   * preventDefault だけは残す（ダイアログの中は <form method="dialog"> なので、
+   * そのままだと Enter で黙って閉じて、書いたものが消える）。
+   */
+  function blockEnter(input) {
+    if (!input || !input.addEventListener) return;
     input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); submitParaCard(); }
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
     });
   }
 
@@ -1417,11 +1424,7 @@
         runGenreFilter();
         syncGenreAddButton();
       });
-      elGenreInput.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        submitGenreFromInput();
-      });
+      blockEnter(elGenreInput);
     }
     if (elGenreAdd) elGenreAdd.addEventListener('click', submitGenreFromInput);
 
@@ -1495,22 +1498,12 @@
       });
     }
 
-    // 見出しの欄で Enter を押したら次へ、言い換えの欄では保存する
-    if (elHeadEn) {
-      elHeadEn.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); if (elHeadJa) elHeadJa.focus(); }
-      });
-    }
-    if (elHeadJa) {
-      elHeadJa.addEventListener('keydown', function (e) {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        if (lineInputs[0] && lineInputs[0].en) lineInputs[0].en.focus();
-      });
-    }
+    // Enter では保存しない。保存は「保存する」ボタンだけ。
+    blockEnter(elHeadEn);
+    blockEnter(elHeadJa);
     for (var i = 0; i < lineInputs.length; i++) {
-      bindEnterToSave(lineInputs[i].en);
-      bindEnterToSave(lineInputs[i].ja);
+      blockEnter(lineInputs[i].en);
+      blockEnter(lineInputs[i].ja);
     }
 
     if (elNewGenreBtn) {
@@ -1535,11 +1528,7 @@
         setDialogStatus('「' + name + '」を作りました。', false);
       });
     }
-    if (elNewGenre) {
-      elNewGenre.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); if (elNewGenreBtn) elNewGenreBtn.click(); }
-      });
-    }
+    blockEnter(elNewGenre);
 
     if (elGenreManageList) {
       elGenreManageList.addEventListener('click', function (e) {
