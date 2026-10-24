@@ -23,7 +23,7 @@
   var LS_DRILL_SRS = 'sunkan:drill:srs'; // 瞬間英作文の復習の予定。落とすと忘却曲線が消える
   var LS_GAPS = 'sunkan:gaps';           // つまずいた所（言えなかった語）
 
-  // フレーズ（かたまりを言う練習）。セットは持たず、場面（scene）で分ける。
+  // 場面（かたまりを言う練習）。セットは持たず、場面（scene）で分ける。
   // `sunkan:phrase:ui` は端末ごとの好みなので**送らない**
   var LS_PHRASE_ITEMS = 'sunkan:phrase:items';
   var LS_PHRASE_STARS = 'sunkan:phrase:stars';
@@ -398,10 +398,10 @@
     put(LS_SHADOW_DECKS, ms.decks, [], 'shadow', 'シャドーイングのセット');
     put(LS_SHADOW_ITEMS, ms.items, [], 'shadow', 'シャドーイングの文');
     var mp = phrasePart(merged);
-    put(LS_PHRASE_ITEMS, mp.items, [], 'phrase', 'フレーズ');
-    put(LS_PHRASE_STARS, mp.stars, [], 'phrase', 'フレーズの「もう一度」');
-    put(LS_PHRASE_LEVELS, mp.levels, {}, 'phrase', 'フレーズのどれくらい言えるか');
-    put(LS_PHRASE_SRS, mp.srs, {}, 'phrase', 'フレーズの復習の予定');
+    put(LS_PHRASE_ITEMS, mp.items, [], 'phrase', '場面');
+    put(LS_PHRASE_STARS, mp.stars, [], 'phrase', '場面の「もう一度」');
+    put(LS_PHRASE_LEVELS, mp.levels, {}, 'phrase', '場面の印');
+    put(LS_PHRASE_SRS, mp.srs, {}, 'phrase', '場面の復習の予定');
     put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
@@ -639,8 +639,8 @@
   }
 
   /**
-   * フレーズの段階（`{itemId: {v,at}}`）。**`at` が新しいほうを採る**。
-   * 瞬間英作文の `mergeLevels` と同じ考え方だが、フレーズはセットを持たないので
+   * 場面の段階（`{itemId: {v,at}}`）。**`at` が新しいほうを採る**。
+   * 瞬間英作文の `mergeLevels` と同じ考え方だが、場面はセットを持たないので
    * 入れ物が 1 段ひらたい（`{deckId: {itemId: …}}` ではない）。
    */
   function mergePhraseLevels(mine, theirs, liveIds) {
@@ -648,7 +648,7 @@
     function take(src) {
       for (var id in src) {
         if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
-        if (!liveIds[id]) continue;             // 消えたフレーズの印は連れて戻さない
+        if (!liveIds[id]) continue;             // 消えた場面の印は連れて戻さない
         var it = src[id];
         if (!isObject(it)) continue;
         var v = Number(it.v);
@@ -665,7 +665,7 @@
   }
 
   /**
-   * フレーズの復習の予定（`{itemId: srs}`）。**`last` が新しいほうを残す**
+   * 場面の復習の予定（`{itemId: srs}`）。**`last` が新しいほうを残す**
    *（カードの `mergeCardSrs` と同じ考え方。ただし面を持たないぶん 1 段浅い）。
    */
   function mergePhraseSrs(mine, theirs, liveIds) {

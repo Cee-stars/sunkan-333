@@ -51,7 +51,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 57 (2026-10-21)';
+  var APP_VERSION = 'build 58 (2026-10-24)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -2474,7 +2474,7 @@
         var para = JSON.parse(window.localStorage.getItem('sunkan:para:cards') || '[]');
         if (para.length) parts.push('パラフレ ' + para.length);
         var phrase = JSON.parse(window.localStorage.getItem('sunkan:phrase:items') || '[]');
-        if (phrase.length) parts.push('フレーズ ' + phrase.length);
+        if (phrase.length) parts.push('場面 ' + phrase.length);
         // シャドーイングの文はもともと数に入っていなかった。
         // 「ぜんぶ」と言いながら数に出ないと、入っていないのかと疑わせる
         var shadow = JSON.parse(window.localStorage.getItem('sunkan:shadow:items') || '[]');

@@ -77,9 +77,12 @@
     '訳': 'exJa', '例文訳': 'exJa', '例文の訳': 'exJa', '和訳': 'exJa',
     memo: 'note', note: 'note',
     'メモ': 'note', '注': 'note', '補足': 'note',
-    // フレーズだけが使う。カードの取り込みでは当たらない見出し語なので、
+    // 場面だけが使う。カードの取り込みでは当たらない見出し語なので、
     // ここに足しても既存の読み方は変わらない
     scene: 'scene', situation: 'scene',
+    // 表示名は「どんな時」に変えたが、**古い書き方（場面:）も読めるままにする**。
+    // 読めなくすると、前に書き出したファイルが取り込めなくなる
+    'どんな時': 'scene', 'どんなとき': 'scene',
     '場面': 'scene', 'シーン': 'scene', '場所': 'scene'
   };
 
@@ -898,7 +901,7 @@
    * ========================================================== */
 
   /* ============================================================
-   * 7. フレーズのがわ
+   * 7. 場面のがわ
    *
    * **表の列の並びが瞬間英作文と同じ「日本語が先」**。カードの `parseTable`
    * （英語が先）をそのまま使うと日本語と英語が入れ替わる。CONTRACT に
@@ -908,43 +911,43 @@
    * ========================================================== */
 
   var PHRASE_PROMPT = [
-    '添付のファイルから、英会話で使う「フレーズ（決まった言い回し）」を抜き出して、',
+    '添付のファイルから、英会話で使う「その場の言い回し」を抜き出して、',
     '下の形だけで出力してください。前置きも説明も付けないでください。',
     '',
     'JA: 日本語の意味（短く、話し言葉で）',
-    'EN: 英語のフレーズ（文より短いかたまり。ピリオドは付けてよい）',
+    'EN: 英語の言い方（文より短いかたまり。ピリオドは付けてよい）',
     '場面: どんなときに使うか（電話 / 食事 / 買い物 / 仕事 など短く）',
     'メモ: 注意点があれば（無ければ行ごと省く）',
     '---',
     '',
-    '・1 つのフレーズごとに --- で区切ってください',
+    '・1 つごとに --- で区切ってください',
     '・JA と EN は必ず入れてください（どちらかが無いものは出さないでください）',
     '・長い説明文は入れないでください'
   ].join('\n');
 
   var PHRASE_TEMPLATE = [
     '# この形で書けば、そのまま読み込めます。',
-    '# 「場面」と「メモ」は省いてもかまいません。',
+    '# 「どんな時」と「メモ」は省いてもかまいません。',
     '',
-    'JA: ちょっと待って',
-    'EN: Hold on a second.',
-    '場面: 電話',
+    'JA: 他にトイレありますか？',
+    'EN: Any other restrooms?',
+    'どんな時: トイレが空いてない',
     '---',
     'JA: お会計をお願いします',
     'EN: Could I get the check?',
-    '場面: 食事',
+    'どんな時: 食事',
     '---',
     'JA: それ、いいですね',
     'EN: That sounds good.',
-    '場面: ぜんぶ',
+    'どんな時: ぜんぶ',
     'メモ: 相づちにも使える',
     '',
     '# 表（タブ区切り / カンマ区切り）でも読み込めます。',
-    '# 列は左から 日本語 / 英語 / 場面 / メモ です。',
+    '# 列は左から 日本語 / 英語 / どんな時 / メモ です。',
     '# ※ カードの表とは1列目が逆（あちらは英語が先）なので注意してください。'
   ].join('\n');
 
-  /** 見出し付きで書かれたものを、フレーズの形に写す */
+  /** 見出し付きで書かれたものを、場面の形に写す */
   function toPhraseItems(items) {
     var out = [];
     for (var i = 0; i < items.length; i++) {
@@ -1040,7 +1043,7 @@
     if (!trim(text)) { elPhPreview.textContent = ''; return; }
     var items = parsePhraseAny(text);
     if (!items.length) {
-      elPhPreview.textContent = 'フレーズとして読めませんでした。JA: EN: の書き方か、'
+      elPhPreview.textContent = '場面として読めませんでした。JA: EN: の書き方か、'
         + '日本語 / 英語 の 2 列以上の表にしてください。';
       return;
     }
@@ -1059,12 +1062,12 @@
   function savePhrases() {
     var api = phraseAPI();
     if (!api) {
-      if (elPhPreview) elPhPreview.textContent = 'フレーズの画面が読み込めていません。';
+      if (elPhPreview) elPhPreview.textContent = '場面の画面が読み込めていません。';
       return;
     }
     var items = parsePhraseAny(str(elPhText && elPhText.value));
     if (!items.length) {
-      if (elPhPreview) elPhPreview.textContent = '読み込めるフレーズがありませんでした。';
+      if (elPhPreview) elPhPreview.textContent = '読み込める場面がありませんでした。';
       return;
     }
     // ファイルに場面が書いていないものに、まとめて付ける
@@ -1129,7 +1132,7 @@
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = 'フレーズの書き方.txt';
+      a.download = '場面の書き方.txt';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1182,7 +1185,7 @@
     drillPrompt: DRILL_PROMPT,
     /** 決まった書き方の見本 */
     cardTemplate: CARD_TEMPLATE,
-    /** フレーズ。表は **日本語が先**（カードと 1 列目が逆） */
+    /** 場面。表は **日本語が先**（カードと 1 列目が逆） */
     parsePhrase: parsePhraseAny,
     parsePhraseTable: parsePhraseTable,
     toPhraseItems: toPhraseItems,

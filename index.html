@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 57 (2026-10-21)">
+<meta name="sunkan-build" content="build 58 (2026-10-24)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=57">
+<link rel="stylesheet" href="assets/style.css?v=58">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -46,7 +46,7 @@
     <!-- 見出しはタブと同じ言葉になるので、画面には出さず読み上げにだけ残す -->
     <h1 class="app-title visually-hidden">
       <span data-mode-view="drill">瞬間英作文</span>
-      <span data-mode-view="phrase">フレーズ</span>
+      <span data-mode-view="phrase">場面</span>
       <span data-mode-view="para">パラフレ帳</span>
       <span data-mode-view="cards">カード</span>
       <span data-mode-view="shadow">シャドーイング</span>
@@ -56,7 +56,7 @@
       <button type="button" class="mode-tab" id="tab-drill" role="tab"
         aria-selected="true" aria-controls="view-drill">瞬間英作文</button>
       <button type="button" class="mode-tab" id="tab-phrase" role="tab"
-        aria-selected="false" aria-controls="phrase-view" tabindex="-1">フレーズ</button>
+        aria-selected="false" aria-controls="phrase-view" tabindex="-1">場面</button>
       <button type="button" class="mode-tab" id="tab-para" role="tab"
         aria-selected="false" aria-controls="view-para" tabindex="-1">パラフレ帳</button>
       <button type="button" class="mode-tab" id="tab-cards" role="tab"
@@ -106,11 +106,11 @@
     <button type="button" id="btn-settings" class="btn btn--icon" aria-label="設定" aria-haspopup="dialog">⚙</button>
   </div>
 
-  <!-- ===== フレーズの操作列（場面で絞る → 隠す/表示 → 検索） ===== -->
+  <!-- ===== 場面の操作列（「どんな時」で絞る → 隠す/表示 → 検索） ===== -->
   <div class="header-row header-row--main" data-mode-view="phrase">
     <div class="deck-picker">
-      <label class="visually-hidden" for="phrase-scene">場面</label>
-      <!-- 選択肢は phrase.js が作る（場面は使う人が入れたものしか無いため、HTML では空） -->
+      <label class="visually-hidden" for="phrase-scene">どんな時</label>
+      <!-- 選択肢は phrase.js が作る（使う人が入れたものしか無いため、HTML では空） -->
       <select id="phrase-scene" class="deck-select"></select>
     </div>
 
@@ -128,7 +128,7 @@
     </button>
 
     <div class="search-wrap">
-      <label class="visually-hidden" for="phrase-search">フレーズを検索</label>
+      <label class="visually-hidden" for="phrase-search">場面を検索</label>
       <input type="search" id="phrase-search" class="search-input"
         placeholder="日本語・英語で検索" autocomplete="off" enterkeyhint="search">
     </div>
@@ -281,7 +281,7 @@
   </div>
   </section>
 
-  <!-- ===== フレーズ（かたまりで言う練習。表の作りは瞬間英作文と同じ） ===== -->
+  <!-- ===== 場面（その時に言えるようにする。表の作りは瞬間英作文と同じ） ===== -->
   <section class="view view--phrase" id="phrase-view" data-mode-view="phrase"
     role="tabpanel" aria-labelledby="tab-phrase" tabindex="-1">
   <div class="sheet">
@@ -289,10 +289,10 @@
          置くと列の幅が行とずれる -->
     <ol class="rows" id="phrase-rows" tabindex="-1"></ol>
 
-    <p class="empty-state" id="phrase-empty" hidden>該当するフレーズがありません。</p>
+    <p class="empty-state" id="phrase-empty" hidden>該当する場面がありません。</p>
 
     <button type="button" id="btn-phrase-add" class="add-row" aria-haspopup="dialog">
-      <span aria-hidden="true">＋</span> フレーズを足す
+      <span aria-hidden="true">＋</span> 場面を足す
     </button>
   </div>
   </section>
@@ -425,7 +425,7 @@
 <footer class="app-footer">
   <p class="hint hint--desktop" data-mode-view="drill">↑↓ 行を移動／Space・Enter 英語の表示切替／A 全表示・全非表示／/ 検索</p>
   <p class="hint hint--mobile" data-mode-view="drill">行をタップすると英語が出ます</p>
-  <p class="hint hint--desktop" data-mode-view="phrase">場面で絞ってから、日本語を見てかたまりを口に出します。行をクリックすると英語が出ます。</p>
+  <p class="hint hint--desktop" data-mode-view="phrase">その時のセリフを見て、英語で言ってみます。行をクリックすると言い方が出ます。</p>
   <p class="hint hint--mobile" data-mode-view="phrase">行をタップすると英語が出ます</p>
   <p class="hint" data-mode-view="para">見出しの英文が元の1文、その下が言い換えです。「言い換えを隠す」を押すと、見出しをタップするまで伏せられます。</p>
   <p class="hint hint--desktop" data-mode-view="cards">Space・Enter めくる／1 もう一度／2 できた／3 かんたん／R もう一度きく</p>
@@ -467,15 +467,15 @@
   </li>
 </template>
 
-<!-- ===== フレーズ 1 行のテンプレート（JS からクローンして使う）
+<!-- ===== 場面 1 行のテンプレート（JS からクローンして使う）
      #row-template とクラス名をそろえてあるので、.row まわりの CSS を
      そのまま使い回せる。△（つまずいた所）は瞬間英作文だけのものなので置かない。 ===== -->
 <template id="phrase-row-template">
   <li class="row phrase-row" data-id="">
     <button type="button" class="row-main" aria-expanded="false">
-      <!-- 場面の札。瞬間英作文の # 列と同じ位置（1 列目）に置く。
+      <!-- 「どんな時」の札。瞬間英作文の # 列と同じ位置（1 列目）に置く。
            ここなら行が 1 段も高くならず、右の .row-tools とも重ならない。
-           空のまま（場面なし）なら CSS が幅ごと畳む。
+           空のまま（指定なし）なら CSS が幅ごと畳む。
            .cell--ja / .en-text の外に置いてあるので、そこへ textContent を
            入れても消えない（app.js は jaEl.textContent で中身を入れている）。 -->
       <span class="phrase-scene-tag"></span>
@@ -487,18 +487,24 @@
     </button>
     <span class="row-tools">
       <button type="button" class="btn btn--icon row-speak" aria-label="英語を読み上げる" tabindex="-1">🔈</button>
-      <!-- 間違えたフレーズに付けて、言えるようになったら外す印 -->
+      <!-- 言えなかった場面に付けて、言えるようになったら外す印 -->
       <button type="button" class="btn btn--icon row-star" aria-label="「もう一度」に入れる" aria-pressed="false" tabindex="-1">↻</button>
       <!-- どれくらい言えるか。選択肢は HTML に置いておく（JS が古いままでも空にならない） -->
-      <label class="visually-hidden">どれくらい言えるか</label>
-      <select class="row-level" tabindex="-1" aria-label="どれくらい言えるか">
+      <!-- 口から出たか。**数字は画面に出さない**（画面では読めないため）。
+           値は 40/80/100 のまま＝保存の形も忘却曲線もそのまま使える。
+           「次にいつ出すか」を決めるものであって、成績ではない。 -->
+      <label class="visually-hidden">口から出たか</label>
+      <select class="row-level" tabindex="-1" aria-label="口から出たか">
         <option value="0">まだ</option>
-        <option value="40">40%</option>
-        <option value="80">80%</option>
-        <option value="100">100%</option>
+        <option value="40">出なかった</option>
+        <option value="80">詰まった</option>
+        <option value="100">言えた</option>
       </select>
-      <button type="button" class="btn btn--icon row-edit" aria-label="このフレーズを編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
-      <button type="button" class="btn btn--icon row-delete" aria-label="このフレーズを削除する" tabindex="-1">🗑</button>
+      <!-- 写真。**付いている行にだけ出す**（無い行に枠を出すと「写真を入れろ」という
+           催促になり、0 枚でも成立させる決めと食い違う） -->
+      <button type="button" class="btn btn--icon row-photo" aria-label="写真を見る" tabindex="-1" aria-haspopup="dialog" hidden>🖼</button>
+      <button type="button" class="btn btn--icon row-edit" aria-label="この場面を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
+      <button type="button" class="btn btn--icon row-delete" aria-label="この場面を削除する" tabindex="-1">🗑</button>
     </span>
   </li>
 </template>
@@ -625,29 +631,45 @@
   </form>
 </dialog>
 
-<!-- ===== フレーズを足す・直すダイアログ（#edit-dialog と同じ作り） ===== -->
+<!-- ===== 場面を足す・直すダイアログ（#edit-dialog と同じ作り） ===== -->
 <dialog id="phrase-edit-dialog" class="dialog" aria-labelledby="phrase-edit-dialog-title">
   <form method="dialog" class="dialog-inner">
-    <h2 id="phrase-edit-dialog-title" class="dialog-title">フレーズ</h2>
+    <h2 id="phrase-edit-dialog-title" class="dialog-title">場面</h2>
     <p class="dialog-desc">
       かたまりのまま言えるようにしたい 1 組を入れます。
-      場面を入れておくと、あとで場面ごとに絞って練習できます。
+      「どんな時」を入れておくと、あとでそれごとに絞って練習できます。
     </p>
 
+    <!-- **ここだけ埋めれば保存できる。** その「時」は突然来るので、
+         いくつも欄を埋めさせると入れなくなる。英語も「どんな時」も後から足せる -->
     <label class="field">
-      <span class="field-label">日本語</span>
+      <span class="field-label">言いたかったこと（これだけでOK）</span>
       <input type="text" id="phrase-ja" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：ちょっと待ってもらえますか。">
+        enterkeyhint="next" placeholder="例：他にトイレありますか？">
     </label>
 
+    <!-- 言い方は 3 本まで。**上下ではなく方向**で分ける。
+         1 本しか無ければ札も出さない（埋めろという催促にしない） -->
     <label class="field">
-      <span class="field-label">英語</span>
+      <span class="field-label">英語・短く（任意）</span>
       <input type="text" id="phrase-en" class="field-input" autocomplete="off"
-        enterkeyhint="next" placeholder="例：Could you hold on a second?">
+        enterkeyhint="next" placeholder="例：Any other restrooms?">
     </label>
 
     <label class="field">
-      <span class="field-label">場面（任意）</span>
+      <span class="field-label">英語・やわらかく（任意）</span>
+      <input type="text" id="phrase-en2" class="field-input" autocomplete="off"
+        enterkeyhint="next" placeholder="例：Is there another one I could use?">
+    </label>
+
+    <label class="field">
+      <span class="field-label">英語・遠回しに（任意）</span>
+      <input type="text" id="phrase-en3" class="field-input" autocomplete="off"
+        enterkeyhint="next" placeholder="例：Do you know if there's another restroom?">
+    </label>
+
+    <label class="field">
+      <span class="field-label">どんな時（任意）</span>
       <input type="text" id="phrase-scene-input" class="field-input" autocomplete="off"
         enterkeyhint="next" placeholder="例：電話で">
     </label>
@@ -658,10 +680,30 @@
         enterkeyhint="done" placeholder="つまずきやすい所があれば">
     </label>
 
+    <fieldset class="field photo-field" id="phrase-photo-field">
+      <legend class="field-label">写真（任意）</legend>
+      <p class="dialog-hint">
+        あとから足せます。<strong>その場で撮らなくても大丈夫です</strong>
+        （トイレの前やお店で写真は撮りにくいので）。付けた行にだけ 🖼 が出ます。
+      </p>
+
+      <div class="photo-row">
+        <div class="photo-preview" id="phrase-photo-preview" hidden>
+          <img id="phrase-photo-img" alt="この場面の写真">
+        </div>
+        <div class="photo-actions">
+          <button type="button" id="btn-phrase-photo" class="btn btn--ghost">写真を選ぶ</button>
+          <button type="button" id="btn-phrase-photo-clear" class="btn btn--ghost" hidden>外す</button>
+        </div>
+      </div>
+      <input type="file" id="phrase-photo-file" accept="image/*" hidden>
+      <p class="dialog-hint" id="phrase-photo-status" role="status" aria-live="polite"></p>
+    </fieldset>
+
     <p class="dialog-note" id="phrase-edit-status" role="status" aria-live="polite"></p>
 
     <!-- 削除は hidden にしない。出し直しを JS に任せると、
-         付け忘れたときに「消せないフレーズ」ができてしまう -->
+         付け忘れたときに「消せない場面」ができてしまう -->
     <div class="dialog-actions dialog-actions--wrap">
       <button type="button" id="btn-phrase-close" class="btn btn--ghost">閉じる</button>
       <button type="button" id="btn-phrase-delete" class="btn btn--ghost">削除する</button>
@@ -1308,18 +1350,30 @@ MEMO: take after = 〜に似ている</pre>
 </dialog>
 
 <!-- ===== カードの取り込みダイアログ ===== -->
-<!-- ===== フレーズをファイルから読み込む ===== -->
+<!-- ===== 場面の写真を大きく見る ===== -->
+<dialog id="phrase-photo-dialog" class="dialog" aria-labelledby="phrase-photo-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="phrase-photo-dialog-title" class="dialog-title">写真</h2>
+    <p class="dialog-desc" id="phrase-photo-caption"></p>
+    <img id="phrase-photo-big" class="phrase-photo-big" alt="この場面の写真">
+    <div class="dialog-actions">
+      <button type="button" id="btn-phrase-photo-close" class="btn btn--primary">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 場面をファイルから読み込む ===== -->
 <dialog id="phrase-import-dialog" class="dialog" aria-labelledby="phrase-import-dialog-title">
   <form method="dialog" class="dialog-inner">
     <h2 id="phrase-import-dialog-title" class="dialog-title">ファイルから読み込む</h2>
     <p class="dialog-desc">
       テキスト・表（タブ区切り / カンマ区切り）・PDF から読み込めます。
       書き方がバラバラなファイルは、下の「AI への指示をコピー」で整えてから貼り付けてください。
-      <strong>どちらの道でも、できるフレーズは同じ形です。</strong>
+      <strong>どちらの道でも、できる場面は同じ形です。</strong>
     </p>
 
     <label class="field">
-      <span class="field-label">場面（ファイルに書いていないぶんに付ける）</span>
+      <span class="field-label">どんな時（ファイルに書いていないぶんに付ける）</span>
       <input type="text" id="phrase-import-scene" class="field-input"
         placeholder="例：電話" autocomplete="off">
     </label>
@@ -1337,7 +1391,7 @@ MEMO: take after = 〜に似ている</pre>
     <label class="field">
       <span class="visually-hidden">貼り付け</span>
       <textarea id="phrase-import-text" class="field-input field-textarea" rows="10"
-        placeholder="JA: ちょっと待って&#10;EN: Hold on a second.&#10;場面: 電話&#10;---&#10;JA: お会計をお願いします&#10;EN: Could I get the check?&#10;場面: 食事"></textarea>
+        placeholder="JA: ちょっと待って&#10;EN: Hold on a second.&#10;どんな時: 電話&#10;---&#10;JA: お会計をお願いします&#10;EN: Could I get the check?&#10;どんな時: 食事"></textarea>
     </label>
 
     <p class="dialog-note" id="phrase-import-preview" role="status" aria-live="polite"></p>
@@ -1350,7 +1404,7 @@ MEMO: take after = 〜に似ている</pre>
     <hr class="dialog-sep">
 
     <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">どんなファイルでも同じフレーズにする</h3>
+      <h3 class="dialog-subtitle">どんなファイルでも同じ形にする</h3>
       <p class="dialog-hint">
         下のボタンで指示文をコピーして、ChatGPT や Claude に<strong>ファイルといっしょに</strong>渡してください。
         返ってきた文字をそのまま上の欄に貼り付ければ、同じ形で読み込めます。
@@ -1500,12 +1554,12 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=57"></script>
-<script src="assets/data.js?v=57"></script>
-<script src="assets/app.js?v=57"></script>
-<script src="assets/paraphrase.js?v=57"></script>
-<!-- フレーズの本体。?v= は付けない（版は最後にまとめてそろえる） -->
-<script src="assets/phrase.js?v=57"></script>
+<script src="assets/speech.js?v=58"></script>
+<script src="assets/data.js?v=58"></script>
+<script src="assets/app.js?v=58"></script>
+<script src="assets/paraphrase.js?v=58"></script>
+<!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
+<script src="assets/phrase.js?v=58"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1596,14 +1650,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=57"></script>
-<script src="assets/srs.js?v=57"></script>
-<script src="assets/cards.js?v=57"></script>
-<script src="assets/shadow.js?v=57"></script>
-<script src="assets/import.js?v=57"></script>
-<script src="assets/inbox.js?v=57"></script>
-<script src="assets/sync.js?v=57"></script>
-<script src="assets/update.js?v=57"></script>
+<script src="assets/media.js?v=58"></script>
+<script src="assets/srs.js?v=58"></script>
+<script src="assets/cards.js?v=58"></script>
+<script src="assets/shadow.js?v=58"></script>
+<script src="assets/import.js?v=58"></script>
+<script src="assets/inbox.js?v=58"></script>
+<script src="assets/sync.js?v=58"></script>
+<script src="assets/update.js?v=58"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。

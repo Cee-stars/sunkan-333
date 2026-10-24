@@ -16,7 +16,7 @@
 | `assets/import.js` | K | 取り込み（PDF・テキスト・表・AI への指示）。**カードと瞬間英作文の両方**が通る |
 | `assets/media.js` | L | 写真（IndexedDB）。縮めて詰めるのもここ。画面は触らない |
 | `assets/shadow.js` | M | シャドーイング（続けて流す・速さ・くり返し・隠す） |
-| `assets/phrase.js` | N | フレーズ（かたまりを言う練習）。瞬間英作文と同じ操作感で、セットではなく**場面**で分ける |
+| `assets/phrase.js` | N | 場面（その時に言えるようにする）。**ファイル名と保存先は `phrase` のまま**（表示名だけ変えた。変えるとデータが消える）。「どんな時」で分ける |
 | `assets/vendor/pdf.min.js` | 外 | pdf.js（Mozilla / Apache-2.0）。手を入れない。差し替えは版ごと |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
 | `assets/sync.js` | F | 端末どうしの同期（GitHub のシークレット Gist 経由） |
@@ -25,8 +25,9 @@
 | `version.json` | 共通 | 公開されている版。`APP_VERSION` と同じ文字列を入れる |
 | `tests/srstest.mjs` | 共通 | 復習の予定の確かめ（Playwright）。**390px と 1180px の両方**で走る。`python3 -m http.server 8599` を上げてから `node tests/srstest.mjs` |
 | `tests/gaptest.mjs` | 共通 | つまずいた所の確かめ。同じ上げ方で `node tests/gaptest.mjs` |
-| `tests/phrasetest.mjs` | 共通 | フレーズの確かめ（足す・ファイルから読む・同期）。`node tests/phrasetest.mjs` |
+| `tests/phrasetest.mjs` | 共通 | 場面の確かめ（足す・ファイルから読む・同期）。`node tests/phrasetest.mjs` |
 | `tests/fake-worker.mjs` | 共通 | 確かめ用の置き場。**`cloudflare/worker.mjs` をそのまま**動かす（D1 の代わりにその場かぎりの SQLite）。`node tests/fake-worker.mjs 8600` |
+| `tests/scenetest.mjs` | 共通 | 場面の確かめ（セリフ・言い方3本・印の言葉・写真・はみ出し）。`node tests/scenetest.mjs` |
 | `tests/synctest.mjs` | 共通 | 2 台が揃うかの確かめ。アプリと置き場の両方を上げてから `node tests/synctest.mjs` |
 | `cloudflare/worker.mjs` | 共通 | 同期の置き場（Cloudflare Worker）。**アプリの一式ではない**ので `index.html` からは読まない。管理画面に貼って使う（npm もビルドも要らない）。中身は解釈せず、合言葉ごとに JSON を 1 つ預かって返すだけ |
 
@@ -117,9 +118,9 @@
 | `cardTemplate` / `drillTemplate` | 決まった書き方の見本（モードごとに別） |
 
 **表はモードごとに列の並びが違う。** カードは `英語 / 意味 / 例文 / 訳 / メモ`、
-瞬間英作文は `日本語 / 英語 / メモ`、フレーズは `日本語 / 英語 / 場面 / メモ`。
-**カードだけ 1 列目が英語**なので、`parseTable` を瞬間英作文やフレーズに
-使ってはいけない（日本語と英語が入れ替わる）。フレーズは `parsePhraseTable` が自分で解く。
+瞬間英作文は `日本語 / 英語 / メモ`、場面は `日本語 / 英語 / どんな時 / メモ`。
+**カードだけ 1 列目が英語**なので、`parseTable` を瞬間英作文や場面に
+使ってはいけない（日本語と英語が入れ替わる）。場面は `parsePhraseTable` が自分で解く。
 app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は自分で解く。
 
 カードの取り込みは import.js が最後まで面倒を見る（`SUNKAN_CARDS.addCards` へ渡す）。
@@ -136,11 +137,11 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 | `addPhrases(items)` | 取り込みから足す。同じ `(ja, en)` は飛ばす。`{added, skipped}` |
 | `scenes()` | 場面の一覧 `[{name, count}]` |
 
-**`import.js` はフレーズを直に保存しない。** 足すのは `addPhrases` 越しに限る。
+**`import.js` は場面を直に保存しない。** 足すのは `addPhrases` 越しに限る。
 
 **`phrase.js` は自分の init で `data-mode` を見る。** `index.html` のスクリプトは
 2 ブロックに分かれていて、`paraphrase.js` の init が `setMode` を呼ぶ時点では
-`window.SUNKAN_PHRASE` がまだ無い。見ないと、フレーズを最後に開いた状態で
+`window.SUNKAN_PHRASE` がまだ無い。見ないと、場面を最後に開いた状態で
 起動したとき画面が空になる（`cards.js` / `shadow.js` も同じことをしている）。
 
 ### `window.SUNKAN_SHADOW`（shadow.js が開けている口）
@@ -759,6 +760,36 @@ JS が古いまま当たっても空の欄にならないようにするため�
 PNG は**不透明の正方形**にする（透過の角丸は iOS で角が黒くなる）。
 `manifest.webmanifest` の `start_url` / `scope` は触らない（触るとデータが別扱いになる）。
 
+### 場面（旧場面）の決まり
+
+**表示名だけ「場面」に変えた。保存先の名前（`sunkan:phrase:*`）とファイル名
+（`assets/phrase.js`）は `phrase` のまま。** 変えると今まで入れたものが消える
+（★の `star` を変えなかったのと同じ理由）。中の欄の表示名は「どんな時」。
+取り込みの見出し語は `どんな時:` と **`場面:` の両方**を読む（前に書き出した
+ファイルが取り込めなくならないように）。
+
+**セリフ（`ja`）だけで保存できる。** 英語・写真・どんな時は、ぜんぶ後から足せる。
+その「時」は突然来るので、欄をいくつも埋めさせると入れてもらえない。
+`sanitizeItems` が落とすのは **`ja` が無いもの**だけ（`en` が無くても捨てない）。
+
+**言い方は最大 3 本**（`en` / `en2` / `en3`）。画面では**同じ太さ**で並べ、
+「短く／やわらかく／遠回しに」の札を添える。**1 本目を太くしない** —
+太くした瞬間それが「答え」になり、「書いてある答えと違う」が戻ってくる。
+**札は表示のためのもので、入力を強いるものではない**（1 本しか無ければ札も出さない）。
+
+**印は言葉で出す。**「出なかった／詰まった／言えた」。**数字（40/80/100）は画面に出さない** —
+小さくて読めないため。ただし**保存する値は 40/80/100 のまま**なので、
+忘却曲線（`sunkan:phrase:srs`）はそのまま使える。成績ではなく「次にいつ出すか」。
+
+**写真は付いている行にだけ 🖼 を出す。**無い行には枠も出さない（枠は「写真を入れろ」
+という催促になり、0 枚でも成立させる決めと食い違う）。中身は `media.js`（IndexedDB）。
+
+**`.phrase-row .row-main` の 1 列目は上限つき**（`minmax(0, 7.5em)`）。`auto` にすると
+「どんな時」が長いときに列ごと伸びて、**表が画面の外へ押し出される**（実際に横スクロールが出た）。
+
+**場面の `--tools-space` は 290px**（瞬間英作文は 224px）。印の欄が言葉のぶん広く、
+🖼 も増えて道具列が長い。同じ幅のままにすると長い言い方がボタンの下に潜る。
+
 ### 行の右に空ける幅（`--tools-space`）
 
 **行のボタンを足したら、必ず `--tools-space` を測り直す。**
@@ -787,13 +818,13 @@ PNG は**不透明の正方形**にする（透過の角丸は iOS で角が黒�
 **1 件ごとに `at` が新しいほうを採る**（`mergeGaps`。`mergeLevels` と同じ考え方）。
 足し算にすると、片方で外した語がもう片方から戻ってきて、いつまでも消せなくなる。
 
-### フレーズの突き合わせ
+### 場面の突き合わせ
 
 本体は `mergeById(..., 'phraseitem:')`、★は `'phrasestar:'`。
 段階（`mergePhraseLevels`）は **`at` が新しいほう**、予定（`mergePhraseSrs`）は
 **`last` が新しいほう**を採る。考え方は瞬間英作文・カードと同じだが、
-**フレーズはセットを持たないので入れ物が 1 段ひらたい**（`{deckId: {itemId: …}}` ではない）。
-消えたフレーズの印と予定は連れて戻さない（`liveIds` に無い id は落とす）。
+**場面はセットを持たないので入れ物が 1 段ひらたい**（`{deckId: {itemId: …}}` ではない）。
+消えた場面の印と予定は連れて戻さない（`liveIds` に無い id は落とす）。
 
 ### カードの覚えた記録の突き合わせ
 
@@ -863,7 +894,7 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:stars` | `{ [deckId]: string[] }` … 「もう一度」を付けた項目の id。**画面では ↻「もう一度」**（間違えた文に付けて、言えるようになったら外す）。中の名前が `star` のままなのは、保存の鍵も同期の記録（`star:` / `parastar:` / `cardstar:`）もそれで動いているから。変えると今まで付けたぶんが消える |
 | `sunkan:levels` | `{ [deckId]: { [itemId]: {v,at} } }` … どれくらい言えるか。`v` は 40/80/100、**0 は「外した」印**。`at` は付けた時刻 |
 | `sunkan:drill:srs` | `{ [deckId]: { [itemId]: srs の状態 } }` … 瞬間英作文の復習の予定。中身の形は `srs.js` の `newState()` が正。`levels` と同じ入れ物の形にしてあるので、セットを消すときも文を直して id が変わったときも、★・段階とまったく同じ手順で片付く |
-| `sunkan:phrase:items` | `[{id, ja, en, scene, note, created}]` … フレーズ。**セットを持たず `scene`（場面）で分ける**ので、入れ物は 1 段ひらたい |
+| `sunkan:phrase:items` | `[{id, ja, en, scene, note, created}]` … 場面。**セットを持たず `scene`（場面）で分ける**ので、入れ物は 1 段ひらたい |
 | `sunkan:phrase:stars` | `string[]` … ↻ |
 | `sunkan:phrase:levels` | `{ [itemId]: {v,at} }` … どれくらい言えるか |
 | `sunkan:phrase:srs` | `{ [itemId]: srs の状態 }` … 復習の予定 |
