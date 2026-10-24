@@ -841,6 +841,21 @@
    * 14. つなぎ込み
    * ========================================================== */
 
+  /**
+   * 入力欄の Enter を止める。
+   * **Enter では追加も保存もしない。** 日本語を変換して確定するときの Enter で
+   * 勝手に追加されるのが、入れている途中でいちばん邪魔だったため。
+   * preventDefault だけは残す（ダイアログの中は <form method="dialog"> なので、
+   * そのままだと Enter で黙って閉じて、書いたものが消える）。
+   */
+  function blockEnter(input) {
+    if (!input || !input.addEventListener) return;
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+    });
+  }
+
   function bindEvents() {
     if (elDeckSelect) {
       elDeckSelect.addEventListener('change', function () {
@@ -886,15 +901,11 @@
         if (state.editingId) deleteItem(state.editingId);
       });
     }
-    bindEnter(elFieldEn);
-    bindEnter(elFieldJa);
+    blockEnter(elFieldEn);
+    blockEnter(elFieldJa);
 
     if (elNewDeckBtn) elNewDeckBtn.addEventListener('click', createDeck);
-    if (elNewDeckInput) {
-      elNewDeckInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); createDeck(); }
-      });
-    }
+    blockEnter(elNewDeckInput);
 
     if (elListBtn) {
       elListBtn.addEventListener('click', function () {
@@ -930,13 +941,6 @@
     window.addEventListener('pagehide', stop);
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) stop();
-    });
-  }
-
-  function bindEnter(input) {
-    if (!input) return;
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); submitItem(); }
     });
   }
 

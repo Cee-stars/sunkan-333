@@ -552,20 +552,19 @@
     var jaEl = li.querySelector('.cell--ja');
     var enTextEl = li.querySelector('.en-text');
 
-    // 段階の札は**日本語側の先頭**に置く。# 列は iPhone の幅では畳まれるので、
-    // そこに出すと肝心の端末で見えない（app.js と同じ置き方・同じクラス）。
+    // 段階の札は**言いたかったことの真ん前**に置く（「〜な時に」の下）。
+    // # 列は iPhone の幅では畳まれるので、そこに出すと肝心の端末で見えない。
     if (jaEl) {
-      var tag = document.createElement('small');
-      tag.className = 'lv-tag';
-      tag.hidden = true;
-      jaEl.appendChild(tag);
-      jaEl.insertBefore(tag, jaEl.firstChild);
-      row.lvTagEl = tag;
-
       var jaText = document.createElement('span');
       jaText.className = 'ja-text';
       jaText.textContent = item.ja;
       jaEl.appendChild(jaText);
+
+      var tag = document.createElement('small');
+      tag.className = 'lv-tag';
+      tag.hidden = true;
+      jaEl.insertBefore(tag, jaText);
+      row.lvTagEl = tag;
 
       // メモは答えのヒントそのもの。<small class="note"> にして
       // 開いた行だけ見えるようにするのは CSS の仕事（app.js と同じ）。
@@ -601,7 +600,7 @@
     row.mainEl = li.querySelector('.row-main');
     row.starEl = li.querySelector('.row-star');
     row.levelEl = li.querySelector('.row-level');
-    row.sceneTagEl = li.querySelector('.phrase-scene-tag');
+    row.sceneTagEl = li.querySelector('.phrase-when');
     row.photoEl = li.querySelector('.row-photo');
 
     // 読み上げが使えない端末ではボタンごと隠す（押しても鳴らないものを出さない）
@@ -767,7 +766,7 @@
     media.remove(target);
   }
 
-  /** 場面の札。「すべて」で見ているときだけ意味があるので、名前が無ければ畳む */
+  /** 「〜な時に」の行。言いたかったことの真上に出す。空なら畳む（行を高くしない） */
   function renderSceneTag(row) {
     if (!row || !row.sceneTagEl) return;
     var name = row.item.scene;
@@ -1383,17 +1382,20 @@
     return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable === true;
   }
 
-  /** 1 行の入力欄なら Enter でそのまま保存する（textarea では改行を優先する） */
-  function bindEnterToSave(input) {
-    if (!input || !input.tagName) return;
-    if (input.tagName.toLowerCase() !== 'input') return;
+  /**
+   * 入力欄の Enter を止める。
+   * **Enter では追加も保存もしない。** 日本語を変換して確定するときの Enter で
+   * 勝手に追加されるのが、入れている途中でいちばん邪魔だったため。
+   * preventDefault だけは残す（ダイアログの中は <form method="dialog"> なので、
+   * そのままだと Enter で黙って閉じて、書いたものが消える）。
+   */
+  function blockEnter(input) {
+    if (!input || !input.addEventListener) return;
     input.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      submitEdit();
     });
   }
-
   function bindEvents() {
     if (elRows) {
       elRows.addEventListener('click', onRowsClick);
@@ -1453,12 +1455,12 @@
       elEditDialog.addEventListener('close', function () { state.editingId = null; });
     }
 
-    bindEnterToSave(elFieldJa);
-    bindEnterToSave(elFieldEn);
-    bindEnterToSave(elFieldEn2);
-    bindEnterToSave(elFieldEn3);
-    bindEnterToSave(elFieldScene);
-    bindEnterToSave(elFieldNote);
+    blockEnter(elFieldJa);
+    blockEnter(elFieldEn);
+    blockEnter(elFieldEn2);
+    blockEnter(elFieldEn3);
+    blockEnter(elFieldScene);
+    blockEnter(elFieldNote);
 
     // --- 写真 ---
     if (elPhotoBtn && elPhotoFile) {

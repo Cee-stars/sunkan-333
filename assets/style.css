@@ -3045,54 +3045,34 @@ legend.field-label {
         # 列が無いぶんの列指定だけ。**瞬間英作文の見た目は変えない。**
    ============================================================= */
 
-/* 場面の行には # 列が無い（番号を振らない）。そのぶん 1 列目を場面の札に使う。
+/* 場面の行には # 列が無い（番号を振らない）。中身も 日本語 / 英語 の 2 つだけ。
    .row-main は var(--sheet-cols) を使っているので、ここだけ直に上書きする
-   （変数ごと書き換えると .sheet-head まで動いて瞬間英作文に効いてしまう）。 */
+   （変数ごと書き換えると .sheet-head まで動いて瞬間英作文に効いてしまう）。
+   どちらの列も下限 0 — ここを `auto` にすると、長い文のぶん列が伸びて
+   **表ごと画面の外へ押し出される**（build 58 で実際に横スクロールが出た）。 */
 .phrase-row .row-main {
-  /* 1 列目は **上限つき**にする。`auto` のままだと札の長さぶん列が伸びて、
-     「どんな時」が長いときに表ごと画面の外へ押し出される（横スクロールが出た）。
-     minmax の下限を 0 にしてあるので、狭いときは札のほうが縮む。 */
-  grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-/* 狭い画面は 2 列しか無く、札に割ける幅も小さい */
-@media (max-width: 560px) {
-  .phrase-row .row-main {
-    grid-template-columns: minmax(0, 4.5em) minmax(0, 1fr) minmax(0, 1fr);
-  }
-}
-
-/* 場面の札。寸法は .lv-tag（どれくらい言えるか）にそろえてあり、
-   **行の高さは増やさない**（130 件並ぶので 1 段増えると画面の長さが倍になる）。
+/* 「〜な時に」。言いたかったことの**真上**に 1 行で出す。
+   前は 1 列目の細い札だったが、長い状況が「トイレが空い…」で切れて読めなかった。
    色は既存の変数だけで作る（手で rgba を書くと暗い配色で沈む）。 */
-.phrase-scene-tag {
-  align-self: start;
-  margin-block-start: 0.2em;
-  margin-inline-start: var(--cell-pad-x);
-  /* 「どんな時」は「電話」のような短い札ではなく「トイレが空いてない」のような
-     一言になる。5em だと「トイ…」で切れて何の札か分からない。
-     行は 1 段も高くならないので、折り返して 2 行まで見せる */
-  max-width: 7.5em;
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-sunken);
+.phrase-when {
+  display: block;
+  margin-block-end: 0.15em;
   color: var(--text-faint);
-  font-size: 0.625rem;
+  font-size: max(0.6875rem, calc(var(--row-font) * 0.76));
   font-weight: 700;
-  line-height: 1.5;
+  line-height: 1.4;
   letter-spacing: -0.02em;
-  white-space: normal;
   overflow-wrap: anywhere;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* 場面が無い場面では列ごと畳む（1 列目が auto なので幅 0 になる）。
+/* 「〜な時に」を書いていない行は、札のぶんの高さも空けない。
    [hidden] も自分で畳む — display を持たせたぶん、
    ブラウザ既定の display:none を打ち消してしまうため。 */
-.phrase-scene-tag:empty,
-.phrase-scene-tag[hidden] { display: none; }
+.phrase-when:empty,
+.phrase-when[hidden] { display: none; }
 
 /* 「ファイルから」は記号だけにしない。
    📄 だけでは、どこから読み込むのかが分からない（#btn-drill-import と同じ扱い）。 */

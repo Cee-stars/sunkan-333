@@ -51,7 +51,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 58 (2026-10-24)';
+  var APP_VERSION = 'build 59 (2026-10-24)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -3260,6 +3260,21 @@
    * 24. イベント登録
    * ========================================================== */
 
+  /**
+   * 入力欄の Enter を止める。
+   * **Enter では追加も保存もしない。** 日本語を変換して確定するときの Enter で
+   * 勝手に追加されるのが、入れている途中でいちばん邪魔だったため。
+   * preventDefault だけは残す（ダイアログの中は <form method="dialog"> なので、
+   * そのままだと Enter で黙って閉じて、書いたものが消える）。
+   */
+  function blockEnter(input) {
+    if (!input || !input.addEventListener) return;
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+    });
+  }
+
   function bindEvents() {
     if (elRows) elRows.addEventListener('click', onRowsClick);
     if (elRows) elRows.addEventListener('change', onRowsChange);
@@ -3316,28 +3331,12 @@
     if (elAddSave) elAddSave.addEventListener('click', submitAddSentence);
     if (elAddClose) elAddClose.addEventListener('click', function () { closeDialog(elAddDialog); });
 
-    // 入力欄で Enter を押したら次へ／追加する（フォーム送信で閉じてしまうのを防ぐ）
-    if (elAddJa) {
-      elAddJa.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); if (elAddEn) elAddEn.focus(); }
-      });
-    }
-    if (elAddEn) {
-      elAddEn.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); submitAddSentence(); }
-      });
-    }
-    if (elAddNote) {
-      elAddNote.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); submitAddSentence(); }
-      });
-    }
+    // Enter では追加しない（blockEnter の説明を見てください）。追加はボタンだけ。
+    blockEnter(elAddJa);
+    blockEnter(elAddEn);
+    blockEnter(elAddNote);
     if (elNewDeck) elNewDeck.addEventListener('click', submitNewDeck);
-    if (elNewDeckName) {
-      elNewDeckName.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); submitNewDeck(); }
-      });
-    }
+    blockEnter(elNewDeckName);
     if (elAddedList) {
       elAddedList.addEventListener('click', function (e) {
         var btn = e.target.closest ? e.target.closest('.added-delete') : null;
@@ -3358,22 +3357,10 @@
     if (elEditClose) {
       elEditClose.addEventListener('click', function () { closeDialog(elEditDialog); });
     }
-    // Enter で次の欄へ／保存する（フォーム送信で黙って閉じてしまうのを防ぐ）
-    if (elEditJa) {
-      elEditJa.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); if (elEditEn) elEditEn.focus(); }
-      });
-    }
-    if (elEditEn) {
-      elEditEn.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); submitEditSentence(); }
-      });
-    }
-    if (elEditNote) {
-      elEditNote.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); submitEditSentence(); }
-      });
-    }
+    // ここも Enter では保存しない。保存は「保存する」ボタンだけ。
+    blockEnter(elEditJa);
+    blockEnter(elEditEn);
+    blockEnter(elEditNote);
     if (elEditDialog) {
       // Esc で閉じたときに編集中の行を残さない（次に開いた行と取り違える）。
       // close は少し遅れて届くので、その間に別の行の ✎ を押されていたら消さない

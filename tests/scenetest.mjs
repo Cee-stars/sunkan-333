@@ -47,17 +47,27 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
   await page.waitForTimeout(300);
   ok('足すボタンが「場面を足す」', /場面を足す/.test(await page.$eval('#btn-phrase-add', e => e.textContent)));
 
-  // --- セリフだけで保存できる（その「時」は突然来るので、英語は後から）---
+  // --- 欄の順。状況が先（言いたかったことだけだと、何の場面か分からなくなる）---
   await page.click('#btn-phrase-add');
   await page.waitForTimeout(250);
+  const order = await page.$$eval('#phrase-edit-dialog .field-input', e => e.map(x => x.id));
+  ok('「〜な時に」が一番上の欄', order[0] === 'phrase-scene-input', order.join('/'));
+  ok('その次が言いたかったこと', order[1] === 'phrase-ja', order.join('/'));
+  ok('欄の名前が「〜な時に」',
+    /〜な時に/.test(await page.$eval('#phrase-edit-dialog .field-label', e => e.textContent)),
+    await page.$eval('#phrase-edit-dialog .field-label', e => e.textContent));
+
+  // --- セリフだけで保存できる（その「時」は突然来るので、英語は後から）---
   await page.fill('#phrase-ja', '他にトイレありますか？');
-  await page.fill('#phrase-scene-input', 'トイレが空いてない');
+  await page.fill('#phrase-scene-input', 'トイレが空いてなくて人に聞く時');
   await page.click('#btn-phrase-save');
   await page.waitForTimeout(350);
   const only = await page.evaluate(() => JSON.parse(localStorage.getItem('sunkan:phrase:items') || '[]'));
   ok('セリフだけで保存できる（英語なし）', only.length === 1 && !only[0].en, JSON.stringify(only));
 
   // --- 言い方 3 本 ---
+  // 場面はわざと空にする（続けて入れるときは前の場面が残る作りなので）
+  await page.fill('#phrase-scene-input', '');
   await page.fill('#phrase-ja', 'お会計をお願いします');
   await page.fill('#phrase-en', 'Check, please.');
   await page.fill('#phrase-en2', 'Could I get the check?');
@@ -79,10 +89,23 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
       text: (x.querySelector('.say-text') || {}).textContent
     })),
     yet: !!li.querySelector('.say-yet'),
-    photo: !li.querySelector('.row-photo').hidden
+    photo: !li.querySelector('.row-photo').hidden,
+    when: (li.querySelector('.phrase-when') || {}).textContent,
+    // 「〜な時に」が言いたかったことの**真上**にあること
+    above: (() => {
+      const w = li.querySelector('.phrase-when'), j = li.querySelector('.ja-text');
+      if (!w || !j) return false;
+      const a = w.getBoundingClientRect(), b = j.getBoundingClientRect();
+      return a.width > 0 && a.top <= b.top;
+    })()
   })));
 
   ok('セリフが「…」で囲まれる', /^「.+」$/.test(rows[0].ja), rows[0].ja);
+  ok('「〜な時に」がそのまま出る', rows[0].when === 'トイレが空いてなくて人に聞く時', rows[0].when);
+  ok('「〜な時に」が言いたかったことの真上', rows[0].above === true);
+  ok('書いていない行では畳む（行を高くしない）',
+    await page.$eval('#phrase-rows .row:nth-child(2) .phrase-when',
+      e => getComputedStyle(e).display === 'none'));
   ok('「と言ってみよう」が付く', rows[0].lead === 'と言ってみよう', rows[0].lead);
   ok('英語が無い行は「英語まだ」', rows[0].yet === true && rows[0].says.length === 0, JSON.stringify(rows[0]));
   ok('言い方が 3 本出る', rows[1].says.length === 3, JSON.stringify(rows[1].says));
@@ -123,7 +146,7 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
   await page.waitForTimeout(250);
   await page.fill('#phrase-ja', 'わざと長い日本語で、表が画面の外へ押し出されないかを見る');
   await page.fill('#phrase-en', 'Excuse me, I was wondering whether there might be another restroom somewhere nearby that I could use right now');
-  await page.fill('#phrase-scene-input', 'とても長いどんな時の名前');
+  await page.fill('#phrase-scene-input', 'とても長い「〜な時に」をわざと入れて、表が画面の外へ出ないかを見る時');
   await page.click('#btn-phrase-save');
   await page.waitForTimeout(300);
   await page.click('#btn-phrase-close');
