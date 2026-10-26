@@ -133,6 +133,51 @@ ok('状態の文に合言葉を丸ごと出さない', whenText.indexOf(room) < 
 ok('同じものを入れたか照合できる末尾は出す',
    whenText.indexOf(room.slice(-4)) >= 0 || whenText === '', whenText.slice(0, 120));
 
+// --- 置き場を調べる：2 台で見比べられるものが出るか ---
+// 繋がらないときに知りたいのは「向こうに何件あるか」と「合言葉が同じか」。
+await A.page.click('#btn-sync-cf-check');
+await A.page.waitForTimeout(900);
+const report = await A.page.$eval('#sync-cf-status', e => e.textContent);
+ok('調べた結果が、置き場の欄のすぐ下に出る', report.length > 0, report.slice(0, 80));
+ok('向こうの件数が出る', /向こう: 場面 5/.test(report), report.slice(0, 200));
+ok('こちらの件数が出る', /こちら: 場面 5/.test(report), report.slice(0, 200));
+ok('合言葉の末尾が出る（2 台で見比べられる）', report.indexOf(room.slice(-4)) >= 0);
+ok('調べた結果にも合言葉を丸ごと出さない', report.indexOf(room) < 0);
+
+// --- 見張りの穴：カードを直したときも自動で同期するか ---
+// fingerprint にカードとシャドーが入っていなかったので、カードだけ直しても
+// 自動同期が動かなかった。直したものが、押さずに向こうへ渡るかを見る。
+await A.page.check('#opt-sync-auto');
+await A.page.waitForTimeout(300);
+await A.page.evaluate(() => {
+  const k = 'sunkan:cards:items';
+  const list = JSON.parse(localStorage.getItem(k) || '[]');
+  list.push({ id: 'card-watch-test', deck: 'test', en: 'bring up', ja: '話を持ち出す', ex: '', exja: '', note: '' });
+  localStorage.setItem(k, JSON.stringify(list));
+});
+// 見張り 3 秒 ＋ 落ち着くまで 2 秒 ＋ 往復
+await A.page.waitForTimeout(9000);
+await syncNow(B);
+const cardsB = await B.page.evaluate(() => JSON.parse(localStorage.getItem('sunkan:cards:items') || '[]'));
+ok('カードを直したときも自動で同期する', cardsB.some(x => x.id === 'card-watch-test'),
+   JSON.stringify(cardsB.map(x => x.id)));
+
+// --- URL の打ち間違い（https:// を書かない）---
+await A.page.fill('#sync-cf-url', 'sunkan-sync.example.workers.dev');
+await A.page.click('#btn-sync-cf-check');
+await A.page.waitForTimeout(600);
+ok('https:// が抜けていたら足す',
+   (await A.page.inputValue('#sync-cf-url')) === 'https://sunkan-sync.example.workers.dev',
+   await A.page.inputValue('#sync-cf-url'));
+// 手元で試すときの 127.0.0.1 は http のまま（https は無い）
+await A.page.fill('#sync-cf-url', WORKER + '/');
+await A.page.click('#btn-sync-cf-check');
+await A.page.waitForTimeout(900);
+ok('127.0.0.1 は http のまま・末尾の / は落とす',
+   (await A.page.inputValue('#sync-cf-url')) === WORKER, await A.page.inputValue('#sync-cf-url'));
+ok('戻せばまた繋がる', /つながりました/.test(await A.page.$eval('#sync-cf-status', e => e.textContent)),
+   (await A.page.$eval('#sync-cf-status', e => e.textContent)).slice(0, 80));
+
 ok('JS エラーが出ていない', A.errs.length === 0 && B.errs.length === 0, A.errs.concat(B.errs).join(' / '));
 
 await A.ctx.close(); await B.ctx.close();

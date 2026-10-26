@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 59 (2026-10-24)">
+<meta name="sunkan-build" content="build 60 (2026-10-26)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=59">
+<link rel="stylesheet" href="assets/style.css?v=60">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -1172,6 +1172,22 @@ MEMO: take after = 〜に似ている</pre>
       （<strong>人に見える所に貼らないこと</strong>。これが唯一の鍵です）。
     </p>
 
+    <!-- ボタンは**この欄のすぐ下**に置く。前は GitHub の説明をぜんぶ越えた先に
+         しか無く、置き場だけを使う人には見つけられなかった。 -->
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-sync-cf-check" class="btn btn--ghost">置き場を調べる</button>
+      <button type="button" id="btn-sync-cf-now" class="btn btn--primary">いま同期する</button>
+    </div>
+    <p class="dialog-note" id="sync-cf-status" role="status" aria-live="polite"></p>
+
+    <p class="dialog-hint">
+      <strong>揃わないときは「置き場を調べる」を 2 台とも押してください。</strong>
+      向こう（置き場）とこちらに何件あるか、合言葉の末尾が同じかが出ます。
+      末尾が違っていたら、それが原因です。<br>
+      <strong>写真は同期されません</strong>（置き場に入る大きさの上限があるため）。
+      写真ごと渡したいときは、上の「ファイルに書き出す」を使ってください。
+    </p>
+
     <hr class="dialog-sep">
 
     <h3 class="dialog-subtitle">放っておいても揃うようにする（GitHub を使う）</h3>
@@ -1559,12 +1575,12 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=59"></script>
-<script src="assets/data.js?v=59"></script>
-<script src="assets/app.js?v=59"></script>
-<script src="assets/paraphrase.js?v=59"></script>
+<script src="assets/speech.js?v=60"></script>
+<script src="assets/data.js?v=60"></script>
+<script src="assets/app.js?v=60"></script>
+<script src="assets/paraphrase.js?v=60"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=59"></script>
+<script src="assets/phrase.js?v=60"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1655,14 +1671,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=59"></script>
-<script src="assets/srs.js?v=59"></script>
-<script src="assets/cards.js?v=59"></script>
-<script src="assets/shadow.js?v=59"></script>
-<script src="assets/import.js?v=59"></script>
-<script src="assets/inbox.js?v=59"></script>
-<script src="assets/sync.js?v=59"></script>
-<script src="assets/update.js?v=59"></script>
+<script src="assets/media.js?v=60"></script>
+<script src="assets/srs.js?v=60"></script>
+<script src="assets/cards.js?v=60"></script>
+<script src="assets/shadow.js?v=60"></script>
+<script src="assets/import.js?v=60"></script>
+<script src="assets/inbox.js?v=60"></script>
+<script src="assets/sync.js?v=60"></script>
+<script src="assets/update.js?v=60"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。

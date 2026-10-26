@@ -1509,6 +1509,22 @@
   function gistId() { return normalizeGistId(lsGet(LS_GIST)); }
   function autoOn() { return lsGet(LS_AUTO) === '1'; }
   function cfUrl() { return trim(lsGet(LS_CF_URL)).replace(/\/+$/, ''); }
+
+  /**
+   * 打ち間違えても繋がるように整える。
+   * **https:// を書かないのがいちばん多い。** そのままだと、このアプリの中の
+   * 居場所として読まれて 404 になり、「置き場が壊れている」ように見える。
+   */
+  function normalizeCfUrl(v) {
+    var s = trim(v).replace(/\s+/g, '').replace(/\/+$/, '');
+    if (!s) return '';
+    if (/^https?:\/\//i.test(s)) {
+      // 手元で試すときだけ http のまま（127.0.0.1 / localhost に https は無い）
+      if (/^http:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(s)) return s;
+      return s.replace(/^http:\/\//i, 'https://');
+    }
+    return 'https://' + s;
+  }
   function cfRoom() { return trim(lsGet(LS_CF_ROOM)).toLowerCase(); }
 
   function gistReady() { return !!(token() && gistId()); }
@@ -1637,6 +1653,7 @@
     }).then(function (got) {
       if (got.res.ok) return got.json;
       var e = new Error((got.json && got.json.error) || ('置き場が ' + got.res.status + ' を返しました'));
+      e.status = got.res.status;   // 404 と 500 で、直すところが違う
       // 409 … こちらが取ってから、もう片方が先に書いた
       if (got.res.status === 409) { e.stale = true; e.updated = got.json && got.json.updated; }
       if (got.res.status === 413) e.message = '同期データが大きすぎます（1MB まで）。いらないセットを消すと入ります。';
@@ -1674,6 +1691,50 @@
     });
   }
 
+  /**
+   * 何件あるか。**大きさではなく件数**で出す。
+   * 2 台で見比べたときに「向こうには場面が 12 ある／こちらは 3 しかない」と
+   * 一目で分かるのが、繋がっていないときにいちばん欲しいもの。
+   */
+  function countsOf(snap) {
+    var ph = phrasePart(snap), cd = cardsPart(snap), sh = shadowPart(snap);
+    var para = isObject(snap && snap.para) ? snap.para : {};
+    var a = isObject(snap && snap.added) ? snap.added : {};
+    var added = 0, k;
+    for (k in a) {
+      if (Object.prototype.hasOwnProperty.call(a, k) && isArray(a[k])) added += a[k].length;
+    }
+    return {
+      phrase: ph.items.length,
+      added: added,
+      cards: cd.items.length,
+      shadow: sh.items.length,
+      para: isArray(para.cards) ? para.cards.length : 0
+    };
+  }
+
+  function countsLine(snap) {
+    var n = countsOf(snap);
+    return '場面 ' + n.phrase + '／足した文 ' + n.added + '／カード ' + n.cards
+         + '／シャドー ' + n.shadow + '／言い換え ' + n.para;
+  }
+
+  /** つながらなかった理由ごとに、**直す場所**を言う */
+  function cfWhy(err) {
+    var st = err && err.status;
+    if (st === 404) {
+      return '→ URL が違うようです。Cloudflare の Worker の URL'
+           + '（https://〇〇.workers.dev）をそのまま入れてください。';
+    }
+    if (st === 500) {
+      return '→ 置き場の側で D1 がつながっていません。Cloudflare の'
+           + '「設定 → バインディング」で、変数名を **DB** にしてください。';
+    }
+    if (st === 413) return '→ 同期データが大きすぎます。いらないセットを消すと入ります。';
+    return '→ URL のつづりと、ネットにつながっているかを確かめてください。'
+         + '\n　（URL をブラウザで開いて「同期の置き場です」と日本語が出れば、置き場は生きています）';
+  }
+
   /** 置き場が生きているか、合言葉が合っているかを 1 つずつ見る。
       2 台が繋がらないとき、どこで止まっているか分からないのがいちばん困る */
   function cfDiagnose() {
@@ -1683,17 +1744,23 @@
       return Promise.resolve();
     }
     setStatus('置き場を調べています…', false);
+    var mineLine = 'こちら: ' + countsLine(snapshot());
+    var roomLine = '合言葉の末尾 …' + cfRoom().slice(-4) + '（2 台で同じか見比べてください）';
     return cfCall({ op: 'get', room: cfRoom() }).then(function (got) {
-      setStatus('置き場につながりました。' + (got && got.found
-        ? '\n向こうにデータがあります（最後の書き込み ' + stamp(got.updated) + '）。'
-          + '\n2 台目なら、このまま「いま同期する」で取り込めます。'
-        : '\nまだ何も置かれていません。1 台目ならこれで正常です。'
-          + '\n2 台目のつもりなら、**合言葉が 1 台目と違っています**。'), false);
+      var found = !!(got && got.found);
+      var lines = ['置き場につながりました。'];
+      lines.push(roomLine);
+      lines.push(found
+        ? '向こう: ' + countsLine(clean(got.data)) + '（最後の書き込み ' + stamp(got.updated) + '）'
+        : '向こう: まだ何も置かれていません');
+      lines.push(mineLine);
+      lines.push(found
+        ? '2 台目なら、このまま「いま同期する」で取り込めます。'
+        : '1 台目ならこれで正常です。2 台目のつもりなら、**合言葉が 1 台目と違っています**。');
+      setStatus(lines.join('\n'), false);
     }, function (err) {
       setStatus('置き場につながりませんでした: ' + ((err && err.message) || '通信エラー')
-        + '\n・URL が合っているか（末尾の / は要りません）'
-        + '\n・2 台で同じ合言葉を入れているか'
-        + '\n・置き場の側で、D1 の変数名が DB になっているか', true);
+        + '\n' + cfWhy(err) + '\n' + roomLine + '\n' + mineLine, true);
     });
   }
 
@@ -1717,6 +1784,7 @@
       if (saveNote) lsSet(LS_ERR, saveNote + '\n' + Date.now()); else lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
       var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
+      msg += '\nいま この端末にあるぶん: ' + countsLine(snapshot());
       if (saveNote) msg += '\n⚠ ' + saveNote;
       if (!silent || changed || saveNote) setStatus(msg, !!saveNote);
       renderState();
@@ -1803,6 +1871,7 @@
       if (saveNote) lsSet(LS_ERR, saveNote + '\n' + Date.now()); else lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
       var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
+      msg += '\nいま この端末にあるぶん: ' + countsLine(snapshot());
       if (state.handedNote) { msg += '\n' + state.handedNote; state.handedNote = ''; }
       if (state.repairNote) { msg += '\n' + state.repairNote; state.repairNote = ''; }
       if (saveNote) msg += '\n⚠ ' + saveNote;
@@ -1904,8 +1973,12 @@
   /* --- 変更を見張る（app.js の保存に手を入れずに済ませる） --- */
 
   function fingerprint() {
+    // **送るものは、ぜんぶここに並べる。** 抜けていると、その中身だけ直しても
+    // 自動同期が動かない（カードとシャドーが実際に抜けていた）。
     return [LS_DECKS, LS_ADDED, LS_EDITS, LS_LEVELS, LS_DRILL_SRS, LS_GAPS, LS_STARS, LS_PHRASE_ITEMS, LS_PHRASE_STARS,
             LS_PHRASE_LEVELS, LS_PHRASE_SRS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
+            LS_CARD_DECKS, LS_CARD_ITEMS, LS_CARD_SRS, LS_CARD_STARS,
+            LS_SHADOW_DECKS, LS_SHADOW_ITEMS,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }
@@ -1948,19 +2021,27 @@
   var elCfCopy = $('btn-sync-cf-copy');
   var elAuto = $('opt-sync-auto');
   var elStatus = $('sync-status');
+  var elCfStatus = $('sync-cf-status');   // 置き場の欄のすぐ下
   var elSettingsDialog = $('settings-dialog');
 
+  /**
+   * 知らせを出す。**置き場の欄のすぐ下にも同じものを出す。**
+   * ダイアログが長いので、下の 1 か所だけだと、押したボタンの近くに何も出ず
+   * 「押しても反応しない」ように見える。
+   */
   function setStatus(msg, bad) {
-    if (!elStatus) return;
-    elStatus.textContent = msg;
-    elStatus.classList.toggle('is-error', !!bad);
+    var boxes = [elStatus, elCfStatus], i;
+    for (i = 0; i < boxes.length; i++) {
+      if (!boxes[i]) continue;
+      boxes[i].textContent = msg;
+      boxes[i].classList.toggle('is-error', !!bad);
+    }
   }
 
   /** すでに出ている知らせの下に 1 行足す。上書きすると、肝心の理由が消える */
   function addStatusLine(text) {
-    if (!elStatus) return;
-    var now = trim(elStatus.textContent);
-    elStatus.textContent = now ? (now + '\n' + text) : text;
+    var now = elStatus ? trim(elStatus.textContent) : '';
+    setStatus(now ? (now + '\n' + text) : text, elStatus && elStatus.classList.contains('is-error'));
   }
 
   function stamp(ms) {
@@ -2053,8 +2134,7 @@
       if (elGist.value !== id) elGist.value = id;
     }
     if (elCfUrl) {
-      // 末尾の / と、前後の空白を落とす。打ち間違いで繋がらないのを防ぐ
-      var u = trim(elCfUrl.value).replace(/\/+$/, '');
+      var u = normalizeCfUrl(elCfUrl.value);
       lsSet(LS_CF_URL, u);
       if (elCfUrl.value !== u) elCfUrl.value = u;
     }
@@ -2209,6 +2289,13 @@
       if (cfReady() || (cfUrl() && !gistReady())) cfDiagnose();
       else diagnose();
     });
+
+    // 置き場の欄のすぐ下にも同じものを置いてある（下まで行かないと押せないのを直した）
+    var cfCheck = $('btn-sync-cf-check');
+    if (cfCheck) cfCheck.addEventListener('click', function () { saveFields(); cfDiagnose(); });
+
+    var cfNow = $('btn-sync-cf-now');
+    if (cfNow) cfNow.addEventListener('click', function () { saveFields(); sync(false); });
 
     var create = $('btn-sync-create');
     if (create) create.addEventListener('click', function () {
