@@ -8,6 +8,7 @@
  * 置き場は `cloudflare/worker.mjs` をそのまま動かしている（tests/fake-worker.mjs）。
  * つまりここで通れば、Cloudflare に置いたものも同じように動く。
  */
+import fs from 'node:fs';
 const PLAYWRIGHT = process.env.PLAYWRIGHT_PKG || '/opt/node-tools/node_modules/playwright/index.mjs';
 const { chromium } = await import(PLAYWRIGHT);
 const APP = `http://127.0.0.1:${process.env.PORT || '8599'}/`;
@@ -177,6 +178,26 @@ ok('127.0.0.1 は http のまま・末尾の / は落とす',
    (await A.page.inputValue('#sync-cf-url')) === WORKER, await A.page.inputValue('#sync-cf-url'));
 ok('戻せばまた繋がる', /つながりました/.test(await A.page.$eval('#sync-cf-status', e => e.textContent)),
    (await A.page.$eval('#sync-cf-status', e => e.textContent)).slice(0, 80));
+
+// --- 置き場の作り方が、画面の中にそろっているか ---
+// iPhone から GitHub を開いてコードを選んで写すのは、まず無理。
+// 貼り付けるコードは画面が持っていて、cloudflare/worker.mjs と**同じ中身**でなければならない。
+const howto = await A.page.$eval('#cf-howto', e => e.textContent);
+ok('置き場の作り方が画面にある', howto.length > 0);
+ok('D1 の変数名を DB にすると書いてある', /変数名/.test(howto) && /DB/.test(howto), howto.slice(0, 60));
+ok('作り方はふだん畳んである', (await A.page.$eval('#cf-howto', e => e.open)) === false);
+
+const shown = await A.page.$eval('#cf-worker-code', e => e.textContent);
+const real = fs.readFileSync(new URL('../cloudflare/worker.mjs', import.meta.url), 'utf8');
+ok('貼り付けるコードが worker.mjs と同じ', shown.trim() === real.trim(),
+   '画面 ' + shown.length + ' 文字 / ファイル ' + real.length + ' 文字');
+ok('コピーのボタンがある', (await A.page.$('#btn-cf-code')) !== null);
+// 番号が消えていると、どこまでやったか分からなくなる（ul, ol は全体で none にしてある）
+await A.page.click('#cf-howto > summary');
+await A.page.waitForTimeout(250);
+ok('手順に番号が出る',
+   (await A.page.$eval('.dialog-steps', e => getComputedStyle(e).listStyleType)) === 'decimal',
+   await A.page.$eval('.dialog-steps', e => getComputedStyle(e).listStyleType));
 
 ok('JS エラーが出ていない', A.errs.length === 0 && B.errs.length === 0, A.errs.concat(B.errs).join(' / '));
 
