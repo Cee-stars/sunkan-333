@@ -2530,6 +2530,53 @@ legend.field-label {
 .face-dot.is-live { background: var(--accent-soft); color: var(--accent); }
 
 /* 取り込みダイアログの見本 */
+/* 畳んでおける説明。**作った人には要らない**ので、開くまで場所を取らせない。
+   summary の既定の三角は残す（畳めることが分かる唯一の印なので）。 */
+.dialog-details {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+.dialog-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: var(--text);
+}
+
+.dialog-details > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.dialog-details > *:not(summary) { margin-block-start: 10px; }
+
+/* 手順。番号は**消さない**（どこまでやったか分からなくなる）。
+   全体のリセットで ul, ol が list-style: none になっているので、ここで戻す。 */
+.dialog-steps {
+  list-style: decimal;
+  margin: 10px 0;
+  padding-inline-start: 1.6em;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.dialog-steps li { margin-block-end: 8px; }
+.dialog-steps strong { color: var(--text); }
+
+/* 貼り付けてもらうコード。長いので高さを切って、中だけ動かす */
+.dialog-pre--code {
+  max-height: 14rem;
+  overflow-y: auto;
+  white-space: pre;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
 .dialog-pre {
   margin: 0 0 8px;
   padding: 10px 12px;

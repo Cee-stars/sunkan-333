@@ -2276,6 +2276,30 @@
       else done(false);
     });
 
+    // 置き場の作り方（まだ作っていない人向け）。貼り付けるコードは画面の中に
+    // 持っている（iPhone から GitHub を開いて選んで写すのは、まず無理なので）。
+    var cfCode = $('btn-cf-code');
+    if (cfCode) cfCode.addEventListener('click', function () {
+      var box = $('cf-worker-code');
+      var note = $('cf-code-status');
+      var text = box ? box.textContent : '';
+      var say = function (msg, bad) {
+        if (!note) { setStatus(msg, bad); return; }
+        note.textContent = msg;
+        note.classList.toggle('is-error', !!bad);
+      };
+      if (!trim(text)) { say('コードが読めませんでした。下の枠から写してください。', true); return; }
+      var api = window.SUNKAN_DRILL;
+      if (api && typeof api.copyText === 'function') {
+        api.copyText(text, function (ok) {
+          say(ok ? 'コピーしました。Cloudflare の「コードの編集」に貼り付けてください。'
+                 : 'コピーできませんでした。下の枠を長押しして写してください。', !ok);
+        });
+      } else {
+        say('コピーできませんでした。下の枠を長押しして写してください。', true);
+      }
+    });
+
     var close = $('btn-sync-close');
     if (close) close.addEventListener('click', closeSync);
 

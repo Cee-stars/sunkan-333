@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 60 (2026-10-26)">
+<meta name="sunkan-build" content="build 61 (2026-10-26)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=60">
+<link rel="stylesheet" href="assets/style.css?v=61">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -1149,6 +1149,181 @@ MEMO: take after = 〜に似ている</pre>
       （使いすぎても勝手に課金はされず、止まるだけです）。
     </p>
 
+    <!-- **まだ作っていない人のための手順。** ふだんは畳んでおく（作った人には要らない）。
+         下の <pre> は cloudflare/worker.mjs と**同じ中身**でなければならない。
+         ずれると、貼り付けた置き場だけ古くなる。tests/synctest.mjs が突き合わせる。 -->
+    <details class="dialog-details" id="cf-howto">
+      <summary>置き場をまだ作っていないときは（無料・10 分）</summary>
+
+      <p class="dialog-hint">
+        <strong>パソコン（Mac）でやってください。</strong>iPhone だとコードの貼り付けが
+        うまくいかないことがあります。<strong>料金はかかりません</strong>
+        （無料枠を超えても課金されず、止まるだけです）。
+      </p>
+
+      <ol class="dialog-steps">
+        <li><a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">dash.cloudflare.com</a>
+          を開いて、アカウントを作る（無料）。</li>
+        <li>左の <strong>Workers &amp; Pages</strong> → <strong>作成</strong> → <strong>Worker</strong> を作り、
+          名前はそのままで <strong>デプロイ</strong>。
+          <br>この時点では「Hello World」が出るだけで正解です。</li>
+        <li>その Worker の <strong>「コードの編集」</strong>を開く。出ているコードを<strong>ぜんぶ消して</strong>、
+          下の「置き場のコードをコピー」で写したものを貼り付け、<strong>デプロイ</strong>。</li>
+        <li>左の <strong>ストレージとデータベース</strong> → <strong>D1</strong> で、データベースを 1 つ作る（名前は何でも）。</li>
+        <li>Worker の <strong>設定</strong> → <strong>バインディング</strong> で、いま作った D1 を足し、
+          <strong>変数名を <code>DB</code></strong> にする（ここだけは必ず <code>DB</code>）。
+          そのあと、もう一度 <strong>デプロイ</strong>。</li>
+        <li>Worker の画面に出ている <strong>https://〇〇.workers.dev</strong> を、下の「置き場の URL」に貼る。</li>
+      </ol>
+
+      <div class="dialog-actions">
+        <button type="button" id="btn-cf-code" class="btn btn--primary">置き場のコードをコピー</button>
+      </div>
+      <p class="dialog-hint" id="cf-code-status" role="status" aria-live="polite"></p>
+      <p class="dialog-hint">
+        コピーが使えないときは、下の枠を長押し（Mac なら枠の中を選んで ⌘C）してください。
+      </p>
+<pre class="dialog-pre dialog-pre--code" id="cf-worker-code">/* Instant English — 同期の置き場（Cloudflare Worker）
+ *
+ * 役目はひとつだけ。**合言葉ごとに JSON を 1 つ預かって返す**。
+ * 中身は一切解釈しない（マージは端末側の sync.js がやる）。
+ *
+ * 置き方（npm もビルドも要らない）:
+ *   1. Cloudflare の管理画面 → Workers &amp; Pages → 作った Worker → 「コードの編集」
+ *   2. このファイルの中身をまるごと貼り付けて保存＋デプロイ
+ *   3. 設定 → バインディング → D1 データベースを追加し、変数名を **DB** にする
+ *
+ * 表は最初の 1 回で勝手に作られる（CREATE TABLE IF NOT EXISTS）。
+ *
+ * なぜ KV ではなく D1 か:
+ *   KV は書いたものが世界中に行き渡るまで少し遅れることがある。
+ *   Mac で同期した直後に iPhone で開くと古いものが返り、
+ *   「同期したのに反映されない」に見える。D1 は書いた直後から正しく読める。
+ *
+ * なぜ合言葉を URL ではなく本文で送るか:
+ *   URL は記録に残りやすい。合言葉はこの仕組みの唯一の鍵なので、本文で送る。
+ */
+
+/** アプリを置いている場所。ここ以外のサイトからは使わせない */
+const ALLOWED = [
+  'https://cee-stars.github.io',
+  'http://127.0.0.1:8599',   // 手元で確かめるとき
+  'http://localhost:8599'
+];
+
+/** 1 人ぶんの上限。これを超えるなら、そもそも同期ではなく書き出しを使うべき */
+const MAX_BYTES = 1024 * 1024;
+
+/** 合言葉の形。短いと総当たりで覗かれる */
+const CODE_OK = /^[a-z0-9-]{16,64}$/;
+
+function cors(origin) {
+  const allow = ALLOWED.indexOf(origin) >= 0 ? origin : ALLOWED[0];
+  return {
+    'Access-Control-Allow-Origin': allow,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin'
+  };
+}
+
+function reply(body, status, origin) {
+  return new Response(JSON.stringify(body), {
+    status: status,
+    headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8' }, cors(origin))
+  });
+}
+
+async function ready(db) {
+  await db.exec(
+    'CREATE TABLE IF NOT EXISTS rooms (code TEXT PRIMARY KEY, data TEXT NOT NULL, updated INTEGER NOT NULL)'
+  );
+}
+
+export default {
+  async fetch(request, env) {
+    const origin = request.headers.get('Origin') || '';
+
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: cors(origin) });
+    }
+    if (request.method !== 'POST') {
+      // 人が URL を直接開いたとき用。何なのかが分かるようにしておく
+      return new Response('Instant English の同期の置き場です。アプリから使ってください。', {
+        status: 405,
+        headers: Object.assign({ 'Content-Type': 'text/plain; charset=utf-8' }, cors(origin))
+      });
+    }
+    if (!env.DB) {
+      return reply({ ok: false, error: 'D1 がつながっていません（変数名を DB にしてください）' }, 500, origin);
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch (e) {
+      return reply({ ok: false, error: '読めない中身でした' }, 400, origin);
+    }
+
+    const code = String((body &amp;&amp; body.room) || '');
+    if (!CODE_OK.test(code)) {
+      return reply({ ok: false, error: '合言葉の形が違います' }, 400, origin);
+    }
+
+    await ready(env.DB);
+
+    /* --- 読む --- */
+    if (body.op === 'get') {
+      const row = await env.DB
+        .prepare('SELECT data, updated FROM rooms WHERE code = ?')
+        .bind(code)
+        .first();
+      if (!row) return reply({ ok: true, found: false, updated: 0 }, 200, origin);
+      return reply({ ok: true, found: true, updated: row.updated, data: JSON.parse(row.data) }, 200, origin);
+    }
+
+    /* --- 書く --- */
+    if (body.op === 'put') {
+      const text = JSON.stringify(body.data === undefined ? null : body.data);
+      if (text.length > MAX_BYTES) {
+        return reply({ ok: false, error: '大きすぎます（1MB まで）' }, 413, origin);
+      }
+
+      // 取ったときから変わっていないかを見る。**これが無いと、2 台が
+      // ほぼ同時に書いたとき、あとから書いたほうが相手のぶんを消す。**
+      const seen = Number(body.seen) || 0;
+      const now = Date.now();
+      const cur = await env.DB
+        .prepare('SELECT updated FROM rooms WHERE code = ?')
+        .bind(code)
+        .first();
+
+      if (cur &amp;&amp; Number(cur.updated) !== seen) {
+        // 先を越されている。端末側で取り直して合わせ直してもらう
+        return reply({ ok: false, stale: true, updated: Number(cur.updated) }, 409, origin);
+      }
+
+      await env.DB
+        .prepare('INSERT INTO rooms (code, data, updated) VALUES (?, ?, ?)'
+               + ' ON CONFLICT(code) DO UPDATE SET data = excluded.data, updated = excluded.updated')
+        .bind(code, text, now)
+        .run();
+
+      return reply({ ok: true, updated: now }, 200, origin);
+    }
+
+    return reply({ ok: false, error: '知らない命令です' }, 400, origin);
+  }
+};</pre>
+
+      <p class="dialog-hint">
+        <strong>できたかどうかの確かめ方</strong>：その URL をブラウザで開いて、
+        <strong>「Instant English の同期の置き場です。」</strong>と日本語が出れば成功です。
+        出ない・赤い字が出るときは、下の「置き場を調べる」を押すと、直す場所が出ます。
+      </p>
+    </details>
+
     <label class="field">
       <span class="field-label">置き場の URL</span>
       <input type="text" id="sync-cf-url" class="field-input" autocomplete="off"
@@ -1575,12 +1750,12 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=60"></script>
-<script src="assets/data.js?v=60"></script>
-<script src="assets/app.js?v=60"></script>
-<script src="assets/paraphrase.js?v=60"></script>
+<script src="assets/speech.js?v=61"></script>
+<script src="assets/data.js?v=61"></script>
+<script src="assets/app.js?v=61"></script>
+<script src="assets/paraphrase.js?v=61"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=60"></script>
+<script src="assets/phrase.js?v=61"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1671,14 +1846,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=60"></script>
-<script src="assets/srs.js?v=60"></script>
-<script src="assets/cards.js?v=60"></script>
-<script src="assets/shadow.js?v=60"></script>
-<script src="assets/import.js?v=60"></script>
-<script src="assets/inbox.js?v=60"></script>
-<script src="assets/sync.js?v=60"></script>
-<script src="assets/update.js?v=60"></script>
+<script src="assets/media.js?v=61"></script>
+<script src="assets/srs.js?v=61"></script>
+<script src="assets/cards.js?v=61"></script>
+<script src="assets/shadow.js?v=61"></script>
+<script src="assets/import.js?v=61"></script>
+<script src="assets/inbox.js?v=61"></script>
+<script src="assets/sync.js?v=61"></script>
+<script src="assets/update.js?v=61"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
