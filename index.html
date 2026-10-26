@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 61 (2026-10-26)">
+<meta name="sunkan-build" content="build 62 (2026-10-26)">
 <meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=61">
+<link rel="stylesheet" href="assets/style.css?v=62">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -1167,14 +1167,21 @@ MEMO: take after = 〜に似ている</pre>
         <li>左の <strong>Workers &amp; Pages</strong> → <strong>作成</strong> → <strong>Worker</strong> を作り、
           名前はそのままで <strong>デプロイ</strong>。
           <br>この時点では「Hello World」が出るだけで正解です。</li>
-        <li>その Worker の <strong>「コードの編集」</strong>を開く。出ているコードを<strong>ぜんぶ消して</strong>、
-          下の「置き場のコードをコピー」で写したものを貼り付け、<strong>デプロイ</strong>。</li>
+        <li>その Worker の <strong>「コードの編集」</strong>を開く。
+          もともと入っているコード（Hello World）を<strong>ぜんぶ消して</strong>（⌘A → delete）、
+          <strong>この下の青いボタン</strong>で写したものを貼り付け（⌘V）、<strong>デプロイ</strong>。</li>
         <li>左の <strong>ストレージとデータベース</strong> → <strong>D1</strong> で、データベースを 1 つ作る（名前は何でも）。</li>
         <li>Worker の <strong>設定</strong> → <strong>バインディング</strong> で、いま作った D1 を足し、
           <strong>変数名を <code>DB</code></strong> にする（ここだけは必ず <code>DB</code>）。
           そのあと、もう一度 <strong>デプロイ</strong>。</li>
         <li>Worker の画面に出ている <strong>https://〇〇.workers.dev</strong> を、下の「置き場の URL」に貼る。</li>
       </ol>
+
+      <h4 class="dialog-subtitle">手順 3 で貼り付けるのは、これです</h4>
+      <p class="dialog-hint">
+        下の枠の中身（置き場のプログラム）です。<strong>読む必要はありません。</strong>
+        ボタンを押すと、まるごと写せます。
+      </p>
 
       <div class="dialog-actions">
         <button type="button" id="btn-cf-code" class="btn btn--primary">置き場のコードをコピー</button>
@@ -1750,12 +1757,12 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=61"></script>
-<script src="assets/data.js?v=61"></script>
-<script src="assets/app.js?v=61"></script>
-<script src="assets/paraphrase.js?v=61"></script>
+<script src="assets/speech.js?v=62"></script>
+<script src="assets/data.js?v=62"></script>
+<script src="assets/app.js?v=62"></script>
+<script src="assets/paraphrase.js?v=62"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=61"></script>
+<script src="assets/phrase.js?v=62"></script>
 <!-- ===== シャドーイング：文の追加・編集 ===== -->
 <dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1846,14 +1853,14 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/media.js?v=61"></script>
-<script src="assets/srs.js?v=61"></script>
-<script src="assets/cards.js?v=61"></script>
-<script src="assets/shadow.js?v=61"></script>
-<script src="assets/import.js?v=61"></script>
-<script src="assets/inbox.js?v=61"></script>
-<script src="assets/sync.js?v=61"></script>
-<script src="assets/update.js?v=61"></script>
+<script src="assets/media.js?v=62"></script>
+<script src="assets/srs.js?v=62"></script>
+<script src="assets/cards.js?v=62"></script>
+<script src="assets/shadow.js?v=62"></script>
+<script src="assets/import.js?v=62"></script>
+<script src="assets/inbox.js?v=62"></script>
+<script src="assets/sync.js?v=62"></script>
+<script src="assets/update.js?v=62"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
