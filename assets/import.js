@@ -237,9 +237,14 @@
    * PDF から拾った文字は、1 つの文が途中で折り返されていることが多い。
    * 行の頭が「見出し:」でなければ、前の見出しの続きとしてつなげる。ここが要。
    *
+   * `opts.enOnly` を立てると、**EN だけでも 1 件として通す**（リスニングは日本語が任意）。
+   * 既定（opts なし）は今までどおり「意味か訳のどちらかが要る」ままにする —
+   * 緩めるとカードや瞬間英作文で、ふつうの文書から中身の無い札ができる。
+   *
    * @returns {{items:Array, deckName:string}}
    */
-  function parseBlocks(text) {
+  function parseBlocks(text, opts) {
+    var enOnly = !!(opts && opts.enOnly);
     var lines = str(text).split(/\r\n|\r|\n/);
     var items = [];
     var deckName = '';
@@ -248,7 +253,7 @@
 
     function flush() {
       if (!cur) return;
-      if (trim(cur.en) && (trim(cur.ja) || trim(cur.exJa))) items.push(cur);
+      if (trim(cur.en) && (enOnly || trim(cur.ja) || trim(cur.exJa))) items.push(cur);
       cur = null;
       lastKey = '';
     }

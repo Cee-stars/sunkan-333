@@ -55,23 +55,68 @@
 
   /* ---------- 声 ---------- */
 
+  /* 端末に入っている声は、良し悪しの差がとても大きい。
+     **いちばん最初に見つかった en-US** を使うと、Mac では古い作り物の声
+     （Fred・Albert・Zarvox など）に当たることがあり、同じ文でも聞き取れない。
+     そこで点数を付けて、**入っている中でいちばん良いものを選ぶ**。
+     利用者が自分で選んだ声があれば、それがいちばん強いのは今までどおり。 */
+
+  // 名前に入っていれば、端末に落としてある高品質な声（iOS / macOS の「拡張」「プレミアム」、
+  // Windows の Natural、Chrome の Neural など）
+  var GOOD_MARKS = ['premium', 'enhanced', 'natural', 'neural', '拡張', 'プレミアム', '高品質'];
+
+  // よく知られた、作りの新しい声
+  var GOOD_NAMES = ['ava', 'samantha', 'allison', 'siri', 'google us english', 'google uk english',
+                    'aria', 'jenny', 'guy', 'zoe', 'evan', 'nicky', 'joelle'];
+
+  // 昔からある作り物の声。喋れはするが、英語の練習には向かない
+  var POOR = /(fred|albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|junior|kathy|ralph|bruce|princess|hysterical|rocko|shelley|grandma|grandpa|eddy|flo|sandy|reed|rishi)/;
+
+  /** 読むのは英文だけ。英語でない声は、選びようがないので初めから外す */
+  function isEnglishVoice(v) {
+    if (!v) return false;
+    var lang = String(v.lang || '').toLowerCase().replace('_', '-');
+    return lang.indexOf('en') === 0;
+  }
+
+  /** 良さの点数。**マイナスでも「英語の声ではない」ことにはしない**
+      （古い声しか入っていない端末で、一覧が空になって何も選べなくなる） */
+  function voiceScore(v) {
+    if (!isEnglishVoice(v)) return -999;
+    var name = String(v.name || '').toLowerCase();
+    var lang = String(v.lang || '').toLowerCase().replace('_', '-');
+    var n = 0, i;
+    for (i = 0; i < GOOD_MARKS.length; i++) {
+      if (name.indexOf(GOOD_MARKS[i]) >= 0) { n += 40; break; }
+    }
+    for (i = 0; i < GOOD_NAMES.length; i++) {
+      if (name.indexOf(GOOD_NAMES[i]) >= 0) { n += 20; break; }
+    }
+    // ネット側の声は作りが新しいことが多い（Chrome の Google 系）
+    if (v.localService === false) n += 10;
+    if (lang === 'en-us') n += 8;
+    else if (lang === 'en-gb' || lang === 'en-au') n += 4;
+    if (v['default']) n += 1;
+    if (POOR.test(name)) n -= 60;
+    return n;
+  }
+
   function loadVoices() {
     if (!supported) return false;
     var voices = [];
     try { voices = synth.getVoices() || []; } catch (e) { voices = []; }
     if (!voices.length) return false;
 
-    var exact = null;
-    var fallback = null;
+    var best = null, bestScore = -998;
     var chosen = null;
     for (var i = 0; i < voices.length; i++) {
-      var lang = String(voices[i].lang || '').toLowerCase().replace('_', '-');
       // 選んだ声が入っていれば、それがいちばん強い
       if (!chosen && wantVoice && voiceId(voices[i]) === wantVoice) chosen = voices[i];
-      if (!exact && lang === 'en-us') exact = voices[i];
-      if (!fallback && lang.indexOf('en') === 0) fallback = voices[i];
+      if (!isEnglishVoice(voices[i])) continue;
+      var sc = voiceScore(voices[i]);
+      if (sc > bestScore) { bestScore = sc; best = voices[i]; }
     }
-    voice = chosen || exact || fallback || null;
+    voice = chosen || best || null;
     voicesReady = true;
     return true;
   }
@@ -82,22 +127,25 @@
     return String(v.voiceURI || (String(v.name || '') + '|' + String(v.lang || '')));
   }
 
-  /** 英語の声だけ、選べる形で返す */
+  /** 英語の声だけ、選べる形で返す。**良いと思われる順**に並べる
+      （何十個も並ぶ端末があり、良い声が下のほうに埋もれて見つけられない） */
   function listVoices() {
     if (!supported) return [];
     var raw = [];
     try { raw = synth.getVoices() || []; } catch (e) { raw = []; }
     var out = [];
     for (var i = 0; i < raw.length; i++) {
-      var lang = String(raw[i].lang || '').toLowerCase().replace('_', '-');
-      if (lang.indexOf('en') !== 0) continue;   // 読むのは英文だけ
+      if (!isEnglishVoice(raw[i])) continue;   // 英語でないものは出さない
+      var sc = voiceScore(raw[i]);
       out.push({
         id: voiceId(raw[i]),
         name: String(raw[i].name || ''),
         lang: String(raw[i].lang || ''),
+        score: sc,
         current: voice ? voiceId(raw[i]) === voiceId(voice) : false
       });
     }
+    out.sort(function (a, b) { return b.score - a.score; });
     return out;
   }
 

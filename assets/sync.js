@@ -45,6 +45,11 @@
   var LS_SHADOW_DECKS = 'sunkan:shadow:decks';
   var LS_SHADOW_ITEMS = 'sunkan:shadow:items';
 
+  // リスニング（かたまりで聞き取る練習）。セットは持たず、1 件ずつひらたく並ぶ。
+  // `sunkan:listen:ui` は端末ごとの好みなので**送らない**
+  var LS_LISTEN_ITEMS = 'sunkan:listen:items';
+  var LS_LISTEN_STARS = 'sunkan:listen:stars';
+
   var LS_TOKEN = 'sunkan:sync:token';
   var LS_GIST = 'sunkan:sync:gistId';
 
@@ -257,6 +262,10 @@
         decks: isArray(readJSON(LS_SHADOW_DECKS, [])) ? readJSON(LS_SHADOW_DECKS, []) : [],
         items: isArray(readJSON(LS_SHADOW_ITEMS, [])) ? readJSON(LS_SHADOW_ITEMS, []) : []
       },
+      listen: {
+        items: isArray(readJSON(LS_LISTEN_ITEMS, [])) ? readJSON(LS_LISTEN_ITEMS, []) : [],
+        stars: isArray(readJSON(LS_LISTEN_STARS, [])) ? readJSON(LS_LISTEN_STARS, []) : []
+      },
       phrase: {
         items: isArray(readJSON(LS_PHRASE_ITEMS, [])) ? readJSON(LS_PHRASE_ITEMS, []) : [],
         stars: isArray(readJSON(LS_PHRASE_STARS, [])) ? readJSON(LS_PHRASE_STARS, []) : [],
@@ -280,6 +289,15 @@
     return {
       decks: isArray(c.decks) ? c.decks : [],
       items: isArray(c.items) ? c.items : []
+    };
+  }
+
+  /** 古い版が書き出したぶんには listen が無い。読むときはここを通して形を揃える */
+  function listenPart(snap) {
+    var c = (snap && isObject(snap.listen)) ? snap.listen : {};
+    return {
+      items: isArray(c.items) ? c.items : [],
+      stars: isArray(c.stars) ? c.stars : []
     };
   }
 
@@ -310,7 +328,7 @@
   // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
   // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
   // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'phrase', 'media', 'inbox', 'tombs', 'handed'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'phrase', 'listen', 'media', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -353,6 +371,7 @@
       cards: cardsPart(d),
       shadow: shadowPart(d),
       phrase: phrasePart(d),
+      listen: listenPart(d),
       // 写真の中身。バックアップにだけ入っている（同期には載せない）
       media: isObject(d.media) ? d.media : {},
       inbox: isArray(d.inbox) ? d.inbox : [],
@@ -369,7 +388,8 @@
   function apply(merged) {
     // failed … この端末に書けなかったもの。保存領域がいっぱいだと起きる。
     // 黙って通すと「同期しました」と言いながら相手のぶんがどこにも無い、になる
-    var hit = { drill: false, para: false, cards: false, shadow: false, phrase: false, inbox: false, failed: [] };
+    var hit = { drill: false, para: false, cards: false, shadow: false, phrase: false,
+                listen: false, inbox: false, failed: [] };
 
     function put(key, value, empty, group, label) {
       var next = JSON.stringify(value);
@@ -402,6 +422,9 @@
     put(LS_PHRASE_STARS, mp.stars, [], 'phrase', '場面の「もう一度」');
     put(LS_PHRASE_LEVELS, mp.levels, {}, 'phrase', '場面の印');
     put(LS_PHRASE_SRS, mp.srs, {}, 'phrase', '場面の復習の予定');
+    var ml = listenPart(merged);
+    put(LS_LISTEN_ITEMS, ml.items, [], 'listen', 'リスニング');
+    put(LS_LISTEN_STARS, ml.stars, [], 'listen', 'リスニングの「もう一度」');
     put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
@@ -872,6 +895,20 @@
           srs: mergePhraseSrs(mp.srs, tp.srs, liveIds)
         };
       })(),
+      // リスニングは場面と同じ作り（セットを持たないので入れ物が 1 段ひらたい）
+      listen: (function () {
+        var ml = listenPart(mine), tl = listenPart(theirs);
+        var items = mergeById(ml.items, tl.items, map, 'listenitem:');
+        var liveIds = {}, n;
+        for (n = 0; n < items.length; n++) liveIds[trim(items[n].id)] = true;
+        return {
+          items: items,
+          // 外した「もう一度」は戻さない。消えた文の印も連れて戻さない
+          stars: mergeStrings(ml.stars, tl.stars, function (id) {
+            return !!liveIds[id] && !isDeleted(map, 'listenstar:' + id);
+          })
+        };
+      })(),
       shadow: (function () {
         var mi = shadowPart(mine), ti = shadowPart(theirs);
         var sDecks = mergeById(mi.decks, ti.decks, map, 'shadowdeck:');
@@ -972,7 +1009,7 @@
     var hit = apply(merged);
     refreshViews(hit);
     state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
-    return hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
+    return hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.listen || hit.inbox;
   }
 
   function handoffLink() {
@@ -1253,7 +1290,7 @@
         name = deckNameById(data, id);
         if (!best || n > best.n) best = { name: name, n: n };
       }
-    } else if (key === 'para' || key === 'phrase') {
+    } else if (key === 'para' || key === 'phrase' || key === 'listen') {
       // セット名を持たないので「うち『○○』が」の内訳は出せない。総量だけ出す
       return null;
     }
@@ -1610,6 +1647,8 @@
     if (hit.shadow && shadow && typeof shadow.reload === 'function') shadow.reload();
     var phrase = window.SUNKAN_PHRASE;
     if (hit.phrase && phrase && typeof phrase.reload === 'function') phrase.reload();
+    var listen = window.SUNKAN_LISTEN;
+    if (hit.listen && listen && typeof listen.reload === 'function') listen.reload();
     if (hit.inbox && inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
@@ -1672,7 +1711,7 @@
       var before = countAdded(mine.added);
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
+      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.listen || hit.inbox;
       refreshViews(hit);
       state.saveNote = saveFailNote(hit);
       if (hit.drill) announceArrivals(before, merged);
@@ -1697,7 +1736,7 @@
    * 一目で分かるのが、繋がっていないときにいちばん欲しいもの。
    */
   function countsOf(snap) {
-    var ph = phrasePart(snap), cd = cardsPart(snap), sh = shadowPart(snap);
+    var ph = phrasePart(snap), cd = cardsPart(snap), sh = shadowPart(snap), ls = listenPart(snap);
     var para = isObject(snap && snap.para) ? snap.para : {};
     var a = isObject(snap && snap.added) ? snap.added : {};
     var added = 0, k;
@@ -1709,6 +1748,7 @@
       added: added,
       cards: cd.items.length,
       shadow: sh.items.length,
+      listen: ls.items.length,
       para: isArray(para.cards) ? para.cards.length : 0
     };
   }
@@ -1716,7 +1756,7 @@
   function countsLine(snap) {
     var n = countsOf(snap);
     return '場面 ' + n.phrase + '／足した文 ' + n.added + '／カード ' + n.cards
-         + '／シャドー ' + n.shadow + '／言い換え ' + n.para;
+         + '／シャドー ' + n.shadow + '／リスニング ' + n.listen + '／言い換え ' + n.para;
   }
 
   /** つながらなかった理由ごとに、**直す場所**を言う */
@@ -1838,7 +1878,7 @@
         : '';
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.inbox;
+      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.listen || hit.inbox;
       refreshViews(hit);
       // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
       // 「同期しました」で流すと、届いていないのに届いた気になる
@@ -1979,6 +2019,7 @@
             LS_PHRASE_LEVELS, LS_PHRASE_SRS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
             LS_CARD_DECKS, LS_CARD_ITEMS, LS_CARD_SRS, LS_CARD_STARS,
             LS_SHADOW_DECKS, LS_SHADOW_ITEMS,
+            LS_LISTEN_ITEMS, LS_LISTEN_STARS,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }

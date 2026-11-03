@@ -23,7 +23,6 @@
      13. モード切り替え（瞬間英作文 / パラフレ帳 / カード / シャドーイング）
      14. パラフレ帳
      14b. カード
-     14c. シャドーイング
      15. 画面幅ごとの調整
      16. モーション配慮
      17. 印刷
@@ -2789,11 +2788,9 @@ legend.field-label {
   /* ただし「PDF から」だけは字を残す。
      📄 の記号だけだと、どこから作るのかが分からない。 */
   #btn-card-import .btn-label,
-  #btn-drill-import .btn-label,
-  #btn-shadow-pull .btn-label { display: inline; }
+  #btn-drill-import .btn-label
   #btn-card-import,
-  #btn-drill-import,
-  #btn-shadow-pull { padding-inline: 8px; font-size: 0.8125rem; }
+  #btn-drill-import
 
   .header-row { gap: 6px; }
   .header-row--controls { gap: 6px; }
