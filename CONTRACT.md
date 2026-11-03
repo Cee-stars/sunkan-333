@@ -895,6 +895,27 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 **場面はセットを持たないので入れ物が 1 段ひらたい**（`{deckId: {itemId: …}}` ではない）。
 消えた場面の印と予定は連れて戻さない（`liveIds` に無い id は落とす）。
 
+### 読み上げの声は、入っている中でいちばん良いものを選ぶ
+
+`speech.js` は昔、**英語の声のうち最初に見つかったもの**を使っていた。Mac には
+昔からの作り物の声（Fred・Albert・Zarvox など）が入っていて、それを引き当てると
+同じ文でも聞き取れない。`voiceScore()` で点数を付け、**いちばん高いものを選ぶ**。
+
+- 名前に `premium` / `enhanced` / `natural` / `neural` / 拡張 / プレミアム … ＋40
+  （端末に落としてある高品質な声。ここがいちばん効く）
+- Ava / Samantha / Google US English など、作りの新しい声 … ＋20
+- `localService === false`（ネット側の声）… ＋10 ／ `en-US` … ＋8
+- 昔からの作り物の声 … **−60**
+
+**点数がマイナスでも「英語の声ではない」ことにはしない。** 古い声しか入っていない
+端末で一覧が空になり、何も選べなくなる（`isEnglishVoice()` と点数は別もの）。
+利用者が自分で選んだ声（`sunkan:voice`）があれば、それがいちばん強いのは今までどおり。
+`listVoices()` は**良い順**に並べて返す（何十個も並ぶ端末で、良い声が下に埋もれる）。
+
+声そのものの質は**端末に入っている声**で決まる。アプリ側ではこれ以上良くできないので、
+`#voice-dialog` に iPhone / Mac で拡張・プレミアムを落とす手順を書いてある。
+見張り: `tests/voicetest.mjs`（偽の声の一覧を流し込んで、どれを選ぶかだけを見る）。
+
 ### リスニングの突き合わせ
 
 本体は `mergeById(..., 'listenitem:')`、「もう一度」は `mergeStrings` に
@@ -1001,7 +1022,7 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:mode` | `drill` / `phrase` / `para` / `cards` / `listen` … 最後に開いていたモード |
 | `sunkan:listen:items` | リスニングの文 `[{id, en, ja, note, created}]`。`en` は `Let's get / a cup of coffee / after this.` のように**スラッシュ入りのまま**。スラッシュが出す単位になる |
 | `sunkan:listen:stars` | `string[]` … ↻「もう一度」 |
-| `sunkan:listen:ui` | 表示の状態（絞り込みなど）。**同期しない**（端末ごとの好み） |
+| `sunkan:listen:ui` | 表示の状態（絞り込み・**読み上げの速さ**）。**同期しない**（端末ごとの好み） |
 | `sunkan:shadow:decks` / `sunkan:shadow:items` / `sunkan:shadow:ui` | 前のシャドーイングの中身。**画面は外したが、消していない**（本人の持ちもの。`sync.js` も今までどおり運ぶ） |
 | `sunkan:cards:decks` | カードのセット `[{id,name,created}]` |
 | `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,img,created}]`。`img` は写真の **id だけ**（中身は IndexedDB） |

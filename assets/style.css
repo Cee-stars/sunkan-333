@@ -3063,6 +3063,15 @@ legend.field-label {
   padding-inline-start: var(--listen-speak-space);
 }
 
+/* **ここを block にしないと、行に空きが 2 行ぶん増える。**
+   .cell は <span>（inline のまま）で、ほかのモードでは .row-main が grid なので
+   自動で block 扱いになっている。リスニングの .row-main は block なので、
+   inline のまま中に block（.listen-chunks）が入り、前後に空の行箱ができてしまう
+   （2 行の文で、行の高さが 74px → 130px になっていた）。 */
+.listen-cell {
+  display: block;
+}
+
 /* 🔈。.row-main（ボタン）の中には置けないので、行の上に重ねる。
    **英文の 1 行目に合わせる** — 行の上下の真ん中にすると、かたまりが折り返した
    行や、狭幅で道具列が 2 段目に下りた行では英文から離れてしまう。
