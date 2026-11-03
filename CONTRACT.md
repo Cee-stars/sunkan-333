@@ -15,7 +15,7 @@
 | `assets/cards.js` | J | カードの動作すべて（3 つの面・めくり・一覧・設定） |
 | `assets/import.js` | K | 取り込み（PDF・テキスト・表・AI への指示）。**カードと瞬間英作文の両方**が通る |
 | `assets/media.js` | L | 写真（IndexedDB）。縮めて詰めるのもここ。画面は触らない |
-| `assets/shadow.js` | M | シャドーイング（続けて流す・速さ・くり返し・隠す） |
+| `assets/listen.js` | M | リスニング（かたまりごとに出す・ぼかし・🔈）。**シャドーイングの後継**（画面は入れ替えたが、前のデータは消していない） |
 | `assets/phrase.js` | N | 場面（その時に言えるようにする）。**ファイル名と保存先は `phrase` のまま**（表示名だけ変えた。変えるとデータが消える）。「どんな時」で分ける |
 | `assets/vendor/pdf.min.js` | 外 | pdf.js（Mozilla / Apache-2.0）。手を入れない。差し替えは版ごと |
 | `assets/inbox.js` | E | 受信箱（同じドメインの別アプリから届いたカードの取り込み） |
@@ -28,6 +28,7 @@
 | `tests/phrasetest.mjs` | 共通 | 場面の確かめ（足す・ファイルから読む・同期）。`node tests/phrasetest.mjs` |
 | `tests/fake-worker.mjs` | 共通 | 確かめ用の置き場。**`cloudflare/worker.mjs` をそのまま**動かす（D1 の代わりにその場かぎりの SQLite）。`node tests/fake-worker.mjs 8600` |
 | `tests/scenetest.mjs` | 共通 | 場面の確かめ（セリフ・言い方3本・印の言葉・写真・はみ出し）。`node tests/scenetest.mjs` |
+| `tests/listentest.mjs` | 共通 | リスニングの確かめ（タブ名・🔈 の位置・ぼかし・かたまりを 1 つずつ・はみ出し）。**390px と 1180px の両方**で走る。`node tests/listentest.mjs` |
 | `tests/synctest.mjs` | 共通 | 2 台が揃うかの確かめ。アプリと置き場の両方を上げてから `node tests/synctest.mjs` |
 | `cloudflare/worker.mjs` | 共通 | 同期の置き場（Cloudflare Worker）。**アプリの一式ではない**ので `index.html` からは読まない。管理画面に貼って使う（npm もビルドも要らない）。中身は解釈せず、合言葉ごとに JSON を 1 つ預かって返すだけ |
 
@@ -142,9 +143,9 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 **`phrase.js` は自分の init で `data-mode` を見る。** `index.html` のスクリプトは
 2 ブロックに分かれていて、`paraphrase.js` の init が `setMode` を呼ぶ時点では
 `window.SUNKAN_PHRASE` がまだ無い。見ないと、場面を最後に開いた状態で
-起動したとき画面が空になる（`cards.js` / `shadow.js` も同じことをしている）。
+起動したとき画面が空になる（`cards.js` / `listen.js` も同じことをしている）。
 
-### `window.SUNKAN_SHADOW`（shadow.js が開けている口）
+### `window.SUNKAN_LISTEN`（listen.js が開けている口）
 
 | 関数 | 内容 |
 | --- | --- |
@@ -152,26 +153,29 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 | `onHide()` | **ほかの画面へ移ったときに必ず呼ぶ。** 鳴らしっぱなしにしない |
 | `reload()` | localStorage を読み直して作り直す。同期のあとに呼ぶ |
 
-**1 文ずつ「次へ」を押させない。** 押すたびに追いかけが切れて、シャドーイングにならない。
-`speak` の `onend` で次へつなぎ、最後まで勝手に流す。
+モードの鍵は `listen`、タブの名前は**「リスニング」**。保存先は
+`sunkan:listen:items` / `sunkan:listen:stars` / `sunkan:listen:ui`。
+1 件は `{ id, en, ja, note, created }`。
 
-**「この文だけ」は例外**（`startOne`）。`state.single` を立てて流し、くり返しのぶんを
-鳴らし終えたら次へ進まずに止める（`stopOne`。位置はそのまま残すので、続けて押せば同じ文が鳴る）。
-速さもくり返しも通しと同じ設定を使う。**このときは英文を隠さない** — 聞き取れなかった文を
-確かめるための再生なので、そこで字が消えると用を成さない。
-鳴っていないときは `cancel()` を挟まない（挟むと次の `speak()` が「空くのを待つ」道に入り、
-iOS ではタップから離れて無音になる）。
+**英文はスラッシュ入りのまま持つ**（`Let's get / a cup of coffee / after this.`）。
+スラッシュがそのまま**出す単位（かたまり）**になるので、入れるときに割らない。
+`ja` も任意でスラッシュ入り（かたまりと同じ数なら 1 つずつ添えられる）。
 
-`onend` は**最後まで鳴り終わったときだけ**呼ばれる（`speech.js` の `onEnd` が
-`active !== run` で弾く）。ここを緩めると、止めたのに次の文へ進む。
-こちら側でも `if (!state.playing) return;` でもう一度見る。
+**行は左に 🔈、右に英文。** まだ出していないかたまりは `filter: blur` でぼかす
+（はじめから字が読めると耳を使わない）。行をタップすると**かたまりを 1 つずつ**出し、
+出したかたまりは**色が変わり**、その日本語が下に小さく出る。
+**ぜんぶ出したあと、もう一度タップすると最初に戻る**（同じ文を何度でも回せる）。
 
-**画面を離れたら黙らせる。** モード切り替え・`pagehide`・`visibilitychange` の 3 か所。
-どれか 1 つでも抜けると、裏で鳴り続ける。
+**英文を 🔈 の下に潜らせない。** 行の道具と英文が重なると読めなくなる
+（`--tools-space` の決まりと同じ話）。長い文でも**横スクロールを出さない**。
 
-主ボタン（はじめる／とめる）に **`aria-pressed` を付けない**。
-`.btn--primary[aria-pressed="false"]` が「押していないトグル」の中抜きの見た目にしてしまい、
-主ボタンに見えなくなる。状態はラベル（▶はじめる／■とめる）そのもので伝える。
+**追加・編集のダイアログは Enter では保存しない**（build 59 の決まり。`blockEnter()` を使う）。
+
+**前のシャドーイング（`assets/shadow.js`）は画面ごと外した。**
+ただし **`sunkan:shadow:*` のデータは消していない**（本人の持ちものなので残す決まり。
+`sync.js` の扱いも今までどおり）。
+
+見張り: `tests/listentest.mjs`（390 / 1180 の両方で実際に押す）。
 
 ### `window.SUNKAN_MEDIA`（media.js が開けている口）
 
@@ -649,6 +653,7 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
   drillSrs: { /* sunkan:drill:srs と同じ形 */ },
   gaps: { /* sunkan:gaps と同じ形 */ },
   phrase: { items, stars, levels, srs },
+  listen: { items, stars },
   stars: { /* sunkan:stars と同じ形 */ },
   para:  { genres: [...], cards: [...], stars: [...] },
   tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
@@ -681,7 +686,7 @@ Gist の 1 ファイルは 1MB まで。送る前に大きさを見て、超え�
 
 **同期しないもの**: `sunkan:settings`（隠し方・文字サイズなどは端末ごとの好み）、
 `sunkan:voice`（入っている声が端末ごとに違うので、揃えても意味がない）、
-`sunkan:mode`、`sunkan:para:ui`、収録例文（`data.js` にあるので送る意味がない）。
+`sunkan:mode`、`sunkan:para:ui`、`sunkan:listen:ui`、収録例文（`data.js` にあるので送る意味がない）。
 
 ### 同期の道は 2 つある
 
@@ -759,7 +764,8 @@ URL が無く、無い URL は入れようがないので、ここで詰まる�
 足し直したときに記録ごと消すと、次の同期でまた向こうの記録が勝ってしまう。記録は 90 日で捨てる。
 
 消した記録の鍵の頭は、`deck:` `card:` `genre:` `parastar:` のほかに
-**`carddeck:` `carditem:` `cardstar:`**（カード）。`cards.js` が消すときに必ず `recordDelete` を呼ぶ。
+**`carddeck:` `carditem:` `cardstar:`**（カード）、**`listenitem:` `listenstar:`**（リスニング）。
+`cards.js` / `listen.js` が消すときに必ず `recordDelete` を呼ぶ。
 忘れると、もう片方の端末から消したはずのカードが戻ってくる。
 
 ### どれくらい言えるか（`levels`）の突き合わせ
@@ -842,7 +848,7 @@ build 58 では 1 列目の細い札だったが、「トイレが空いてな�
 ボタンだけ。日本語を変換して確定するときの Enter で勝手に追加されるのが、
 入れている途中でいちばん邪魔だったため（本人の申し出で build 59 から）。
 
-`blockEnter()`（`app.js` / `cards.js` / `shadow.js` / `paraphrase.js` / `phrase.js`
+`blockEnter()`（`app.js` / `cards.js` / `listen.js` / `paraphrase.js` / `phrase.js`
 に同じものを置いてある）を使う。**`e.preventDefault()` は必ず残す** —
 ダイアログの中は `<form method="dialog">` なので、素通しすると Enter で
 **黙って閉じて書いたものが消える**。欄から欄へ移すのもしない（変換の Enter で
@@ -889,6 +895,41 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 **場面はセットを持たないので入れ物が 1 段ひらたい**（`{deckId: {itemId: …}}` ではない）。
 消えた場面の印と予定は連れて戻さない（`liveIds` に無い id は落とす）。
 
+### 読み上げの声は、入っている中でいちばん良いものを選ぶ
+
+`speech.js` は昔、**英語の声のうち最初に見つかったもの**を使っていた。Mac には
+昔からの作り物の声（Fred・Albert・Zarvox など）が入っていて、それを引き当てると
+同じ文でも聞き取れない。`voiceScore()` で点数を付け、**いちばん高いものを選ぶ**。
+
+- 名前に `premium` / `enhanced` / `natural` / `neural` / 拡張 / プレミアム … ＋40
+  （端末に落としてある高品質な声。ここがいちばん効く）
+- Ava / Samantha / Google US English など、作りの新しい声 … ＋20
+- `localService === false`（ネット側の声）… ＋10 ／ `en-US` … ＋8
+- 昔からの作り物の声 … **−60**
+
+**点数がマイナスでも「英語の声ではない」ことにはしない。** 古い声しか入っていない
+端末で一覧が空になり、何も選べなくなる（`isEnglishVoice()` と点数は別もの）。
+利用者が自分で選んだ声（`sunkan:voice`）があれば、それがいちばん強いのは今までどおり。
+`listVoices()` は**良い順**に並べて返す（何十個も並ぶ端末で、良い声が下に埋もれる）。
+
+声そのものの質は**端末に入っている声**で決まる。アプリ側ではこれ以上良くできないので、
+`#voice-dialog` に iPhone / Mac で拡張・プレミアムを落とす手順を書いてある。
+見張り: `tests/voicetest.mjs`（偽の声の一覧を流し込んで、どれを選ぶかだけを見る）。
+
+### リスニングの突き合わせ
+
+本体は `mergeById(..., 'listenitem:')`、「もう一度」は `mergeStrings` に
+`'listenstar:'` を見させる（**場面とまったく同じ作り**。リスニングもセットを持たないので
+入れ物は 1 段ひらたい）。消えた文の印は連れて戻さない（`liveIds` に無い id は落とす）。
+
+形は `listen: { items, stars }`。1 件は `{id, en, ja, note, created}` で、
+**`en` のスラッシュ（` / `）はそのまま持つ** — かたまりの切れ目そのものが中身なので、
+同期で均したり分割したりしない（`mergeById` は中身を解釈しないので、そのまま渡る）。
+`sunkan:listen:ui`（速さ・隠し方などの好み）は端末ごとなので**送らない**。
+
+古い版が書き出したものには `listen` が無い。読むときは `listenPart()` を通して形を揃える
+（`phrasePart()` / `shadowPart()` と同じ）。
+
 ### カードの覚えた記録の突き合わせ
 
 `sunkan:cards:srs` だけは、足し算でも「手元が勝ち」でもなく、
@@ -912,6 +953,13 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 **2 を忘れると、届いたぶんが黙って落ちる。** `KNOWN` に載せた項目は `carryUnknown` が写さないので、
 `clean()` に書かないかぎり受け取り側で消える。実際それでカードを復元できなかった
 （書き出したファイルには入っているのに、読み込むと 0 枚になる）。
+
+リスニング（`sunkan:listen:items` / `sunkan:listen:stars`）は 4 か所すべてに入れてある。
+`merge()` と `apply()` にも足してある（**足すところは 6 か所**。4 か所は「抜けると黙って落ちる」
+ところで、`merge()` を忘れると突き合わせが素通りになり、`apply()` を忘れると
+受け取っても保存されない）。書き戻したあとは `refreshViews` が
+`window.SUNKAN_LISTEN.reload()` を呼ぶ（関数があるときだけ）。
+件数の表示（`countsLine()`）にも「リスニング n」を足した。2 台で見比べるためのもの。
 
 **4 を忘れると、その中身だけ直しても自動同期が動かない。** `fingerprint()` に
 `sunkan:cards:*` と `sunkan:shadow:*` が入っておらず、カードやシャドーを直しても
@@ -971,10 +1019,11 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:gaps` | `{ [deckId]: { [itemId]: {w,at} } }` … つまずいた所。`w` は**均した語**（小文字・前後の記号を落とす）の配列。`"Brother." と "brother" を別に数えると集計が意味を持たない`ため。**空配列は「外した」印**として残す（同期で「外した」を伝えるのに要る） |
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
-| `sunkan:mode` | `drill` / `para` / `cards` / `shadow` … 最後に開いていたモード |
-| `sunkan:shadow:decks` | シャドーイングのセット `[{id,name,created}]` |
-| `sunkan:shadow:items` | シャドーイングの文 `[{id,deckId,en,ja,created}]` |
-| `sunkan:shadow:ui` | `{deckId, rate, repeat, hideText, loop}`。**同期しない**（端末ごとの好み） |
+| `sunkan:mode` | `drill` / `phrase` / `para` / `cards` / `listen` … 最後に開いていたモード |
+| `sunkan:listen:items` | リスニングの文 `[{id, en, ja, note, created}]`。`en` は `Let's get / a cup of coffee / after this.` のように**スラッシュ入りのまま**。スラッシュが出す単位になる |
+| `sunkan:listen:stars` | `string[]` … ↻「もう一度」 |
+| `sunkan:listen:ui` | 表示の状態（絞り込み・**読み上げの速さ**）。**同期しない**（端末ごとの好み） |
+| `sunkan:shadow:decks` / `sunkan:shadow:items` / `sunkan:shadow:ui` | 前のシャドーイングの中身。**画面は外したが、消していない**（本人の持ちもの。`sync.js` も今までどおり運ぶ） |
 | `sunkan:cards:decks` | カードのセット `[{id,name,created}]` |
 | `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,img,created}]`。`img` は写真の **id だけ**（中身は IndexedDB） |
 | `sunkan:cards:srs` | 覚えた記録 `{ [itemId]: { r:状態, l:状態, s:状態 } }`（面ごとに別）。**これを落とすと忘却曲線が消える** |
@@ -1052,7 +1101,6 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 
 - **押していないのに音は出さない。** 自動で鳴らすのは、利用者が自分で入れた設定
   （`settings.autoSpeak` / `cards:ui.autoSpeak`）があるときだけ。どちらも既定は off。
-  シャドーイングは流しっぱなしにするが、始まるのは「はじめる」を押したときだけ。
 - 外部 CDN・npm・ビルドツールは使わない。素の HTML/CSS/JS のみ。
 - 学習モード、スコア、タイマーなどの「練習モード」は作らない。
 - パラフレ帳に例文は同梱しない（中身は使う人が入れる）。

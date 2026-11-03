@@ -20,9 +20,9 @@ const EXEC = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linu
 let pass = 0, fail = 0;
 const ok = (n, c, e = '') => { c ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (e ? '  → ' + e : ''))); };
 
-// --- 入口がどこにも残っていないか（カード・シャドー・言い換えはここで見る）---
+// --- 入口がどこにも残っていないか（カード・リスニング・言い換えはここで見る）---
 console.log('\n=== 中身 ===');
-for (const f of ['app', 'cards', 'shadow', 'paraphrase', 'phrase']) {
+for (const f of ['app', 'cards', 'listen', 'paraphrase', 'phrase']) {
   const src = fs.readFileSync(new URL(`../assets/${f}.js`, import.meta.url), 'utf8');
   ok(`${f}.js に blockEnter がある`, /function blockEnter\(/.test(src));
   ok(`${f}.js に Enter で保存する道が残っていない`,

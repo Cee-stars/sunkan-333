@@ -237,9 +237,14 @@
    * PDF から拾った文字は、1 つの文が途中で折り返されていることが多い。
    * 行の頭が「見出し:」でなければ、前の見出しの続きとしてつなげる。ここが要。
    *
+   * `opts.enOnly` を立てると、**EN だけでも 1 件として通す**（リスニングは日本語が任意）。
+   * 既定（opts なし）は今までどおり「意味か訳のどちらかが要る」ままにする —
+   * 緩めるとカードや瞬間英作文で、ふつうの文書から中身の無い札ができる。
+   *
    * @returns {{items:Array, deckName:string}}
    */
-  function parseBlocks(text) {
+  function parseBlocks(text, opts) {
+    var enOnly = !!(opts && opts.enOnly);
     var lines = str(text).split(/\r\n|\r|\n/);
     var items = [];
     var deckName = '';
@@ -248,7 +253,7 @@
 
     function flush() {
       if (!cur) return;
-      if (trim(cur.en) && (trim(cur.ja) || trim(cur.exJa))) items.push(cur);
+      if (trim(cur.en) && (enOnly || trim(cur.ja) || trim(cur.exJa))) items.push(cur);
       cur = null;
       lastKey = '';
     }
@@ -1169,6 +1174,282 @@
 
   bindPhrase();
 
+  /* ============================================================
+   * 8. リスニングのがわ
+   *
+   * 書き方は瞬間英作文と同じ見出し（`EN:` / `JA:` / `MEMO:` ＋ `---`）。
+   * **ちがうのは 2 つだけ** —
+   *   1. `en` の中のスラッシュ（ ` / ` ）は**消さない・分割しない**。
+   *      かたまりで聞き取る練習そのものなので、ここを均すと練習にならない。
+   *   2. **日本語は無くても 1 件として通す**（`parseBlocks` に `enOnly` を渡す）。
+   *
+   * 解いた中身は保存しない。足すのは `SUNKAN_LISTEN.addItems` 越しに限る。
+   * ========================================================== */
+
+  var LISTEN_PROMPT = [
+    '添付のファイルから、リスニング（聞き取り）の練習に使う英文を作ってください。',
+    '',
+    '出力は下の形式の文字だけを、そのまま返してください。',
+    'コードブロック・前置き・説明・通し番号・箇条書きは一切付けないでください。',
+    '',
+    'EN: 英文。**意味のかたまりごとに半角スラッシュ（ / ）で区切る**',
+    'JA: その日本語訳。**英語と同じ区切りで、同じ順に / で区切る**',
+    'MEMO: 聞き取りにくい所が 1 つだけあれば 20 字以内で。無ければこの行ごと省く',
+    '---',
+    '',
+    'ルール:',
+    '- 1 文につき上の形で書き、そのあとに --- を必ず入れる',
+    '- **スラッシュで意味のかたまりに区切ること。** 1 かたまりは 2〜5 語くらいにする',
+    '- スラッシュの前後には半角の空白を 1 つずつ入れる（「 / 」の形）',
+    '- **英語と日本語のかたまりの数をそろえること。** 1 つ目は 1 つ目の訳、',
+    '  2 つ目は 2 つ目の訳になるように、順番も合わせる',
+    '- 日本語は語順を英語のかたまりに合わせる。きれいな 1 文にまとめ直さない',
+    '- 英文は 8〜20 語程度の、話し言葉として自然な 1 文にする',
+    '- 同じ文を 2 つ作らない',
+    '- 1 文ぶんを 1 行にまとめず、上のとおり 1 項目 1 行で書く',
+    '- 最大 100 文まで',
+    '',
+    '例:',
+    'EN: Do you know / where the nearest station is / from here?',
+    'JA: 知っていますか / 一番近い駅がどこか / ここから',
+    '---',
+    "EN: Let's get / a cup of coffee / after this.",
+    'JA: 飲みに行こう / コーヒーを / このあと',
+    'MEMO: get a cup of 〜 でひとかたまり',
+    '---'
+  ].join('\n');
+
+  var LISTEN_TEMPLATE = [
+    '# この形で書けば、そのまま読み込めます。',
+    '# 使う見出しは EN / JA / MEMO の 3 つだけ。',
+    '# 英語: 日本語: メモ: と日本語で書いてもかまいません。',
+    '# --- が 1 文の区切りです。JA と MEMO は省いてもかまいません。',
+    '# EN は意味のかたまりごとに / で区切ってください。区切りはそのまま保存されます。',
+    '# JA も区切るときは、英語とかたまりの数をそろえてください。',
+    '',
+    'EN: Do you know / where the nearest station is / from here?',
+    'JA: 知っていますか / 一番近い駅がどこか / ここから',
+    '---',
+    "EN: Let's get / a cup of coffee / after this.",
+    'JA: 飲みに行こう / コーヒーを / このあと',
+    'MEMO: get a cup of 〜 でひとかたまり',
+    '---',
+    'EN: I was going to call you / but I fell asleep.',
+    '---'
+  ].join('\n');
+
+  /** スラッシュで切ったかたまりの数。空のかたまりは数えない */
+  function chunkCount(text) {
+    var parts = str(text).split('/');
+    var n = 0;
+    for (var i = 0; i < parts.length; i++) { if (trim(parts[i])) n++; }
+    return n;
+  }
+
+  /**
+   * 見出し付きで書かれたものを、リスニングの形（`{en, ja, note}`）に写す。
+   * **スラッシュはそのまま残す。** `trim` は前後の空白しか落とさない。
+   */
+  function toListenItems(items) {
+    var out = [];
+    var list = items || [];
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      var en = trim(it.en);
+      var ja = trim(it.ja);
+      // カード用の書き方（EN が語・EX が例文）で渡されたぶんは、例文のほうを使う。
+      // リスニングは文を聞き取る練習なので、語そのものでは練習にならない
+      if (!en && trim(it.exEn)) {
+        en = trim(it.exEn);
+        if (!ja) ja = trim(it.exJa);
+      }
+      if (!en) continue;
+      out.push({ en: en, ja: ja, note: trim(it.note) });
+      if (out.length >= MAX_CARDS) break;
+    }
+    return out;
+  }
+
+  /** リスニングとして読む。日本語が無くても通す */
+  function parseListenAny(text) {
+    return toListenItems(parseBlocks(text, { enOnly: true }).items);
+  }
+
+  function listenAPI() {
+    var api = window.SUNKAN_LISTEN;
+    return (api && typeof api.addItems === 'function') ? api : null;
+  }
+
+  var elLsDialog = $('listen-import-dialog');
+  var elLsOpen = $('btn-listen-import');
+  var elLsText = $('listen-import-text');
+  var elLsPreview = $('listen-import-preview');
+  var elLsSave = $('btn-listen-import-save');
+  var elLsCancel = $('btn-listen-import-cancel');
+  var elLsFileBtn = $('btn-listen-file');
+  var elLsFile = $('listen-file');
+  var elLsFileStatus = $('listen-file-status');
+  var elLsTemplate = $('btn-listen-template');
+  var elLsPrompt = $('btn-listen-prompt');
+  var elLsPromptStatus = $('listen-prompt-status');
+  var lsPreviewTimer = null;
+
+  function openListenDialog() {
+    if (!elLsDialog) return;
+    if (elLsPreview) elLsPreview.textContent = '';
+    if (elLsFileStatus) elLsFileStatus.textContent = '';
+    if (elLsPromptStatus) elLsPromptStatus.textContent = '';
+    if (typeof elLsDialog.showModal === 'function') {
+      if (!elLsDialog.open) elLsDialog.showModal();
+    } else {
+      elLsDialog.setAttribute('open', 'open');
+    }
+    // いちばん上から見せる。中ほどに焦点を当てると、そこまで送られた状態で開く
+    elLsDialog.scrollTop = 0;
+  }
+
+  function closeListenDialog() {
+    if (!elLsDialog) return;
+    if (typeof elLsDialog.close === 'function') {
+      if (elLsDialog.open) elLsDialog.close();
+    } else {
+      elLsDialog.removeAttribute('open');
+    }
+  }
+
+  /** 何件になるかを押す前に見せる。押してから分かるのがいちばん困る */
+  function listenPreview() {
+    if (!elLsPreview) return;
+    var text = str(elLsText && elLsText.value);
+    if (!trim(text)) { elLsPreview.textContent = ''; return; }
+    var items = parseListenAny(text);
+    if (!items.length) {
+      elLsPreview.textContent = 'リスニングとして読めませんでした。'
+        + 'EN: の行（日本語を付けるなら JA: の行）で書いて、--- で区切ってください。';
+      return;
+    }
+    var withJa = 0, noSlash = 0, mismatch = 0, i;
+    for (i = 0; i < items.length; i++) {
+      var en = chunkCount(items[i].en);
+      if (en < 2) noSlash++;
+      if (items[i].ja) {
+        withJa++;
+        // かたまりの数が違うと、どのかたまりの訳なのかが並べられない。
+        // 読み込みは止めないが、先に言っておく（直すのは AI に出し直させるのがいちばん早い）
+        if (en >= 2 && chunkCount(items[i].ja) !== en) mismatch++;
+      }
+    }
+    var line = items.length + ' 文ぶん読めました（うち日本語つき ' + withJa + ' 文）。';
+    if (noSlash) line += ' スラッシュで区切られていない文が ' + noSlash + ' 文あります（そのまま 1 かたまりで入ります）。';
+    if (mismatch) line += ' 英語と日本語のかたまりの数が違う文が ' + mismatch + ' 文あります。';
+    elLsPreview.textContent = line;
+  }
+
+  function saveListen() {
+    var api = listenAPI();
+    if (!api) {
+      if (elLsPreview) elLsPreview.textContent = 'リスニングの画面が読み込めていません。';
+      return;
+    }
+    var items = parseListenAny(str(elLsText && elLsText.value));
+    if (!items.length) {
+      if (elLsPreview) elLsPreview.textContent = '読み込める文がありませんでした。';
+      return;
+    }
+    var added = api.addItems(items);
+    // 1 文も入らなかったときは閉じない。閉じると「押したのに何も起きない」になる
+    if (typeof added === 'number' && added === 0) {
+      if (elLsPreview) {
+        elLsPreview.textContent = '新しく入ったものはありませんでした（同じ英文はとばします）。';
+      }
+      return;
+    }
+    closeListenDialog();
+    if (elLsText) elLsText.value = '';
+    if (elLsPreview) elLsPreview.textContent = '';
+  }
+
+  function onListenFile() {
+    if (!elLsFile || !elLsFile.files || !elLsFile.files.length) return;
+    var file = elLsFile.files[0];
+    elLsFile.value = '';   // 同じファイルを選び直せるように
+    var reader = new FileReader();
+    reader.onload = function () {
+      if (elLsText) elLsText.value = str(reader.result);
+      if (elLsFileStatus) elLsFileStatus.textContent = file.name + ' を読みました。';
+      listenPreview();
+    };
+    reader.onerror = function () {
+      if (elLsFileStatus) elLsFileStatus.textContent = 'このファイルは読めませんでした。';
+    };
+    reader.readAsText(file);
+  }
+
+  function copyListenPrompt() {
+    copyText(LISTEN_PROMPT, function (ok) {
+      if (!elLsPromptStatus) return;
+      elLsPromptStatus.textContent = ok
+        ? 'コピーしました。ファイルといっしょに AI へ渡してください。'
+        : 'コピーできませんでした。長押しで選んでコピーしてください。';
+    });
+  }
+
+  function downloadListenTemplate() {
+    try {
+      var blob = new Blob(['﻿' + LISTEN_TEMPLATE], { type: 'text/plain;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'listening-format.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      if (elLsFileStatus) elLsFileStatus.textContent = '見本を書き出しました。この形で書けば、そのまま読み込めます。';
+    } catch (e) {
+      // 書き出せない端末では、欄に入れてしまうほうが早い
+      if (elLsText) elLsText.value = LISTEN_TEMPLATE;
+      listenPreview();
+    }
+  }
+
+  /** 開くボタンは listen.js のがわ（操作列）にある。後から入っても開けるようにする */
+  function onListenOpenClick(e) {
+    var node = e.target;
+    while (node && node !== document) {
+      if (node.id === 'btn-listen-import') { openListenDialog(); return; }
+      node = node.parentNode;
+    }
+  }
+
+  function bindListen() {
+    if (elLsOpen) {
+      elLsOpen.addEventListener('click', openListenDialog);
+    } else {
+      // まだ操作列に無いとき（読み込みの順番・あとから作られた場合）も拾えるように
+      document.addEventListener('click', onListenOpenClick);
+    }
+    if (elLsCancel) elLsCancel.addEventListener('click', closeListenDialog);
+    if (elLsSave) elLsSave.addEventListener('click', saveListen);
+    if (elLsFileBtn && elLsFile) {
+      elLsFileBtn.addEventListener('click', function () { elLsFile.click(); });
+      elLsFile.addEventListener('change', onListenFile);
+    }
+    if (elLsTemplate) elLsTemplate.addEventListener('click', downloadListenTemplate);
+    if (elLsPrompt) elLsPrompt.addEventListener('click', copyListenPrompt);
+    if (elLsText) {
+      // 打つたびに解き直すと、長い貼り付けで引っかかる。少し待ってから下読みする
+      elLsText.addEventListener('input', function () {
+        if (lsPreviewTimer) window.clearTimeout(lsPreviewTimer);
+        lsPreviewTimer = window.setTimeout(listenPreview, 150);
+      });
+      // 貼り付けは待たずに出す（待つと「読めたのか」が分からない間ができる）
+      elLsText.addEventListener('paste', function () { window.setTimeout(listenPreview, 0); });
+    }
+  }
+
+  bindListen();
+
   window.SUNKAN_IMPORT = {
     /** 文字から中身を起こす（書き方は自動で見分ける）。{items, deckName} */
     parse: parseAny,
@@ -1191,6 +1472,11 @@
     toPhraseItems: toPhraseItems,
     phrasePrompt: PHRASE_PROMPT,
     phraseTemplate: PHRASE_TEMPLATE,
+    /** リスニング。**スラッシュはそのまま残す**。日本語は無くても通る */
+    parseListen: parseListenAny,
+    toListenItems: toListenItems,
+    listenPrompt: LISTEN_PROMPT,
+    listenTemplate: LISTEN_TEMPLATE,
     drillTemplate: DRILL_TEMPLATE
   };
 

@@ -51,7 +51,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 62 (2026-10-26)';
+  var APP_VERSION = 'build 63 (2026-11-03)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -2475,10 +2475,6 @@
         if (para.length) parts.push('パラフレ ' + para.length);
         var phrase = JSON.parse(window.localStorage.getItem('sunkan:phrase:items') || '[]');
         if (phrase.length) parts.push('場面 ' + phrase.length);
-        // シャドーイングの文はもともと数に入っていなかった。
-        // 「ぜんぶ」と言いながら数に出ないと、入っていないのかと疑わせる
-        var shadow = JSON.parse(window.localStorage.getItem('sunkan:shadow:items') || '[]');
-        if (shadow.length) parts.push('シャドー ' + shadow.length);
       } catch (e) { /* 読めなければ数は出さない */ }
       elBackupOutHint.textContent = parts.length ? parts.join('・') + ' など ぜんぶ' : 'ぜんぶ';
     }
@@ -3657,7 +3653,7 @@
     addSentences: addSentencesToNamedDeck,
     splitTable: splitTable,
 
-    /** セットの一覧 `[{id, name, count}]`。シャドーイングの「持ってくる」元に使う */
+    /** セットの一覧 `[{id, name, count}]`。取り込みの「入れ先」を作るのに使う */
     decks: function () {
       var list = allDecks(), out = [];
       for (var i = 0; i < list.length; i++) {

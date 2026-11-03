@@ -11,8 +11,8 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 62 (2026-10-26)">
-<meta name="description" content="瞬間英作文・パラフレ帳・カード・シャドーイングの 4 つ。PDF からカードが作れて、忘却曲線で出し直します。">
+<meta name="sunkan-build" content="build 63 (2026-11-03)">
+<meta name="description" content="瞬間英作文・場面・パラフレ帳・カード・リスニングの 5 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <!-- SVG だけだと、取り込めないブラウザ（Mac の Safari など）でアイコンが出ない。
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=62">
+<link rel="stylesheet" href="assets/style.css?v=63">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -30,7 +30,7 @@
   var mode = 'drill';
   try {
     var saved = window.localStorage.getItem('sunkan:mode');
-    if (saved === 'para' || saved === 'cards' || saved === 'shadow' ||
+    if (saved === 'para' || saved === 'cards' || saved === 'listen' ||
         saved === 'phrase') { mode = saved; }
   } catch (e) { /* プライベートモードなどでは既定のまま */ }
   document.documentElement.setAttribute('data-mode', mode);
@@ -49,7 +49,7 @@
       <span data-mode-view="phrase">場面</span>
       <span data-mode-view="para">パラフレ帳</span>
       <span data-mode-view="cards">カード</span>
-      <span data-mode-view="shadow">シャドーイング</span>
+      <span data-mode-view="listen">リスニング</span>
     </h1>
 
     <div class="mode-tabs" id="mode-tabs" role="tablist" aria-label="モード">
@@ -61,8 +61,8 @@
         aria-selected="false" aria-controls="view-para" tabindex="-1">パラフレ帳</button>
       <button type="button" class="mode-tab" id="tab-cards" role="tab"
         aria-selected="false" aria-controls="view-cards" tabindex="-1">カード</button>
-      <button type="button" class="mode-tab" id="tab-shadow" role="tab"
-        aria-selected="false" aria-controls="view-shadow" tabindex="-1">シャドー</button>
+      <button type="button" class="mode-tab" id="tab-listen" role="tab"
+        aria-selected="false" aria-controls="listen-view" tabindex="-1">リスニング</button>
     </div>
   </div>
 
@@ -213,23 +213,40 @@
     </div>
   </div>
 
-  <!-- ===== シャドーイングの操作列 ===== -->
-  <div class="header-row header-row--main" data-mode-view="shadow">
-    <div class="deck-picker">
-      <label class="visually-hidden" for="shadow-deck-select">セット</label>
-      <select id="shadow-deck-select" class="deck-select"></select>
+  <!-- ===== リスニングの操作列（速さ → 隠す/表示 → 検索 → 足す） =====
+       行の中は「左に 🔈・右に英文」で、ほかのモードと左右が逆。
+       操作列のほうはほかのモードと同じ並びにそろえる（押す場所を覚え直させない）。 -->
+  <div class="header-row header-row--main" data-mode-view="listen">
+    <div class="listen-rate">
+      <span class="listen-rate-label" id="listen-rate-label">速さ</span>
+      <!-- 札は listen.js が作る（選べる速さを 1 か所にまとめておきたいため）。
+           ふつうの速さだと拾えないので、既定は 0.9（少しゆっくり）。 -->
+      <div class="listen-chip-row" id="listen-rates" role="group"
+        aria-labelledby="listen-rate-label"></div>
     </div>
 
-    <button type="button" id="btn-shadow-add" class="btn btn--ghost" aria-haspopup="dialog">
+    <!-- 押したときの動きは別担当が付ける。ここは置き場所だけ。
+         記号だけだと「どこから読み込むのか」が分からないので、狭幅でも字を残す -->
+    <button type="button" id="btn-listen-import" class="btn btn--ghost"
+      aria-label="ファイルから読み込む" aria-haspopup="dialog">
+      <span aria-hidden="true">📄</span><span class="btn-label">ファイルから</span>
+    </button>
+  </div>
+
+  <div class="header-row header-row--controls" data-mode-view="listen">
+    <button type="button" id="listen-toggle-all" class="btn btn--primary" aria-pressed="true">
+      <span class="btn-label" id="listen-toggle-all-label">ぜんぶ出す</span>
+    </button>
+
+    <div class="search-wrap">
+      <label class="visually-hidden" for="listen-search">リスニングを検索</label>
+      <input type="search" id="listen-search" class="search-input"
+        placeholder="英語・日本語で検索" autocomplete="off" enterkeyhint="search">
+    </div>
+
+    <button type="button" id="btn-listen-add" class="btn btn--ghost" aria-haspopup="dialog">
       <span aria-hidden="true">＋</span><span class="btn-label">追加</span>
     </button>
-
-    <button type="button" id="btn-shadow-pull" class="btn btn--ghost" aria-haspopup="dialog">
-      <span aria-hidden="true">📥</span><span class="btn-label">瞬間英作文から</span>
-    </button>
-
-    <button type="button" id="btn-shadow-list" class="btn btn--icon" aria-label="文の一覧" aria-haspopup="dialog">☰</button>
-    <button type="button" id="btn-shadow-settings" class="btn btn--icon" aria-label="音声の設定" aria-haspopup="dialog">⚙</button>
   </div>
 
   <!-- ===== 受信箱（同じドメインの別アプリから届いたカード。どちらのモードでも出す） ===== -->
@@ -258,7 +275,7 @@
   <p class="status-bar" id="phrase-status" data-mode-view="phrase" role="status" aria-live="polite"></p>
   <p class="status-bar" id="para-status" data-mode-view="para" role="status" aria-live="polite"></p>
   <p class="status-bar" id="card-status" data-mode-view="cards" role="status" aria-live="polite"></p>
-  <p class="status-bar" id="shadow-status" data-mode-view="shadow" role="status" aria-live="polite"></p>
+  <p class="status-bar" id="listen-status" data-mode-view="listen" role="status" aria-live="polite"></p>
 </header>
 
 <main class="app-main">
@@ -371,55 +388,24 @@
     <p class="card-empty" id="card-empty" hidden></p>
   </section>
 
-  <!-- ===== シャドーイング（続けて流す。1 文ずつ押させない） ===== -->
-  <section class="view view--shadow" id="view-shadow" data-mode-view="shadow"
-    role="tabpanel" aria-labelledby="tab-shadow" tabindex="-1">
+  <!-- ===== リスニング（かたまりごとに出していく） =====
+       行の作りはほかのモードと**左右が逆**。左に 🔈、右に英文を置く。
+       英文は ` / ` で割ったかたまりの並びで、まだ出していないぶんはぼかす。
+       行を押すと 1 かたまりずつ出て、ぜんぶ出たあと押すと最初に戻る。
+       見出し行（#／日本語／英語）は置かない — 列が 1 つしか無いため。 -->
+  <section class="view view--listen" id="listen-view" data-mode-view="listen"
+    role="tabpanel" aria-labelledby="tab-listen" tabindex="-1">
+  <div class="sheet">
+    <ol class="rows" id="listen-rows" tabindex="-1"></ol>
 
-    <div class="shadow-stage" id="shadow-stage" hidden>
-      <div class="progress">
-        <div class="progress-line">
-          <span class="progress-left" id="shadow-count">0 文</span>
-          <span class="progress-count">聞きながら、少し遅れて言う</span>
-        </div>
-        <div class="progress-track" role="progressbar" id="shadow-track"
-          aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-label="どこまで流したか">
-          <div class="progress-fill" id="shadow-fill"></div>
-        </div>
-      </div>
+    <p class="empty-state" id="listen-empty" hidden>該当する文がありません。</p>
 
-      <div class="shadow-card">
-        <p class="shadow-en" id="shadow-en"></p>
-        <p class="shadow-ja" id="shadow-ja" hidden></p>
-      </div>
-
-      <div class="shadow-actions">
-        <!-- aria-pressed は付けない。.btn--primary[aria-pressed="false"] が
-             「押していないトグル」の見た目（中抜き）にしてしまい、主ボタンに見えなくなる。
-             状態は ▶はじめる / ■とめる というラベルそのもので伝える。 -->
-        <button type="button" id="btn-shadow-play" class="btn btn--primary shadow-play">
-          <span id="shadow-play-label">▶ はじめる</span>
-        </button>
-        <!-- 聞き取れなかった文をその場で確かめる道。頭から流し直させない -->
-        <button type="button" id="btn-shadow-one" class="btn btn--ghost">▶ この文だけ</button>
-        <button type="button" id="btn-shadow-again" class="btn btn--ghost">はじめから</button>
-      </div>
-
-      <div class="shadow-opts">
-        <div class="shadow-opt">
-          <span class="shadow-opt-label">速さ</span>
-          <div class="chip-row" id="shadow-rates"></div>
-        </div>
-        <div class="shadow-opt">
-          <span class="shadow-opt-label">くり返し</span>
-          <div class="chip-row" id="shadow-repeats"></div>
-        </div>
-        <label class="check"><input type="checkbox" id="opt-shadow-hide"> 流している間は英文を隠す（耳だけで追う）</label>
-        <label class="check"><input type="checkbox" id="opt-shadow-loop"> 最後まで行ったら、はじめに戻る</label>
-      </div>
-    </div>
-
-    <p class="card-empty" id="shadow-empty" hidden></p>
+    <button type="button" id="btn-listen-add-row" class="add-row" aria-haspopup="dialog">
+      <span aria-hidden="true">＋</span> 文を追加
+    </button>
+  </div>
   </section>
+
 </main>
 
 <footer class="app-footer">
@@ -430,8 +416,8 @@
   <p class="hint" data-mode-view="para">見出しの英文が元の1文、その下が言い換えです。「言い換えを隠す」を押すと、見出しをタップするまで伏せられます。</p>
   <p class="hint hint--desktop" data-mode-view="cards">Space・Enter めくる／1 もう一度／2 できた／3 かんたん／R もう一度きく</p>
   <p class="hint hint--mobile" data-mode-view="cards">カードをタップしてもめくれます</p>
-  <p class="hint hint--desktop" data-mode-view="shadow">Space・Enter はじめる／とめる　R はじめから</p>
-  <p class="hint hint--mobile" data-mode-view="shadow">音が流れたら、少し遅れて重ねて言います</p>
+  <p class="hint hint--desktop" data-mode-view="listen">🔈 で文をまるごと聞いてから、行をクリックして 1 かたまりずつ出します。H 全部出す・全部隠す</p>
+  <p class="hint hint--mobile" data-mode-view="listen">🔈 で聞いて、行をタップすると 1 かたまりずつ出ます</p>
 </footer>
 
 <!-- ===== 行テンプレート（JS からクローンして使う） ===== -->
@@ -507,6 +493,38 @@
       <button type="button" class="btn btn--icon row-photo" aria-label="写真を見る" tabindex="-1" aria-haspopup="dialog" hidden>🖼</button>
       <button type="button" class="btn btn--icon row-edit" aria-label="この場面を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
       <button type="button" class="btn btn--icon row-delete" aria-label="この場面を削除する" tabindex="-1">🗑</button>
+    </span>
+  </li>
+</template>
+
+<!-- ===== リスニング 1 行のテンプレート（JS からクローンして使う）
+     ほかのモードと**左右が逆**。🔈 は .row-main の外に出してある —
+     ボタンの中にボタンは置けないため（押しても行の開閉が起きてしまう）。
+     かたまりは listen.js が並べる（文によって数が違うため）。
+     英語を伏せるのは .listen-chunk の自前のぼかしで、`data-mask` には
+     乗らない — ここで伏せているのは「まだ出していないかたまり」であって、
+     ほかのモードの「答え」とは別のものなので、隠し方の設定で消えると困る。 ===== -->
+<template id="listen-row-template">
+  <li class="row listen-row" data-id="">
+    <!-- その文をまるごと読み上げる。タップから同期で speak() を呼ぶので、
+         iOS でも鳴る（あいだに setTimeout を挟まない） -->
+    <button type="button" class="btn btn--icon listen-speak"
+      aria-label="この文を読み上げる">🔈</button>
+
+    <button type="button" class="row-main" aria-expanded="false">
+      <span class="cell listen-cell">
+        <span class="listen-chunks"></span>
+        <!-- かたまりの数が英語と合わないときの、まとめて 1 行の日本語。
+             ぜんぶ出し終わったときだけ出す（listen.js が hidden を外す） -->
+        <small class="listen-ja" hidden></small>
+      </span>
+    </button>
+
+    <span class="row-tools">
+      <!-- 言えなかった文に付けて、聞き取れるようになったら外す印 -->
+      <button type="button" class="btn btn--icon row-star" aria-label="「もう一度」に入れる" aria-pressed="false" tabindex="-1">↻</button>
+      <button type="button" class="btn btn--icon row-edit" aria-label="この文を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
+      <button type="button" class="btn btn--icon row-delete" aria-label="この文を削除する" tabindex="-1">🗑</button>
     </span>
   </li>
 </template>
@@ -717,6 +735,50 @@
   </form>
 </dialog>
 
+<!-- ===== リスニングを足す・直すダイアログ（#phrase-edit-dialog と同じ作り） =====
+     スラッシュはそのまましまう。入れたとおりに割るので、どこで切るかは
+     入れる人が決める（機械で区切ると、聞き取りの区切りとずれる）。 -->
+<dialog id="listen-edit-dialog" class="dialog" aria-labelledby="listen-edit-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="listen-edit-dialog-title" class="dialog-title">リスニング</h2>
+    <p class="dialog-desc">
+      英語を <strong>/</strong> で区切って入れます。その区切りのまま、
+      行を押すたびに 1 かたまりずつ出ます。
+    </p>
+
+    <label class="field">
+      <span class="field-label">英語（/ で区切る）</span>
+      <input type="text" id="listen-en" class="field-input" autocomplete="off"
+        placeholder="例：Let's get / a cup of coffee / after this.">
+    </label>
+
+    <!-- 日本語も同じ数のかたまりに割れていれば、かたまりごとに下へ出す。
+         数が合わないときは、ぜんぶ出し終わったときに 1 行だけ出す。
+         どちらでも成り立つので、割り方で悩ませない。 -->
+    <label class="field">
+      <span class="field-label">日本語（任意・/ で区切る）</span>
+      <input type="text" id="listen-ja" class="field-input" autocomplete="off"
+        placeholder="例：買っていこう / コーヒーを / このあと">
+    </label>
+
+    <label class="field">
+      <span class="field-label">メモ（任意）</span>
+      <input type="text" id="listen-note" class="field-input" autocomplete="off"
+        placeholder="聞き取りにくい所があれば">
+    </label>
+
+    <p class="dialog-note" id="listen-edit-status" role="status" aria-live="polite"></p>
+
+    <!-- 削除は hidden にしない。出し直しを JS に任せると、
+         付け忘れたときに「消せない文」ができてしまう -->
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-listen-close" class="btn btn--ghost">閉じる</button>
+      <button type="button" id="btn-listen-delete" class="btn btn--ghost">削除する</button>
+      <button type="button" id="btn-listen-save" class="btn btn--primary">保存する</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- ===== つまずいた所（言えなかった語に印をつける） ===== -->
 <dialog id="gap-dialog" class="dialog" aria-labelledby="gap-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -819,12 +881,34 @@
     <p class="dialog-desc">
       英語を読み上げる声を選べます。入っている声は端末ごとに違うので、
       この設定は<strong>この端末だけ</strong>のものです（同期しません）。
+      <strong>何も選ばなければ、入っている中でいちばん良い声を自動で選びます</strong>
+      （一覧も良いと思われる順に並べてあります）。
     </p>
 
     <label class="field">
       <span class="field-label">声</span>
       <select id="voice-select" class="field-input"></select>
     </label>
+
+    <!-- 声の良し悪しは端末に入っているもので決まる。アプリ側ではこれ以上良くできない。
+         いちばん効くのは「拡張」「プレミアム」を落としてもらうこと。 -->
+    <details class="dialog-details">
+      <summary>もっと良い声にしたいとき</summary>
+      <p class="dialog-hint">
+        声の良さは<strong>端末に入っている声</strong>で決まります。無料で、ぐっと良くなります。
+      </p>
+      <ol class="dialog-steps">
+        <li><strong>iPhone</strong>：設定 → アクセシビリティ → 読み上げコンテンツ → 声 → 英語 →
+          <strong>「拡張」や「プレミアム」と付いたもの</strong>（Ava・Samantha など）をダウンロード。</li>
+        <li><strong>Mac</strong>：システム設定 → アクセシビリティ → 読み上げコンテンツ → システムの声 →
+          <strong>「英語（アメリカ）」の拡張・プレミアム</strong>を追加。</li>
+        <li>落としたら、この画面を開き直して<strong>その声を選び</strong>、「聞いてみる」で確かめてください。</li>
+      </ol>
+      <p class="dialog-hint">
+        古い声（Fred・Albert・Zarvox など）は、英語の練習には向きません。
+        自動で選ぶときは、はじめから避けています。
+      </p>
+    </details>
 
     <p class="dialog-note" id="voice-status" role="status" aria-live="polite"></p>
 
@@ -1620,6 +1704,61 @@ export default {
   </form>
 </dialog>
 
+<!-- ===== リスニングをファイルから読み込む =====
+     開くボタンは操作列の #btn-listen-import（listen.js のがわ）。
+     書き方は瞬間英作文と同じ EN: / JA: / MEMO: ＋ --- で、
+     **en のスラッシュはそのまま保存する**（かたまりで聞き取る練習そのもの） -->
+<dialog id="listen-import-dialog" class="dialog" aria-labelledby="listen-import-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="listen-import-dialog-title" class="dialog-title">ファイルから読み込む</h2>
+    <p class="dialog-desc">
+      テキスト（.txt / .md）から読み込めます。
+      書き方がバラバラなファイルは、下の「AI への指示をコピー」で整えてから貼り付けてください。
+      <strong>英文は意味のかたまりごとに / で区切ります。</strong>
+      区切りはそのまま保存されます。
+    </p>
+
+    <h3 class="dialog-subtitle">1. ファイルを選ぶ</h3>
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-listen-file" class="btn btn--primary">ファイルを選ぶ</button>
+      <button type="button" id="btn-listen-template" class="btn btn--ghost">書き方の見本をダウンロード</button>
+    </div>
+    <input type="file" id="listen-file" hidden
+      accept=".txt,.md,text/plain,text/markdown">
+    <p class="dialog-hint" id="listen-file-status" role="status" aria-live="polite"></p>
+
+    <h3 class="dialog-subtitle">2. または、貼り付ける</h3>
+    <label class="field">
+      <span class="visually-hidden">貼り付け</span>
+      <textarea id="listen-import-text" class="field-input field-textarea" rows="10"
+        placeholder="EN: Do you know / where the nearest station is / from here?&#10;JA: 知っていますか / 一番近い駅がどこか / ここから&#10;---&#10;EN: Let's get / a cup of coffee / after this.&#10;JA: 飲みに行こう / コーヒーを / このあと"></textarea>
+    </label>
+
+    <p class="dialog-note" id="listen-import-preview" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-listen-import-cancel" class="btn btn--ghost">キャンセル</button>
+      <button type="button" id="btn-listen-import-save" class="btn btn--primary">読み込む</button>
+    </div>
+
+    <hr class="dialog-sep">
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">どんなファイルでも同じ形にする</h3>
+      <p class="dialog-hint">
+        下のボタンで指示文をコピーして、ChatGPT や Claude に<strong>ファイルといっしょに</strong>渡してください。
+        返ってきた文字をそのまま上の欄に貼り付ければ、同じ形で読み込めます。
+        指示文には<strong>スラッシュで意味のかたまりに区切ること</strong>と、
+        <strong>英語と日本語のかたまりの数をそろえること</strong>が入っています。
+      </p>
+      <div class="dialog-actions dialog-actions--wrap">
+        <button type="button" id="btn-listen-prompt" class="btn btn--ghost">AI への指示をコピー</button>
+      </div>
+      <p class="dialog-hint" id="listen-prompt-status" role="status" aria-live="polite"></p>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="card-import-dialog" class="dialog" aria-labelledby="card-import-dialog-title">
   <form method="dialog" class="dialog-inner">
     <h2 id="card-import-dialog-title" class="dialog-title">PDF・テキストから作る</h2>
@@ -1757,110 +1896,21 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=62"></script>
-<script src="assets/data.js?v=62"></script>
-<script src="assets/app.js?v=62"></script>
-<script src="assets/paraphrase.js?v=62"></script>
+<script src="assets/speech.js?v=63"></script>
+<script src="assets/data.js?v=63"></script>
+<script src="assets/app.js?v=63"></script>
+<script src="assets/paraphrase.js?v=63"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=62"></script>
-<!-- ===== シャドーイング：文の追加・編集 ===== -->
-<dialog id="shadow-dialog" class="dialog" aria-labelledby="shadow-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="shadow-dialog-title" class="dialog-title">文を追加</h2>
-    <p class="dialog-desc">
-      追った英文を 1 文ずつ入れます。<strong>日本語は無くてもかまいません</strong>
-      （あると、いま何を言っているか見失いません）。
-    </p>
+<script src="assets/phrase.js?v=63"></script>
+<script src="assets/listen.js?v=63"></script>
 
-    <label class="field">
-      <span class="field-label">英文</span>
-      <input type="text" id="shadow-en-input" class="field-input" autocomplete="off"
-        placeholder="例：I drink coffee every morning.">
-    </label>
-
-    <label class="field">
-      <span class="field-label">日本語（任意）</span>
-      <input type="text" id="shadow-ja-input" class="field-input" autocomplete="off"
-        placeholder="例：私は毎朝コーヒーを飲みます。">
-    </label>
-
-    <p class="dialog-note" id="shadow-dialog-status" role="status" aria-live="polite"></p>
-
-    <div class="dialog-actions dialog-actions--wrap">
-      <button type="button" id="btn-shadow-cancel" class="btn btn--ghost">閉じる</button>
-      <button type="button" id="btn-shadow-delete" class="btn btn--ghost" hidden>削除する</button>
-      <button type="button" id="btn-shadow-save" class="btn btn--primary">追加する</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">新しいセットを作る</h3>
-      <p class="dialog-hint">題材ごとに分けておくと、続けて流すときに扱いやすくなります。</p>
-      <div class="new-deck-row">
-        <label class="visually-hidden" for="shadow-new-deck">新しいセットの名前</label>
-        <input type="text" id="shadow-new-deck" class="field-input" autocomplete="off"
-          placeholder="例：オンライン英会話">
-        <button type="button" id="btn-shadow-new-deck" class="btn btn--ghost">作る</button>
-      </div>
-    </div>
-  </form>
-</dialog>
-
-<!-- ===== シャドーイング：文の一覧 ===== -->
-<dialog id="shadow-list-dialog" class="dialog" aria-labelledby="shadow-list-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="shadow-list-dialog-title" class="dialog-title">文の一覧</h2>
-    <p class="dialog-desc" id="shadow-list-desc"></p>
-
-    <ul class="card-list" id="shadow-list"></ul>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-shadow-list-close" class="btn btn--primary">閉じる</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">セット</h3>
-      <ul class="deck-manage-list" id="shadow-deck-manage-list"></ul>
-      <p class="dialog-hint">セットを消すと、その中の文もいっしょに消えます。</p>
-    </div>
-  </form>
-</dialog>
-
-<!-- ===== シャドーイング：瞬間英作文から持ってくる ===== -->
-<dialog id="shadow-pull-dialog" class="dialog" aria-labelledby="shadow-pull-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="shadow-pull-title" class="dialog-title">瞬間英作文から持ってくる</h2>
-    <p class="dialog-desc">
-      向こうのセットの英文を、そのままシャドーイングに入れます。
-      <strong>PDF から作ったセットも、もう一度入れ直す必要はありません。</strong>
-      同じ名前のセットがあればそこに足し、同じ英文は飛ばします。元のセットはそのまま残ります。
-    </p>
-
-    <label class="field">
-      <span class="field-label">どのセットから</span>
-      <select id="shadow-pull-select" class="deck-select"></select>
-    </label>
-
-    <p class="dialog-note" id="shadow-pull-status" role="status" aria-live="polite"></p>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-shadow-pull-cancel" class="btn btn--ghost">キャンセル</button>
-      <button type="button" id="btn-shadow-pull-do" class="btn btn--primary">持ってくる</button>
-    </div>
-  </form>
-</dialog>
-
-<script src="assets/media.js?v=62"></script>
-<script src="assets/srs.js?v=62"></script>
-<script src="assets/cards.js?v=62"></script>
-<script src="assets/shadow.js?v=62"></script>
-<script src="assets/import.js?v=62"></script>
-<script src="assets/inbox.js?v=62"></script>
-<script src="assets/sync.js?v=62"></script>
-<script src="assets/update.js?v=62"></script>
+<script src="assets/media.js?v=63"></script>
+<script src="assets/srs.js?v=63"></script>
+<script src="assets/cards.js?v=63"></script>
+<script src="assets/import.js?v=63"></script>
+<script src="assets/inbox.js?v=63"></script>
+<script src="assets/sync.js?v=63"></script>
+<script src="assets/update.js?v=63"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
