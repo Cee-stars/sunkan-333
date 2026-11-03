@@ -252,11 +252,11 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
 
   const layout = await page.evaluate(() => {
     const W = document.documentElement.clientWidth;
-    let hidden = 0;
+    const n = { speak: 0, tools: 0 };
     document.querySelectorAll('#listen-rows .row').forEach(function (li) {
-      const tools = li.querySelector('.row-tools');
-      const sp = window.__LT.speaker(li);
-      [tools, sp].forEach(function (t) {
+      const pairs = [['speak', window.__LT.speaker(li)], ['tools', li.querySelector('.row-tools')]];
+      pairs.forEach(function (pair) {
+        const t = pair[1];
         if (!t) return;
         const tb = window.__LT.box(t);
         window.__LT.blurred(li).forEach(function (el) {
@@ -264,13 +264,14 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
           // **左右と上下の両方**が重なって初めて「隠れている」
           const ox = a.right > tb.left + 1 && a.left < tb.right - 1;
           const oy = a.bottom > tb.top + 1 && a.top < tb.bottom - 1;
-          if (a.w && ox && oy) hidden++;
+          if (a.w && ox && oy) n[pair[0]]++;
         });
       });
     });
-    return { hidden: hidden, scroll: document.documentElement.scrollWidth > W + 1, rows: document.querySelectorAll('#listen-rows .row').length };
+    return { speak: n.speak, tools: n.tools, scroll: document.documentElement.scrollWidth > W + 1, rows: document.querySelectorAll('#listen-rows .row').length };
   });
-  ok('長い文でも英文がボタンや 🔈 の下に隠れない', layout.hidden === 0, '隠れ ' + layout.hidden);
+  ok('長い文でも英文が 🔈 の下に潜らない', layout.speak === 0, '隠れ ' + layout.speak);
+  ok('長い文でも英文が行の道具（↻ ✎）の下に潜らない', layout.tools === 0, '隠れ ' + layout.tools);
   ok('横スクロールが出ない', layout.scroll === false);
   ok('2 件並んでいる', layout.rows === 2, String(layout.rows));
 
