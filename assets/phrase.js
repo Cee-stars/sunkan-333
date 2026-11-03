@@ -9,7 +9,7 @@
  * 思いついた言い回しをその場で足せなくなる。場面は 1 文が持つ**ただの名前**で、
  * 絞り込みの欄はそれを数えて並べるだけ。名前を打ち替えれば場面も入れ替わる。
  *
- * app.js / paraphrase.js / cards.js / shadow.js とは状態も保存先も共有しない。
+ * app.js / paraphrase.js / cards.js / listen.js とは状態も保存先も共有しない。
  * 触れ合うのは <html data-mode> と window.SUNKAN_PHRASE だけ。
  *
  * DOM の定義は index.html、取り決めは CONTRACT.md を参照（どちらも変更しない）。
@@ -86,7 +86,7 @@
     return lsSet(key, text);
   }
 
-  /** 一意な id。cards.js / shadow.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
+  /** 一意な id。cards.js / listen.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
   function makeId(prefix) {
     return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }

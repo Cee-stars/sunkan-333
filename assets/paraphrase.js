@@ -11,13 +11,13 @@
    * 1. 定数
    * ========================================================== */
 
-  var LS_MODE = 'sunkan:mode';            // 'drill' | 'phrase' | 'para' | 'cards' | 'shadow'
+  var LS_MODE = 'sunkan:mode';            // 'drill' | 'phrase' | 'para' | 'cards' | 'listen'
   var LS_GENRES = 'sunkan:para:genres';
   var LS_CARDS = 'sunkan:para:cards';
   var LS_STARS = 'sunkan:para:stars';     // ★を付けたパラフレの id
   var LS_UI = 'sunkan:para:ui';           // { genreId, mask, sort, starredOnly }
 
-  var MODES = ['drill', 'phrase', 'para', 'cards', 'shadow'];
+  var MODES = ['drill', 'phrase', 'para', 'cards', 'listen'];
 
   /* モード名 → そのモードの本体（window に開いている口）の名前。
      増えたらここに 1 行足すだけでよい。drill とパラフレ帳はこのファイルと
@@ -25,7 +25,7 @@
   var MODE_PORTS = {
     phrase: 'SUNKAN_PHRASE',
     cards: 'SUNKAN_CARDS',
-    shadow: 'SUNKAN_SHADOW'
+    listen: 'SUNKAN_LISTEN'
   };
   var SORTS = ['added', 'newest', 'alpha', 'genre'];
 
@@ -207,7 +207,7 @@
   var elTabDrill = $('tab-drill');
   var elTabPara = $('tab-para');
   var elTabCards = $('tab-cards');
-  var elTabShadow = $('tab-shadow');
+  var elTabListen = $('tab-listen');
   var elTabPhrase = $('tab-phrase');
 
   /** モード名 → そのタブ。増えたらここだけ足す */
@@ -215,7 +215,7 @@
     if (mode === 'phrase') return elTabPhrase;
     if (mode === 'para') return elTabPara;
     if (mode === 'cards') return elTabCards;
-    if (mode === 'shadow') return elTabShadow;
+    if (mode === 'listen') return elTabListen;
     return elTabDrill;
   }
 
@@ -338,7 +338,7 @@
    * （シャドーイングが裏で鳴り続けた）。だから表（MODE_PORTS）を回す形にしてある。
    *
    * ・カードは開いた時点で作る（裏で毎回作り直すと、めくった札が勝手に閉じる）
-   * ・シャドーイングは離れたら必ず黙らせる
+   * ・リスニングは離れたら必ず黙らせる
    * ・口がまだ無いファイル（別担当が書いている最中）や、onHide を持たない
    *   ファイルは黙って飛ばす。ここで落ちるとモード切り替えごと死ぬ。 */
   function notifyViews(mode) {
@@ -1412,7 +1412,7 @@
     if (elTabPhrase) elTabPhrase.addEventListener('click', function () { setMode('phrase'); });
     if (elTabPara) elTabPara.addEventListener('click', function () { setMode('para'); });
     if (elTabCards) elTabCards.addEventListener('click', function () { setMode('cards'); });
-    if (elTabShadow) elTabShadow.addEventListener('click', function () { setMode('shadow'); });
+    if (elTabListen) elTabListen.addEventListener('click', function () { setMode('listen'); });
     if (elTabs) elTabs.addEventListener('keydown', onTabsKeyDown);
 
     if (elGenreInput) {

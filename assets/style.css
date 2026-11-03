@@ -1625,31 +1625,33 @@ legend.field-label {
 
 
 /* =============================================================
-   13. モード切り替え（瞬間英作文 / 場面 / パラフレ帳 / カード / シャドー）
+   13. モード切り替え（瞬間英作文 / 場面 / パラフレ帳 / カード / リスニング）
    ============================================================= */
 
 /* いま開いていないモードの部品はまとめて畳む。JS は <html data-mode> を替えるだけでよい。
-   モードが増えたら、その名前の行を 3 か所（ここ・下の選択中・index.html のタブ）に足す。 */
+   モードが増えたら、その名前の行を 3 か所（ここ・下の選択中・index.html のタブ）に足す。
+   **モード同士の総当たりで書く。** 5 モードなら 5×4 = 20 組。数が合わないと、
+   そのモードを開いたときに別のモードの画面まで見えてしまう。 */
 :root[data-mode="drill"]  [data-mode-view="phrase"],
 :root[data-mode="drill"]  [data-mode-view="para"],
 :root[data-mode="drill"]  [data-mode-view="cards"],
-:root[data-mode="drill"]  [data-mode-view="shadow"],
+:root[data-mode="drill"]  [data-mode-view="listen"],
 :root[data-mode="phrase"] [data-mode-view="drill"],
 :root[data-mode="phrase"] [data-mode-view="para"],
 :root[data-mode="phrase"] [data-mode-view="cards"],
-:root[data-mode="phrase"] [data-mode-view="shadow"],
+:root[data-mode="phrase"] [data-mode-view="listen"],
 :root[data-mode="para"]   [data-mode-view="drill"],
 :root[data-mode="para"]   [data-mode-view="phrase"],
 :root[data-mode="para"]   [data-mode-view="cards"],
-:root[data-mode="para"]   [data-mode-view="shadow"],
+:root[data-mode="para"]   [data-mode-view="listen"],
 :root[data-mode="cards"]  [data-mode-view="drill"],
 :root[data-mode="cards"]  [data-mode-view="phrase"],
 :root[data-mode="cards"]  [data-mode-view="para"],
-:root[data-mode="cards"]  [data-mode-view="shadow"],
-:root[data-mode="shadow"] [data-mode-view="drill"],
-:root[data-mode="shadow"] [data-mode-view="phrase"],
-:root[data-mode="shadow"] [data-mode-view="para"],
-:root[data-mode="shadow"] [data-mode-view="cards"] { display: none !important; }
+:root[data-mode="cards"]  [data-mode-view="listen"],
+:root[data-mode="listen"] [data-mode-view="drill"],
+:root[data-mode="listen"] [data-mode-view="phrase"],
+:root[data-mode="listen"] [data-mode-view="para"],
+:root[data-mode="listen"] [data-mode-view="cards"] { display: none !important; }
 
 .header-row--modes {
   padding-block: 8px 4px;
@@ -1708,7 +1710,7 @@ legend.field-label {
 :root[data-mode="phrase"] #tab-phrase,
 :root[data-mode="para"]   #tab-para,
 :root[data-mode="cards"]  #tab-cards,
-:root[data-mode="shadow"] #tab-shadow {
+:root[data-mode="listen"] #tab-listen {
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(16, 22, 32, 0.16);
@@ -2601,147 +2603,6 @@ legend.field-label {
 
 
 /* =============================================================
-   14c. シャドーイング
-   方針: 流している間は画面を触らせない。押すのは「はじめる／とめる」だけ。
-        1 文ずつ押させると追いかけが切れて、シャドーイングにならない。
-   ============================================================= */
-
-.view--shadow {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px var(--cell-pad-x) 32px;
-}
-
-.shadow-stage {
-  width: 100%;
-  max-width: 34rem;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.shadow-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 9rem;
-  padding: 24px 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface-raised);
-  box-shadow: 0 1px 3px rgba(16, 22, 32, 0.07);
-}
-
-.shadow-en {
-  margin: 0;
-  font-family: var(--font-en);
-  font-size: 1.375rem;
-  font-weight: 600;
-  line-height: 1.55;
-  color: var(--text);
-  overflow-wrap: anywhere;
-  transition: filter var(--dur) var(--ease);
-}
-
-.shadow-ja {
-  margin: 0;
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-  transition: filter var(--dur) var(--ease);
-}
-
-/* 流している間だけ伏せる。目で読める間は耳を使わない */
-.shadow-en.is-masked,
-.shadow-ja.is-masked {
-  filter: blur(var(--mask-blur));
-  user-select: none;
-}
-
-/* 主ボタンで 1 段。その下に「この文だけ」と「はじめから」を半分ずつ。
-   3 つ横に並べると iPhone の幅で字が潰れる。 */
-.shadow-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
-.shadow-play {
-  flex: 1 1 100%;
-  min-height: 56px;
-  font-size: 1.0625rem;
-}
-
-.shadow-actions .btn--ghost {
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: var(--tap);
-}
-
-.shadow-opts {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.shadow-opt {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.shadow-opt-label {
-  flex: 0 0 3.5rem;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
-
-.chip {
-  -webkit-appearance: none;
-  appearance: none;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
-}
-
-.chip.is-on {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-contrast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .chip:not(.is-on):hover { background: var(--hover); color: var(--text); }
-}
-
-/* 一覧の通し番号（流れる順が分かるように） */
-.shadow-list-num {
-  flex: 0 0 auto;
-  min-width: 1.5rem;
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-faint);
-}
-
-@media (max-width: 560px) {
-  .view--shadow { padding-top: 10px; }
-  .shadow-card { padding: 20px 16px; min-height: 8rem; }
-  .shadow-en { font-size: 1.25rem; }
-}
-
-
-/* =============================================================
    15. 画面幅ごとの調整
    ============================================================= */
 
@@ -2788,9 +2649,9 @@ legend.field-label {
   /* ただし「PDF から」だけは字を残す。
      📄 の記号だけだと、どこから作るのかが分からない。 */
   #btn-card-import .btn-label,
-  #btn-drill-import .btn-label
+  #btn-drill-import .btn-label { display: inline; }
   #btn-card-import,
-  #btn-drill-import
+  #btn-drill-import { padding-inline: 8px; font-size: 0.8125rem; }
 
   .header-row { gap: 6px; }
   .header-row--controls { gap: 6px; }
@@ -3179,4 +3040,205 @@ legend.field-label {
   border-radius: var(--radius);
   object-fit: contain;
   background: var(--surface-sunken);
+}
+
+
+/* =============================================================
+   14e. リスニング（かたまりごとに出していく）
+   方針: 行は瞬間英作文・場面の .row / .row-tools をそのまま使い回す。
+        ここに書くのは「リスニングにしか無いもの」＝左の 🔈、かたまりの
+        並びとぼかし、速さの札だけ。**ほかのモードの見た目は変えない。**
+
+   ほかのモードと**左右が逆**。左に 🔈、右に英文を置く。
+   音が先・文字が後なので、先に押すものを左に寄せている。
+   ============================================================= */
+
+/* 行は 1 列しか無い（# も日本語の列も無い）。.row-main は var(--sheet-cols) を
+   使っているので、ここだけ直に打ち消す（変数を書き換えると .sheet-head まで
+   動いてほかのモードに効いてしまう）。
+   左は 🔈 のぶんを空ける。**ここが足りないと英文がボタンの下に潜る**
+   （CONTRACT の「行の右に空ける幅」と同じ考え方で、こちらは左）。 */
+.listen-row .row-main {
+  display: block;
+  padding-inline-start: var(--listen-speak-space);
+}
+
+/* 🔈。.row-main（ボタン）の中には置けないので、行の上に重ねる。
+   上端にそろえる — 狭幅で道具列が 2 段目に下りると行が高くなるので、
+   上下の真ん中に置くと英文から離れてしまう。 */
+.listen-speak {
+  position: absolute;
+  inset-inline-start: 8px;
+  inset-block-start: calc(var(--row-pad-y) - 3px);
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 50%;
+  font-size: 1.0625rem;
+  color: var(--accent);
+  z-index: 1;
+}
+
+/* 見た目は 40px でも、指の当たり判定は 44px 以上を確保する */
+.listen-speak::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+}
+
+.listen-speak[hidden] { display: none; }
+
+/* かたまりの並び。1 つ 1 つを inline-block にしてあるので、
+   その真下に日本語を置いても英文の行送りが崩れない。 */
+.listen-chunks {
+  display: block;
+  font-family: var(--font-en);
+}
+
+.listen-chunk {
+  display: inline-block;
+  vertical-align: top;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* 区切りの ` / `。飾りなので淡く。**読み上げには渡さない**
+   （スラッシュを読み上げさせないよう、JS が外している） */
+.listen-sep {
+  display: inline-block;
+  margin-inline: 0.35em;
+  color: var(--text-faint);
+  vertical-align: top;
+}
+
+/* まだ出していないかたまりはぼかす。
+   **`data-mask` には乗せない** — ここで伏せているのは「まだ出していない
+   かたまり」であって、ほかのモードの「答え」とは別のもの。隠し方の設定を
+   「塗りつぶす」にしている人の画面で、かたまりが帯で消えると用を成さない。
+   高さは変わらないので、出しても行が伸び縮みしない。 */
+.listen-chunk-en {
+  display: inline;
+  transition:
+    filter var(--dur) var(--ease),
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.listen-chunk:not(.is-shown) .listen-chunk-en {
+  filter: blur(var(--mask-blur));
+}
+
+/* 出したばかりのかたまりだけ色を変えて目立たせる。
+   どこが増えたのかを目で追わせないため（並びが長いと見失う）。 */
+.listen-chunk.is-fresh .listen-chunk-en {
+  border-radius: 5px;
+  padding-inline: 2px;
+  margin-inline: -2px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* かたまりごとの日本語。英文の真下に小さく。
+   [hidden] も自分で畳む — display を持たせたぶん、
+   ブラウザ既定の display:none を打ち消してしまうため。 */
+.listen-chunk-ja {
+  display: block;
+  margin-block-start: 0.1em;
+  color: var(--text-faint);
+  font-family: var(--font-ui);
+  font-size: max(0.6875rem, calc(var(--row-font) * 0.72));
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+
+.listen-chunk-ja[hidden] { display: none; }
+
+/* かたまりの数が英語とそろっていないときの、まとめて 1 行の日本語。
+   **ぜんぶ出し終わってから**出す（途中で出すと先に答えが見える）。 */
+.listen-ja {
+  display: block;
+  margin-block-start: 0.3em;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: max(0.75rem, calc(var(--row-font) * 0.8));
+  line-height: 1.5;
+}
+
+.listen-ja[hidden] { display: none; }
+
+/* 「もう一度」が付いた行の目印。# 列が無いので、左の縦線で出す
+   （場面は # 列の ↻ で出しているが、こちらは置く場所が無い）。 */
+.listen-row.is-starred { box-shadow: inset 3px 0 0 0 var(--star); }
+.listen-row.is-starred.is-current { box-shadow: inset 3px 0 0 0 var(--accent); }
+
+/* --- 速さの札 ---
+   消えたシャドーイングと同じ見た目だが、クラス名は自前で持つ
+   （`.chip` はあちらの持ち物なので、消えたときに一緒に消える）。 */
+.listen-rate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.listen-rate-label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.listen-chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.listen-chip {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.listen-chip.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.listen-chip:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .listen-chip:not(.is-on):hover { background: var(--hover); color: var(--text); }
+}
+
+/* 「ファイルから」は記号だけにしない。
+   📄 だけでは、どこから読み込むのかが分からない（#btn-phrase-import と同じ扱い）。 */
+@media (max-width: 480px) {
+  #btn-listen-import .btn-label { display: inline; }
+  #btn-listen-import { padding-inline: 8px; font-size: 0.8125rem; }
+}
+
+/* --- 左右に空ける幅 ---
+   🔈 は 8px の所に 40px。英文との間を 8px 空けて 56px。
+   狭幅でも左は空ける（🔈 は行の中身なので、重ねると英文が潜る）。 */
+:root { --listen-speak-space: 56px; }
+
+/* 広幅では右の道具列（↻ ✎ 🗑）のぶんも空ける。
+   **閉じた行は ↻ だけで足りるが、そのぶんで詰めると出した瞬間に潜る**ので、
+   常に開いたときの幅（実測 130px）＋余裕を空けておく。 */
+@media (min-width: 561px) {
+  :root[data-mode="listen"] { --tools-space: 140px; }
 }
