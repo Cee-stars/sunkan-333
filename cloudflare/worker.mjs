@@ -32,6 +32,44 @@ const MAX_BYTES = 1024 * 1024;
 /** 合言葉の形。短いと総当たりで覗かれる */
 const CODE_OK = /^[a-z0-9-]{16,64}$/;
 
+/** 1 回に読ませる長さの上限。無料枠は文字数で減るので、長文は受けない */
+const TTS_MAX_CHARS = 400;
+
+/**
+ * Workers AI の返事から音の中身を取り出す。
+ * 型番によって Response だったり、base64 を持った object だったりする。
+ * **ここで形の違いを吸収する**（型番を足すたびに呼ぶ側を直さなくて済むように）。
+ */
+async function toAudio(got) {
+  if (!got) return null;
+  if (typeof got.arrayBuffer === 'function') {
+    const type = (got.headers && got.headers.get('content-type')) || '';
+    if (/json/i.test(type)) {
+      let json = null;
+      try { json = await got.json(); } catch (e) { return null; }
+      return fromBase64(json && (json.audio || (json.result && json.result.audio)));
+    }
+    const bytes = await got.arrayBuffer();
+    if (!bytes || bytes.byteLength < 256) return null;
+    return { bytes, type: type || 'audio/mpeg' };
+  }
+  if (typeof ReadableStream !== 'undefined' && got instanceof ReadableStream) {
+    const bytes = await new Response(got).arrayBuffer();
+    if (!bytes || bytes.byteLength < 256) return null;
+    return { bytes, type: 'audio/mpeg' };
+  }
+  return fromBase64(got.audio || (got.result && got.result.audio));
+}
+
+function fromBase64(b64) {
+  if (!b64) return null;
+  const bin = atob(String(b64));
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  if (arr.byteLength < 256) return null;
+  return { bytes: arr, type: 'audio/mpeg' };
+}
+
 function cors(origin) {
   const allow = ALLOWED.indexOf(origin) >= 0 ? origin : ALLOWED[0];
   return {
@@ -126,6 +164,50 @@ export default {
         .run();
 
       return reply({ ok: true, updated: now }, 200, origin);
+    }
+
+    /* --- 読み上げの音を作る（Workers AI） ---
+     * 端末の読み上げより自然な声にするためのもの。**作って返すだけ**で、
+     * 置き場は音を預からない（しまうのは端末のほう。同じ文を 2 度作らせない）。
+     * 合言葉は上で見ているので、URL を知っただけの人には使えない。
+     */
+    if (body.op === 'tts') {
+      if (!env.AI) {
+        return reply({ ok: false,
+          error: 'AI がつながっていません（バインディングの変数名を AI にしてください）' }, 500, origin);
+      }
+      const text = String(body.text || '').trim().slice(0, TTS_MAX_CHARS);
+      if (!text) return reply({ ok: false, error: '読む文がありません' }, 400, origin);
+
+      // 型番も引数も、Cloudflare の側で増えたり名前が変わったりする。
+      // **通るものが見つかるまで順に試す**（1 つ消えただけで音が出なくなるのを防ぐ）。
+      const TRY = [
+        ['@cf/deepgram/aura-2-en', { text, encoding: 'mp3' }],
+        ['@cf/deepgram/aura-2-en', { text }],
+        ['@cf/deepgram/aura-1', { text, encoding: 'mp3' }],
+        ['@cf/deepgram/aura-1', { text }],
+        ['@cf/myshell-ai/melotts', { prompt: text, lang: 'en' }]
+      ];
+      let why = '';
+      for (const [model, input] of TRY) {
+        let out = null;
+        try {
+          out = await toAudio(await env.AI.run(model, input, { returnRawResponse: true }));
+        } catch (e) {
+          why = model + ' … ' + String((e && e.message) || e);
+          continue;
+        }
+        if (!out) { why = model + ' … 音が返りませんでした'; continue; }
+        return new Response(out.bytes, {
+          status: 200,
+          headers: Object.assign({
+            'Content-Type': out.type,
+            'Cache-Control': 'no-store',
+            'X-Tts-Model': model
+          }, cors(origin))
+        });
+      }
+      return reply({ ok: false, error: '音を作れませんでした（' + why + '）' }, 502, origin);
     }
 
     return reply({ ok: false, error: '知らない命令です' }, 400, origin);
