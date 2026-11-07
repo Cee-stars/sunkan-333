@@ -30,6 +30,7 @@ jobs:
           node --check assets/paraphrase.js
           node --check assets/phrase.js
           node --check assets/media.js
+          node --check assets/audio.js
           node --check assets/srs.js
           node --check assets/cards.js
           node --check assets/listen.js

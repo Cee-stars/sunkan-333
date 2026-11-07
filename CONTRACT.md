@@ -28,6 +28,8 @@
 | `tests/phrasetest.mjs` | 共通 | 場面の確かめ（足す・ファイルから読む・同期）。`node tests/phrasetest.mjs` |
 | `tests/fake-worker.mjs` | 共通 | 確かめ用の置き場。**`cloudflare/worker.mjs` をそのまま**動かす（D1 の代わりにその場かぎりの SQLite）。`node tests/fake-worker.mjs 8600` |
 | `tests/scenetest.mjs` | 共通 | 場面の確かめ（セリフ・言い方3本・印の言葉・写真・はみ出し）。`node tests/scenetest.mjs` |
+| `assets/audio.js` | – | 作った音をしまう所（IndexedDB `duo-audio`）。**写真の media.js とは別の入れ物**。バックアップには載せない（作り直せるため） |
+| `tests/ttstest.mjs` | 共通 | AI の音声の確かめ（1 回だけ作る・しまったぶんで鳴る・置き場が無ければ端末の声）。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/listentest.mjs` | 共通 | リスニングの確かめ（タブ名・🔈 の位置・ぼかし・かたまりを 1 つずつ・はみ出し）。**390px と 1180px の両方**で走る。`node tests/listentest.mjs` |
 | `tests/synctest.mjs` | 共通 | 2 台が揃うかの確かめ。アプリと置き場の両方を上げてから `node tests/synctest.mjs` |
 | `cloudflare/worker.mjs` | 共通 | 同期の置き場（Cloudflare Worker）。**アプリの一式ではない**ので `index.html` からは読まない。管理画面に貼って使う（npm もビルドも要らない）。中身は解釈せず、合言葉ごとに JSON を 1 つ預かって返すだけ |
@@ -915,6 +917,39 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 声そのものの質は**端末に入っている声**で決まる。アプリ側ではこれ以上良くできないので、
 `#voice-dialog` に iPhone / Mac で拡張・プレミアムを落とす手順を書いてある。
 見張り: `tests/voicetest.mjs`（偽の声の一覧を流し込んで、どれを選ぶかだけを見る）。
+
+### AI の音声（置き場で作って、端末にしまう）
+
+端末の読み上げより自然な声にするための道。**無料枠の中だけで動く**。
+
+**流れ**: 🔈 → 端末にしまってあるか見る → 無ければ置き場（`op: 'tts'`）に作らせる →
+`assets/audio.js` にしまう → 鳴らす。**同じ文は 2 度作らせない。**
+2 回目からはすぐ鳴り、オフラインでも鳴り、無料枠も減らない。
+
+**鍵は読ませた文そのものから作る**（`SUNKAN_AUDIO.keyFor(text, 'ai')`）。
+文を直せば鍵も変わるので、**直す前の文が鳴ることがない**。
+音は `sunkan:listen:items` に紐づけない（同期に載せないため。写真と同じ考え方）。
+
+**だめなときは必ず端末の声に戻す。** 置き場が無い・オフライン・枠切れ・AI が
+つながっていない、どれでも黙って戻し、理由を知らせに出す。
+**鳴らないのがいちばん困る**ので、ここで止めない。
+その知らせは `flashStatus(msg, true)` で 2 秒間ほかに上書きさせない
+（読み上げも失敗する端末では、あとから来る「読み上げが止まりました」が
+理由を消してしまい、直しようが無くなる）。
+
+**合言葉と URL は sync.js の外に出さない。** listen.js は `SUNKAN_SYNC.tts(text)` を
+呼ぶだけで、鍵そのものは見ない。`tts()` は**投げない**（`{ok, blob}` か
+`{ok:false, message}` を返す）。
+
+**worker 側 (`op: 'tts'`)**: 型番と引数は Cloudflare の側で変わるので、
+**通るものが見つかるまで順に試す**（aura-2-en → aura-1 → melotts、
+それぞれ mp3 指定あり／なし）。返事の形も Response・base64・ReadableStream が
+あるので `toAudio()` で吸収する。1 回に読ませるのは **400 字まで**（無料枠は文字数で減る）。
+合言葉は上の共通の門で見ているので、URL を知っただけの人には使えない。
+
+**置き場には Workers AI のバインディング（変数名 `AI`）が要る。** 無くても
+ほかの所はぜんぶ動く（`op: 'tts'` だけが 500 を返し、端末の声に戻る）。
+入れ方は `#cf-howto` の手順 7 に書いてある。
 
 ### リスニングの突き合わせ
 

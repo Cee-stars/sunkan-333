@@ -3172,6 +3172,31 @@ legend.field-label {
    英語だけ色が変わると、下の日本語が前のかたまりのものに見えて、
    どこの訳なのかが読み取りにくい（本人の申し出）。
    背景は付けない（2 段とも塗ると、札のように見えて行がうるさくなる）。 */
+/* AI の音声の入／切。入れているときは、速さの札と同じ見た目で光らせる */
+.listen-ai.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* その文の音が端末にしまってある印。**🔈 は絵文字なので color では染まらない。**
+   小さな点を 1 つ添えるだけにする（催促に見せたくないので、無い行には何も足さない）。 */
+.listen-speak.has-audio::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 4px;
+  inset-inline-end: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* AI音声は記号だけにしない。✨ だけでは何のボタンか分からない
+   （#btn-listen-import と同じ扱い） */
+#btn-listen-ai .btn-label { display: inline; }
+
 .listen-chunk.is-fresh .listen-chunk-ja {
   color: var(--accent);
   font-weight: 700;

@@ -2449,6 +2449,47 @@
    * ========================================================== */
 
   window.SUNKAN_SYNC = {
+    /** 置き場（Cloudflare）が設定してあるか。listen.js が AI の音声で見る */
+    cfReady: function () { return cfReady(); },
+    /**
+     * 置き場に読み上げの音を作らせる。**合言葉と URL はここから外に出さない**
+     * （鍵は sync.js の中だけに置く決まり）。
+     * 返すのは { ok: true, blob } か { ok: false, message }。**投げない** —
+     * 呼ぶ側（listen.js）は失敗したら端末の声に戻すだけなので、
+     * 例外にすると「鳴らない」だけになって理由が出せない。
+     */
+    tts: function (text) {
+      var say = trim(text);
+      if (!say) return Promise.resolve({ ok: false, message: '読む文がありません' });
+      if (!cfReady()) {
+        return Promise.resolve({ ok: false, message: '置き場（URL と合言葉）が入っていません' });
+      }
+      if (window.navigator.onLine === false) {
+        return Promise.resolve({ ok: false, message: 'オフラインです' });
+      }
+      return window.fetch(cfUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op: 'tts', room: cfRoom(), text: say }),
+        cache: 'no-store'
+      }).then(function (res) {
+        var type = res.headers.get('content-type') || '';
+        // うまくいったときだけ音が返る。だめなときは JSON で理由が返る
+        if (!res.ok || /json/i.test(type)) {
+          return res.json().then(function (j) {
+            return { ok: false, message: (j && j.error) || ('置き場が ' + res.status + ' を返しました') };
+          }, function () {
+            return { ok: false, message: '置き場が ' + res.status + ' を返しました' };
+          });
+        }
+        return res.blob().then(function (b) {
+          if (!b || b.size < 256) return { ok: false, message: '音が空で返りました' };
+          return { ok: true, blob: b };
+        });
+      }, function () {
+        return { ok: false, message: '置き場につながりませんでした' };
+      });
+    },
     /** app.js / paraphrase.js が消したときに呼ぶ（同期で戻ってこないように） */
     recordDelete: recordDelete,
     /** 受信箱の 1 件の鍵。inbox.js と作り方をそろえるためここで配る */

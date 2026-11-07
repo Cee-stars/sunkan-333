@@ -30,6 +30,22 @@ const DB = {
   }
 };
 
+/** Workers AI の口のうち、worker.mjs が使うものだけ真似る。
+ *  本物を呼ばずに、**それらしい大きさの音**を返す（中身は確かめない）。
+ *  AI_OFF=1 を付けて動かすと「AI がつながっていない」ほうを試せる。 */
+const AI = process.env.AI_OFF ? null : {
+  run(model, input, opts) {
+    if (!input || !String(input.text || input.prompt || '').trim()) {
+      throw new Error('text がありません');
+    }
+    // mp3 のつもりの中身。長さだけ本物らしくしておく（256 バイトの門を通すため）
+    const bytes = new Uint8Array(4096);
+    bytes[0] = 0xff; bytes[1] = 0xfb;
+    for (let i = 2; i < bytes.length; i++) bytes[i] = (i * 7) & 0xff;
+    return new Response(bytes, { headers: { 'Content-Type': 'audio/mpeg' } });
+  }
+};
+
 const port = Number(process.argv[2] || 8600);
 
 http.createServer(async (req, res) => {
@@ -41,7 +57,7 @@ http.createServer(async (req, res) => {
     headers: req.headers,
     body: (req.method === 'GET' || req.method === 'HEAD') ? undefined : body
   });
-  const out = await worker.fetch(request, { DB });
+  const out = await worker.fetch(request, { DB, AI });
   res.writeHead(out.status, Object.fromEntries(out.headers));
   res.end(Buffer.from(await out.arrayBuffer()));
 }).listen(port, '127.0.0.1', () => console.log('fake worker on ' + port));
