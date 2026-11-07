@@ -211,7 +211,16 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
       color: el ? getComputedStyle(el).color : '',
       blurColor: b.length ? getComputedStyle(b[0]).color : '',
       ja: row.innerText.indexOf(a.jaText) >= 0,
-      nextJa: a.nextJa ? row.innerText.indexOf(a.nextJa) >= 0 : false
+      nextJa: a.nextJa ? row.innerText.indexOf(a.nextJa) >= 0 : false,
+      // 出したかたまりの日本語。**英語と同じ色**でなければ、どこの訳なのか読み取れない
+      jaColor: (function () {
+        var all = row.querySelectorAll('*'), i, t;
+        for (i = 0; i < all.length; i++) {
+          t = (all[i].textContent || '').trim();
+          if (t === a.jaText && !all[i].children.length) return getComputedStyle(all[i]).color;
+        }
+        return '';
+      })()
     };
   }, { chunkText, jaText, nextJa });
 
@@ -223,6 +232,8 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
   ok('出したかたまりの色がほかと違う', !!s1.color && s1.color !== s1.blurColor,
     s1.color + ' / ' + s1.blurColor);
   ok('出したかたまりの日本語が出る', s1.ja === true, jas[0]);
+  ok('出したかたまりは日本語も同じ色', !!s1.jaColor && s1.jaColor === s1.color,
+    '日本語 ' + s1.jaColor + ' / 英語 ' + s1.color);
   ok('まだ出していないかたまりの日本語は出さない', s1.nextJa === false, jas[1]);
 
   await tap();
