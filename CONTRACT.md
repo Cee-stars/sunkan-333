@@ -31,6 +31,7 @@
 | `assets/audio.js` | – | 作った音をしまう所（IndexedDB `duo-audio`）。**写真の media.js とは別の入れ物**。バックアップには載せない（作り直せるため） |
 | `tests/ttstest.mjs` | 共通 | AI の音声の確かめ（1 回だけ作る・しまったぶんで鳴る・置き場が無ければ端末の声）。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/listentest.mjs` | 共通 | リスニングの確かめ（タブ名・🔈 の位置・ぼかし・かたまりを 1 つずつ・はみ出し）。**390px と 1180px の両方**で走る。`node tests/listentest.mjs` |
+| `tests/playlisttest.mjs` | 共通 | リスニングのプレイリストの確かめ（作る・空と同じ名前は作らない・入れ先・絞り込みと件数・名前を変える・消しても中の文は残る・古い形の文・長い名前のはみ出し）。**390px と 1180px の両方**で走る。`node tests/playlisttest.mjs` |
 | `tests/synctest.mjs` | 共通 | 2 台が揃うかの確かめ。アプリと置き場の両方を上げてから `node tests/synctest.mjs` |
 | `cloudflare/worker.mjs` | 共通 | 同期の置き場（Cloudflare Worker）。**アプリの一式ではない**ので `index.html` からは読まない。管理画面に貼って使う（npm もビルドも要らない）。中身は解釈せず、合言葉ごとに JSON を 1 つ預かって返すだけ |
 
@@ -154,10 +155,14 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 | `onShow()` | 画面を開いたときに呼ぶ（`paraphrase.js` の `setMode` から） |
 | `onHide()` | **ほかの画面へ移ったときに必ず呼ぶ。** 鳴らしっぱなしにしない |
 | `reload()` | localStorage を読み直して作り直す。同期のあとに呼ぶ |
+| `addItems(list)` | 文を足す。同じ英文（スラッシュを外して見る）は飛ばす。1 件は `{en, ja, note, deck}` で、`deck` は入れ先の id（**知らない id は `''`＝未分類にする**） |
+| `decks()` | 取り込みの「入れ先」を作るための一覧 `[{id, name, count}]` |
+| `currentDeckId()` | 新しく足すときの既定の入れ先（`''` は未分類） |
+| `ensureDeck(name)` | 名前からプレイリストを用意して id を返す。**同じ名前があればその id**（同じ名前は作らない）。空の名前は `null` |
 
 モードの鍵は `listen`、タブの名前は**「リスニング」**。保存先は
-`sunkan:listen:items` / `sunkan:listen:stars` / `sunkan:listen:ui`。
-1 件は `{ id, en, ja, note, created }`。
+`sunkan:listen:decks` / `sunkan:listen:items` / `sunkan:listen:stars` / `sunkan:listen:ui`。
+1 件は `{ id, en, ja, note, deck, created }`。
 
 **英文はスラッシュ入りのまま持つ**（`Let's get / a cup of coffee / after this.`）。
 スラッシュがそのまま**出す単位（かたまり）**になるので、入れるときに割らない。
@@ -173,11 +178,42 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 
 **追加・編集のダイアログは Enter では保存しない**（build 59 の決まり。`blockEnter()` を使う）。
 
+### プレイリスト（リスニングの入れ物）
+
+**画面に出す言葉は「プレイリスト」**（瞬間英作文の「セット」と同じ考え方だが、
+聞くものなので言い方を変えている。「セット」「デッキ」と混ぜて書かない）。
+1 件は `sunkan:listen:decks` に `{id, name, created}`。文のがわは `deck` に id を持ち、
+**`''` は「未分類」**。
+
+- **古いデータには `deck` が無い。** 読むときに `''` へ揃える
+  （`sanitizeItems`）。**消さない・勝手にどこかへ入れない。**
+  **もう無いプレイリストを指している `deck` も、画面では「未分類」として扱う**
+  （データは書き換えない。ほかの端末で作ったプレイリストの id が同期で先に届くことがあり、
+  ここで消すとその文がどの絞り込みにも出てこなくなる）
+- 絞り込みは **操作列のいちばん上の `<select id="listen-deck">`**。
+  「すべて（n）」／各プレイリスト（n）／「未分類（n）」で、**件数も欄に出す**
+  （押す前にどれだけあるのか分かるように）。「未分類」はそこに文があるときだけ出す
+- 選んだものは `sunkan:listen:ui` に覚える。**同期しない**（端末ごとの好み）。
+  値は `''` が「すべて」なので、「未分類」には id とぶつからない別の値を使う
+  （`phrase.js` の場面と同じ作り）
+- 作るのは「＋ 新しいプレイリスト」。**空では作らない・同じ名前も作らない**
+  （同じ名前が 2 つあると、どちらに入れたのか分からなくなる）。
+  **作れなかったときは理由を出す**（黙って何も起きないのがいちばん困る）
+- 名前は後から変えられる。**id は変えない**（文の `deck`・同期の記録の拠り所）
+- **消しても中の文は消さない。** `deck` を `''` に戻して「未分類」へ移すだけ
+  （聞く文は本人の持ちもので、入れ物を片付けただけで消えては困る）。
+  消したことは `recordDelete('listendeck:' + id)` で必ず知らせる
+- **追加・編集ダイアログのいちばん上は「入れ先」。** 取り込みのダイアログにも置く。
+  初期値は**いま選んでいるプレイリスト**で、「＋ 新しいプレイリスト」を選んだときだけ
+  名前の欄を出す（カードの取り込みと同じ決まり）
+- 長い名前でも**横スクロールを出さない**（欄のほうを縮める）
+
 **前のシャドーイング（`assets/shadow.js`）は画面ごと外した。**
 ただし **`sunkan:shadow:*` のデータは消していない**（本人の持ちものなので残す決まり。
 `sync.js` の扱いも今までどおり）。
 
-見張り: `tests/listentest.mjs`（390 / 1180 の両方で実際に押す）。
+見張り: `tests/listentest.mjs`（390 / 1180 の両方で実際に押す）と
+`tests/playlisttest.mjs`（プレイリストのぶん。こちらも 390 / 1180 の両方）。
 
 ### `window.SUNKAN_MEDIA`（media.js が開けている口）
 
@@ -655,7 +691,7 @@ iOS はホーム画面に追加したアプリとブラウザで保存領域が�
   drillSrs: { /* sunkan:drill:srs と同じ形 */ },
   gaps: { /* sunkan:gaps と同じ形 */ },
   phrase: { items, stars, levels, srs },
-  listen: { items, stars },
+  listen: { items, stars, decks },
   stars: { /* sunkan:stars と同じ形 */ },
   para:  { genres: [...], cards: [...], stars: [...] },
   tombs: [ { k: 'card:p…', t: 1750000000000, a: 0 } ]   // 消した / 足し直した記録
@@ -766,7 +802,8 @@ URL が無く、無い URL は入れようがないので、ここで詰まる�
 足し直したときに記録ごと消すと、次の同期でまた向こうの記録が勝ってしまう。記録は 90 日で捨てる。
 
 消した記録の鍵の頭は、`deck:` `card:` `genre:` `parastar:` のほかに
-**`carddeck:` `carditem:` `cardstar:`**（カード）、**`listenitem:` `listenstar:`**（リスニング）。
+**`carddeck:` `carditem:` `cardstar:`**（カード）、
+**`listenitem:` `listenstar:` `listendeck:`**（リスニング）。
 `cards.js` / `listen.js` が消すときに必ず `recordDelete` を呼ぶ。
 忘れると、もう片方の端末から消したはずのカードが戻ってくる。
 
@@ -951,6 +988,15 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 ほかの所はぜんぶ動く（`op: 'tts'` だけが 500 を返し、端末の声に戻る）。
 入れ方は `#cf-howto` の手順 7 に書いてある。
 
+### プレイリストを足しても、行の高さと先読みは変えない
+
+プレイリストの欄を足したぶん、**390 幅の操作列は 4 行になり、ヘッダーが 298px** になる
+（画面の 3 分の 1）。これ以上増やさないこと。`#btn-listen-import` を下の行へ移しても
+**高さは変わらなかった**（折り返しの数が同じ）ので、並びは触らない。
+
+`prefetchAudio()` は `row.el.hidden` を見ているので、**絞り込みで消えている行は先読みしない**。
+プレイリストで絞っているときに、見えていない文まで無料枠を使わないため。
+
 ### 押される前に用意しておく（先読み）
 
 押してから作ると**2〜3 秒かかり、そのあいだ無音**になる。「反応が遅い」はここ。
@@ -968,13 +1014,25 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 `'listenstar:'` を見させる（**場面とまったく同じ作り**。リスニングもセットを持たないので
 入れ物は 1 段ひらたい）。消えた文の印は連れて戻さない（`liveIds` に無い id は落とす）。
 
-形は `listen: { items, stars }`。1 件は `{id, en, ja, note, created}` で、
+形は `listen: { items, stars, decks }`。1 件は `{id, en, ja, note, deck, created}` で、
 **`en` のスラッシュ（` / `）はそのまま持つ** — かたまりの切れ目そのものが中身なので、
 同期で均したり分割したりしない（`mergeById` は中身を解釈しないので、そのまま渡る）。
 `sunkan:listen:ui`（速さ・隠し方などの好み）は端末ごとなので**送らない**。
 
+プレイリスト（`sunkan:listen:decks`。1 件は `{id, name, created}`）は
+`mergeById(..., 'listendeck:')`。**文の `deck` は中身の一部**なので、
+`mergeById` がそのまま運ぶ（`''` は「未分類」）。
+
+**指し先の無いプレイリストを指している `deck` は `''` に戻す。** 片方で消した
+プレイリストの id が文に残ると、プレイリストで絞っても出ず「未分類」にも入らない、
+**どの一覧にも出てこない文**ができる。消えたセットの文をまるごと落とす
+シャドーイングとは違い、リスニングは文のほうを残して印だけ外す
+（文は本人が入れたものなので、入れ先が消えただけで捨てない）。
+
 古い版が書き出したものには `listen` が無い。読むときは `listenPart()` を通して形を揃える
-（`phrasePart()` / `shadowPart()` と同じ）。
+（`phrasePart()` / `shadowPart()` と同じ）。**`decks` が無い版もある**ので、
+無ければ空の並びにする。`deck` を持たない古い文は「未分類」（`''`）として扱う
+（勝手にどこかのプレイリストへ入れない）。
 
 ### カードの覚えた記録の突き合わせ
 
@@ -1000,7 +1058,10 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 `clean()` に書かないかぎり受け取り側で消える。実際それでカードを復元できなかった
 （書き出したファイルには入っているのに、読み込むと 0 枚になる）。
 
-リスニング（`sunkan:listen:items` / `sunkan:listen:stars`）は 4 か所すべてに入れてある。
+リスニング（`sunkan:listen:items` / `sunkan:listen:stars` / `sunkan:listen:decks`）は
+4 か所すべてに入れてある。**プレイリストを足したときも同じで**、`listenPart()` に `decks` を、
+`fingerprint()` に `sunkan:listen:decks` を足す（`snapshot` / `clean` / `KNOWN` は
+`listen` ひとまとめなので、形を `listenPart()` にそろえておけば足りる）。
 `merge()` と `apply()` にも足してある（**足すところは 6 か所**。4 か所は「抜けると黙って落ちる」
 ところで、`merge()` を忘れると突き合わせが素通りになり、`apply()` を忘れると
 受け取っても保存されない）。書き戻したあとは `refreshViews` が
@@ -1066,9 +1127,10 @@ GitHub が返すのは 404 と `Not Found` だけなので、**そろえずに�
 | `sunkan:added` | `{ [deckId]: {ja,en,note}[] }` … アプリ内で1文ずつ足した分 |
 | `sunkan:edits` | `{ [deckId]: { [itemId]: {ja,en,note} } }` … 収録・取り込みの文への上書き |
 | `sunkan:mode` | `drill` / `phrase` / `para` / `cards` / `listen` … 最後に開いていたモード |
-| `sunkan:listen:items` | リスニングの文 `[{id, en, ja, note, created}]`。`en` は `Let's get / a cup of coffee / after this.` のように**スラッシュ入りのまま**。スラッシュが出す単位になる |
+| `sunkan:listen:decks` | リスニングのプレイリスト `[{id, name, created}]`。**画面での言葉は「プレイリスト」**。消しても中の文は消さない（`deck` を `''` に戻すだけ） |
+| `sunkan:listen:items` | リスニングの文 `[{id, en, ja, note, deck, created}]`。`en` は `Let's get / a cup of coffee / after this.` のように**スラッシュ入りのまま**。スラッシュが出す単位になる。`deck` は入れ先のプレイリストの id で、**`''` は「未分類」**（古いデータには `deck` が無いので、読むときに `''` へ揃える） |
 | `sunkan:listen:stars` | `string[]` … ↻「もう一度」 |
-| `sunkan:listen:ui` | 表示の状態（絞り込み・**読み上げの速さ**）。**同期しない**（端末ごとの好み） |
+| `sunkan:listen:ui` | 表示の状態（選んでいる**プレイリスト**・検索語・**読み上げの速さ**・AI の音声の入／切）。**同期しない**（端末ごとの好み） |
 | `sunkan:shadow:decks` / `sunkan:shadow:items` / `sunkan:shadow:ui` | 前のシャドーイングの中身。**画面は外したが、消していない**（本人の持ちもの。`sync.js` も今までどおり運ぶ） |
 | `sunkan:cards:decks` | カードのセット `[{id,name,created}]` |
 | `sunkan:cards:items` | カード本体 `[{id,deckId,en,ja,exEn,exJa,note,img,created}]`。`img` は写真の **id だけ**（中身は IndexedDB） |

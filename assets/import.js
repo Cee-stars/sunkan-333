@@ -1280,6 +1280,60 @@
     return (api && typeof api.addItems === 'function') ? api : null;
   }
 
+  /* --- 入れ先（プレイリスト） ---
+   *
+   * プレイリストは**ファイルの中身ではなく「入れ先」で決める**（見出し語は増やさない。
+   * 増やすと、前に書き出したファイルが読めなくなる）。
+   * `deck` が `''` の文は「未分類」。だから「＋ 新しいプレイリストを作る」は
+   * `''` とは別の値（`LISTEN_NEW`）で持つ。 */
+  var LISTEN_NEW = '__new__';
+  var LS_LISTEN_DECKS = 'sunkan:listen:decks';
+  var LS_LISTEN_ITEMS = 'sunkan:listen:items';
+
+  function isArrLike(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
+
+  function readStored(key) {
+    try { return JSON.parse(window.localStorage.getItem(key) || 'null'); } catch (e) { return null; }
+  }
+
+  /**
+   * プレイリストの一覧 `[{id, name, count}]`。
+   * listen.js が一覧を配っていれば借りる。無い版でも選べるよう、
+   * 配っていなければ保存先をそのまま**読む**（書くのは下の 1 か所だけ）。
+   */
+  function listenDeckList() {
+    var api = window.SUNKAN_LISTEN;
+    if (api && typeof api.decks === 'function') {
+      var got = api.decks();
+      if (isArrLike(got)) return got;
+    }
+    var decks = readStored(LS_LISTEN_DECKS);
+    if (!isArrLike(decks)) return [];
+    var items = readStored(LS_LISTEN_ITEMS);
+    var count = {}, i, d;
+    if (isArrLike(items)) {
+      for (i = 0; i < items.length; i++) {
+        d = trim(items[i] && items[i].deck);
+        if (d) count[d] = (count[d] || 0) + 1;
+      }
+    }
+    var out = [];
+    for (i = 0; i < decks.length; i++) {
+      var id = trim(decks[i] && decks[i].id);
+      if (!id) continue;
+      out.push({ id: id, name: trim(decks[i].name) || 'プレイリスト', count: count[id] || 0 });
+    }
+    return out;
+  }
+
+  /** いま開いているプレイリスト（`''` は未分類／すべて） */
+  function currentListenDeck() {
+    var api = window.SUNKAN_LISTEN;
+    if (api && typeof api.currentDeck === 'function') return trim(api.currentDeck());
+    if (api && typeof api.currentDeckId === 'function') return trim(api.currentDeckId());
+    return '';
+  }
+
   var elLsDialog = $('listen-import-dialog');
   var elLsOpen = $('btn-listen-import');
   var elLsText = $('listen-import-text');
@@ -1292,20 +1346,128 @@
   var elLsTemplate = $('btn-listen-template');
   var elLsPrompt = $('btn-listen-prompt');
   var elLsPromptStatus = $('listen-prompt-status');
+  var elLsTarget = $('listen-import-target');
+  var elLsNameField = $('listen-import-name-field');
+  var elLsName = $('listen-import-name');
   var lsPreviewTimer = null;
+
+  /**
+   * 「入れ先」の選択肢を作る。
+   * **初期値はいま開いているプレイリスト**（毎回 新しく作らせると増えていって続かない）。
+   * 「＋ 新しいプレイリストを作る」は初期値にしない。
+   */
+  function renderListenTarget() {
+    if (!elLsTarget) return;
+    var keep = elLsTarget.value;
+    var decks = listenDeckList(), i;
+
+    while (elLsTarget.firstChild) elLsTarget.removeChild(elLsTarget.firstChild);
+
+    var fresh = document.createElement('option');
+    fresh.value = LISTEN_NEW;
+    fresh.textContent = '＋ 新しいプレイリストを作る';
+    elLsTarget.appendChild(fresh);
+
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = '未分類';
+    elLsTarget.appendChild(none);
+
+    var known = {};
+    for (i = 0; i < decks.length; i++) {
+      var id = trim(decks[i] && decks[i].id);
+      if (!id) continue;
+      known[id] = true;
+      var opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = trim(decks[i].name) + '（' + (decks[i].count || 0) + '）';
+      elLsTarget.appendChild(opt);
+    }
+
+    var want = (keep === LISTEN_NEW || known[keep]) ? keep : currentListenDeck();
+    elLsTarget.value = (known[want] || want === LISTEN_NEW) ? want : '';
+    syncListenNameField();
+  }
+
+  /** 新しいプレイリストを選んだときだけ、名前の欄を出す */
+  function syncListenNameField() {
+    if (!elLsNameField) return;
+    elLsNameField.hidden = !(elLsTarget && elLsTarget.value === LISTEN_NEW);
+  }
+
+  /** いま選ばれている入れ先の名前（下読みに「どこに入るか」を出すため） */
+  function listenTargetName() {
+    if (!elLsTarget) return '';
+    if (elLsTarget.value === LISTEN_NEW) return trim(elLsName && elLsName.value);
+    if (!elLsTarget.value) return '';
+    var opt = elLsTarget.options[elLsTarget.selectedIndex];
+    return opt ? opt.textContent.replace(/（\d+）$/, '') : '';
+  }
+
+  /** 新しいプレイリストを作るときの id。listen.js が作れるならそちらに任せる */
+  function makeListenDeckId() {
+    return 'listendeck-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  /**
+   * 選ばれている入れ先の `deck`（`''` は未分類）を返す。作れなかったときは `null`。
+   * 新しいプレイリストは listen.js に作らせるのが本筋。
+   * **口が無い版でも読み込めるよう**、最後の手段として保存先に 1 件足す
+   * （形は `{id, name, created}`。listen.js が `addDeck` を配ったらこの枝は消してよい）。
+   */
+  function resolveListenDeck() {
+    if (!elLsTarget) return '';
+    var v = trim(elLsTarget.value);
+    if (v !== LISTEN_NEW) return v;
+
+    var name = trim(elLsName && elLsName.value);
+    if (!name) return null;
+
+    // 同じ名前のプレイリストがあればそこへ。二重に作らない
+    var list = listenDeckList(), i;
+    for (i = 0; i < list.length; i++) {
+      if (trim(list[i].name) === name) return trim(list[i].id);
+    }
+
+    // 作るのは listen.js の仕事。口があるならそれだけを使う
+    var api = window.SUNKAN_LISTEN;
+    var make = null;
+    if (api && typeof api.ensureDeck === 'function') make = api.ensureDeck;
+    else if (api && typeof api.addDeck === 'function') make = api.addDeck;
+    else if (api && typeof api.createDeck === 'function') make = api.createDeck;
+    if (make) {
+      var made = make.call(api, name);
+      var id = trim(typeof made === 'string' ? made : (made && made.id));
+      return id || null;   // 作れなかったときは、黙って未分類に入れない
+    }
+
+    var decks = readStored(LS_LISTEN_DECKS);
+    if (!isArrLike(decks)) decks = [];
+    var fresh = { id: makeListenDeckId(), name: name, created: Date.now() };
+    decks.push(fresh);
+    try {
+      window.localStorage.setItem(LS_LISTEN_DECKS, JSON.stringify(decks));
+    } catch (e) {
+      return null;   // 保存領域がいっぱい。黙って未分類に入れない
+    }
+    return fresh.id;
+  }
 
   function openListenDialog() {
     if (!elLsDialog) return;
     if (elLsPreview) elLsPreview.textContent = '';
     if (elLsFileStatus) elLsFileStatus.textContent = '';
     if (elLsPromptStatus) elLsPromptStatus.textContent = '';
+    renderListenTarget();   // プレイリストは増えているかもしれないので毎回作り直す
     if (typeof elLsDialog.showModal === 'function') {
       if (!elLsDialog.open) elLsDialog.showModal();
     } else {
       elLsDialog.setAttribute('open', 'open');
     }
-    // いちばん上から見せる。中ほどに焦点を当てると、そこまで送られた状態で開く
+    // いちばん上（入れ先）から見せる。中ほどに焦点を当てると、
+    // そこまで送られた状態で開き、**入れ先を見落とす**
     elLsDialog.scrollTop = 0;
+    if (elLsTarget) elLsTarget.focus();
   }
 
   function closeListenDialog() {
@@ -1339,7 +1501,10 @@
         if (en >= 2 && chunkCount(items[i].ja) !== en) mismatch++;
       }
     }
-    var line = items.length + ' 文ぶん読めました（うち日本語つき ' + withJa + ' 文）。';
+    // どこに入るのかを先に言う。押すまで分からないのがいちばん困る
+    var into = listenTargetName();
+    var line = (into ? '「' + into + '」に ' : '')
+      + items.length + ' 文ぶん読めました（うち日本語つき ' + withJa + ' 文）。';
     if (noSlash) line += ' スラッシュで区切られていない文が ' + noSlash + ' 文あります（そのまま 1 かたまりで入ります）。';
     if (mismatch) line += ' 英語と日本語のかたまりの数が違う文が ' + mismatch + ' 文あります。';
     elLsPreview.textContent = line;
@@ -1356,6 +1521,15 @@
       if (elLsPreview) elLsPreview.textContent = '読み込める文がありませんでした。';
       return;
     }
+    // 入れ先を先に決める。名前が無いまま「＋ 新しいプレイリストを作る」のときは
+    // 黙って未分類に入れない（どこへ入ったか分からなくなる）
+    var deck = resolveListenDeck();
+    if (deck === null) {
+      if (elLsPreview) elLsPreview.textContent = '新しいプレイリストの名前を入れてください。';
+      if (elLsName) elLsName.focus();
+      return;
+    }
+    for (var n = 0; n < items.length; n++) items[n].deck = deck;
     var added = api.addItems(items);
     // 1 文も入らなかったときは閉じない。閉じると「押したのに何も起きない」になる
     if (typeof added === 'number' && added === 0) {
@@ -1366,6 +1540,7 @@
     }
     closeListenDialog();
     if (elLsText) elLsText.value = '';
+    if (elLsName) elLsName.value = '';
     if (elLsPreview) elLsPreview.textContent = '';
   }
 
@@ -1437,6 +1612,20 @@
     }
     if (elLsTemplate) elLsTemplate.addEventListener('click', downloadListenTemplate);
     if (elLsPrompt) elLsPrompt.addEventListener('click', copyListenPrompt);
+    if (elLsTarget) {
+      elLsTarget.addEventListener('change', function () {
+        syncListenNameField();
+        listenPreview();   // どこに入るかが変わるので言い直す
+      });
+    }
+    if (elLsName) {
+      elLsName.addEventListener('input', listenPreview);
+      // ダイアログの中は <form method="dialog">。素通しすると変換の Enter で
+      // **黙って閉じて、書いた名前が消える**（build 59 の決まりと同じ理由）
+      elLsName.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13) e.preventDefault();
+      });
+    }
     if (elLsText) {
       // 打つたびに解き直すと、長い貼り付けで引っかかる。少し待ってから下読みする
       elLsText.addEventListener('input', function () {
