@@ -1385,7 +1385,7 @@
     }
 
     var want = (keep === LISTEN_NEW || known[keep]) ? keep : currentListenDeck();
-    elLsTarget.value = known[want] || want === LISTEN_NEW ? want : '';
+    elLsTarget.value = (known[want] || want === LISTEN_NEW) ? want : '';
     syncListenNameField();
   }
 
@@ -1429,14 +1429,16 @@
       if (trim(list[i].name) === name) return trim(list[i].id);
     }
 
+    // 作るのは listen.js の仕事。口があるならそれだけを使う
     var api = window.SUNKAN_LISTEN;
-    var made = null;
-    if (api && typeof api.addDeck === 'function') made = api.addDeck(name);
-    else if (api && typeof api.createDeck === 'function') made = api.createDeck(name);
-    else if (api && typeof api.ensureDeck === 'function') made = api.ensureDeck(name);
-    if (made) {
-      var id = trim(typeof made === 'string' ? made : made.id);
-      if (id) return id;
+    var make = null;
+    if (api && typeof api.ensureDeck === 'function') make = api.ensureDeck;
+    else if (api && typeof api.addDeck === 'function') make = api.addDeck;
+    else if (api && typeof api.createDeck === 'function') make = api.createDeck;
+    if (make) {
+      var made = make.call(api, name);
+      var id = trim(typeof made === 'string' ? made : (made && made.id));
+      return id || null;   // 作れなかったときは、黙って未分類に入れない
     }
 
     var decks = readStored(LS_LISTEN_DECKS);
@@ -1456,13 +1458,16 @@
     if (elLsPreview) elLsPreview.textContent = '';
     if (elLsFileStatus) elLsFileStatus.textContent = '';
     if (elLsPromptStatus) elLsPromptStatus.textContent = '';
+    renderListenTarget();   // プレイリストは増えているかもしれないので毎回作り直す
     if (typeof elLsDialog.showModal === 'function') {
       if (!elLsDialog.open) elLsDialog.showModal();
     } else {
       elLsDialog.setAttribute('open', 'open');
     }
-    // いちばん上から見せる。中ほどに焦点を当てると、そこまで送られた状態で開く
+    // いちばん上（入れ先）から見せる。中ほどに焦点を当てると、
+    // そこまで送られた状態で開き、**入れ先を見落とす**
     elLsDialog.scrollTop = 0;
+    if (elLsTarget) elLsTarget.focus();
   }
 
   function closeListenDialog() {
@@ -1496,7 +1501,10 @@
         if (en >= 2 && chunkCount(items[i].ja) !== en) mismatch++;
       }
     }
-    var line = items.length + ' 文ぶん読めました（うち日本語つき ' + withJa + ' 文）。';
+    // どこに入るのかを先に言う。押すまで分からないのがいちばん困る
+    var into = listenTargetName();
+    var line = (into ? '「' + into + '」に ' : '')
+      + items.length + ' 文ぶん読めました（うち日本語つき ' + withJa + ' 文）。';
     if (noSlash) line += ' スラッシュで区切られていない文が ' + noSlash + ' 文あります（そのまま 1 かたまりで入ります）。';
     if (mismatch) line += ' 英語と日本語のかたまりの数が違う文が ' + mismatch + ' 文あります。';
     elLsPreview.textContent = line;
@@ -1513,6 +1521,15 @@
       if (elLsPreview) elLsPreview.textContent = '読み込める文がありませんでした。';
       return;
     }
+    // 入れ先を先に決める。名前が無いまま「＋ 新しいプレイリストを作る」のときは
+    // 黙って未分類に入れない（どこへ入ったか分からなくなる）
+    var deck = resolveListenDeck();
+    if (deck === null) {
+      if (elLsPreview) elLsPreview.textContent = '新しいプレイリストの名前を入れてください。';
+      if (elLsName) elLsName.focus();
+      return;
+    }
+    for (var n = 0; n < items.length; n++) items[n].deck = deck;
     var added = api.addItems(items);
     // 1 文も入らなかったときは閉じない。閉じると「押したのに何も起きない」になる
     if (typeof added === 'number' && added === 0) {
@@ -1523,6 +1540,7 @@
     }
     closeListenDialog();
     if (elLsText) elLsText.value = '';
+    if (elLsName) elLsName.value = '';
     if (elLsPreview) elLsPreview.textContent = '';
   }
 
@@ -1594,6 +1612,20 @@
     }
     if (elLsTemplate) elLsTemplate.addEventListener('click', downloadListenTemplate);
     if (elLsPrompt) elLsPrompt.addEventListener('click', copyListenPrompt);
+    if (elLsTarget) {
+      elLsTarget.addEventListener('change', function () {
+        syncListenNameField();
+        listenPreview();   // どこに入るかが変わるので言い直す
+      });
+    }
+    if (elLsName) {
+      elLsName.addEventListener('input', listenPreview);
+      // ダイアログの中は <form method="dialog">。素通しすると変換の Enter で
+      // **黙って閉じて、書いた名前が消える**（build 59 の決まりと同じ理由）
+      elLsName.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.keyCode === 13) e.preventDefault();
+      });
+    }
     if (elLsText) {
       // 打つたびに解き直すと、長い貼り付けで引っかかる。少し待ってから下読みする
       elLsText.addEventListener('input', function () {

@@ -9,6 +9,11 @@
  * 日本語を見て英語を言う練習（瞬間英作文・場面）と向きが反対で、
  * ここでは音が先・文字が後なので、先に押すものを左に置いてある。
  *
+ * 文は**プレイリスト**で分けられる（瞬間英作文の「セット」と同じ考え方。
+ * 画面に出す言葉は「プレイリスト」で、保存先は `sunkan:listen:decks`）。
+ * 1 件の `deck` がその id で、`''` は「どこにも入れていない」＝未分類。
+ * **プレイリストを消しても中の文は消さない**（`deck` を `''` に戻すだけ）。
+ *
  * 手触りは場面（phrase.js）とそろえる — 隠す / 開く / ↻ / 検索 / 現在行。
  * **段階（％）と忘却曲線は持たない。** 聞き取りは「言えたか」の自己採点と
  * 噛み合わないので、印は ↻「もう一度」だけにしてある。
@@ -184,10 +189,40 @@
     return speechText(chunksOf(en)).toLowerCase();
   }
 
+  /** プレイリストの名前を均す。改行や制御文字は <option> にも札にも出せないので落とす */
+  function deckName(v) {
+    return trim(str(v).replace(/[\u0000-\u001f\u007f]/g, ' '));
+  }
+
   /**
-   * [{id, en, ja, note, created}] の形に均す。
+   * プレイリストを [{id, name, created}] に均す。
+   * **名前が無いものは落とす**（選びようがない）。id がぶつかっていたら振り直す。
+   */
+  function sanitizeDecks(raw) {
+    if (!isArr(raw)) return [];
+    var out = [], seen = {};
+    for (var i = 0; i < raw.length; i++) {
+      var d = raw[i];
+      if (!isObj(d)) continue;
+      var name = deckName(d.name);
+      if (!name) continue;
+      var id = trim(d.id);
+      if (!id || seen[id]) id = makeId('listendeck');
+      seen[id] = 1;
+      out.push({ id: id, name: name, created: Number(d.created) || 0 });
+    }
+    return out;
+  }
+
+  /**
+   * [{id, en, ja, note, deck, created}] の形に均す。
    * **`en` が無いものは落とす** — 聞くものが無いので練習にならない。
    * `en` も `ja` もスラッシュ入りのまま持つ（割るのは出すときだけ）。
+   *
+   * **`deck` を落とさないこと。** ここは知らない項目を落とす作りなので、
+   * 書き忘れると入れたプレイリストが保存のたびに消える。
+   * いま入っているデータには `deck` が無いので、`''`（未分類）に揃える
+   * ——**消さない・勝手にどこかへ入れない**。
    */
   function sanitizeItems(raw) {
     if (!isArr(raw)) return [];
@@ -207,6 +242,10 @@
         en: en,
         ja: trim(it.ja),
         note: trim(it.note),
+        // もう無いプレイリストの id でも、ここでは**そのまま持つ**。
+        // ほかの端末で作ったプレイリストのこともあるので、消すと戻せない。
+        // 画面では deckKeyOf() が「未分類」として扱う。
+        deck: trim(it.deck),
         created: Number(it.created) || 0
       });
     }
@@ -225,12 +264,13 @@
     return out;
   }
 
-  /** 端末ごとの好み。検索語・速さ・AI の音声を使うか（同期しない） */
+  /** 端末ごとの好み。検索語・速さ・AI の音声を使うか・プレイリスト（同期しない） */
   function sanitizeUI(raw) {
     var o = isObj(raw) ? raw : {};
     var rate = Number(o.rate);
     if (RATES.indexOf(rate) < 0) rate = DEFAULT_RATE;
-    return { query: trim(o.query), rate: rate, ai: o.ai === true };
+    var deck = str(o.deck) === DECK_NONE ? DECK_NONE : trim(o.deck);
+    return { query: trim(o.query), rate: rate, ai: o.ai === true, deck: deck };
   }
 
   /** 「英語を表示したら自動で読み上げる」が入っているか。
@@ -247,7 +287,9 @@
   var state = {
     items: [],
     stars: [],
+    decks: [],          // プレイリスト [{id, name, created}]
 
+    deck: DECK_ALL,     // いま絞り込んでいるプレイリスト（'' はすべて）
     query: '',          // 検索語（小文字に潰したもの）
     rate: DEFAULT_RATE, // 読み上げの速さ
     ai: false,          // AI の音声を使うか（置き場が要る）
@@ -273,6 +315,8 @@
    * ========================================================== */
 
   var elView = $('listen-view');
+  var elDeckSelect = $('listen-deck');
+  var elDecksBtn = $('btn-listen-decks');
   var elSearch = $('listen-search');
   var elToggleAll = $('listen-toggle-all');
   var elToggleAllLabel = $('listen-toggle-all-label');
@@ -286,6 +330,9 @@
   var elAddRowBtn = $('btn-listen-add-row');
 
   var elEditDialog = $('listen-edit-dialog');
+  var elFieldDeck = $('listen-deck-field');          // 入れ先（ダイアログのいちばん上）
+  var elNewDeckField = $('listen-new-deck-field');   // 「＋ 新しいプレイリスト」のときだけ出す
+  var elNewDeckName = $('listen-new-deck-name');
   var elFieldEn = $('listen-en');
   var elFieldJa = $('listen-ja');
   var elFieldNote = $('listen-note');
@@ -294,15 +341,26 @@
   var elCloseBtn = $('btn-listen-close');
   var elDeleteBtn = $('btn-listen-delete');
 
+  // プレイリストを作る・名前を変える・消すダイアログ
+  var elDeckDialog = $('listen-deck-dialog');
+  var elDeckList = $('listen-deck-manage-list');
+  var elDeckNewName = $('listen-new-deck');
+  var elDeckNewBtn = $('btn-listen-new-deck');
+  var elDeckStatus = $('listen-deck-status');
+  var elDeckCloseBtn = $('btn-listen-deck-close');
+
   /* ============================================================
    * 6. 保存
    * ========================================================== */
 
   function saveItems() { return writeJSON(LS_ITEMS, state.items); }
   function saveStars() { return writeJSON(LS_STARS, state.stars); }
+  function saveDecks() { return writeJSON(LS_DECKS, state.decks); }
 
   function saveUI() {
-    return writeJSON(LS_UI, { query: state.query, rate: state.rate, ai: state.ai });
+    return writeJSON(LS_UI, {
+      query: state.query, rate: state.rate, ai: state.ai, deck: state.deck
+    });
   }
 
   // 1 文字打つたびに書くほどのものではないので、落ち着いてから書く
@@ -311,10 +369,13 @@
   function loadAll() {
     state.items = sanitizeItems(readJSON(LS_ITEMS));
     state.stars = sanitizeStars(readJSON(LS_STARS));
+    state.decks = sanitizeDecks(readJSON(LS_DECKS));
     var ui = sanitizeUI(readJSON(LS_UI));
     state.query = ui.query.toLowerCase();
     state.rate = ui.rate;
     state.ai = ui.ai;
+    // 見ていたプレイリストが消えていたら「すべて」へ戻す
+    state.deck = deckExists(ui.deck) ? ui.deck : DECK_ALL;
   }
 
   /* ============================================================
@@ -326,6 +387,63 @@
       if (state.items[i].id === id) return state.items[i];
     }
     return null;
+  }
+
+  /* --- プレイリスト ------------------------------------------- */
+
+  function findDeck(id) {
+    if (!id) return null;
+    for (var i = 0; i < state.decks.length; i++) {
+      if (state.decks[i].id === id) return state.decks[i];
+    }
+    return null;
+  }
+
+  /** 同じ名前のプレイリストを探す（大文字小文字は同じものとみなす） */
+  function findDeckByName(name, exceptId) {
+    var key = deckName(name).toLowerCase();
+    if (!key) return null;
+    for (var i = 0; i < state.decks.length; i++) {
+      if (state.decks[i].id === exceptId) continue;
+      if (state.decks[i].name.toLowerCase() === key) return state.decks[i];
+    }
+    return null;
+  }
+
+  /**
+   * その文が入っているプレイリストの、絞り込みの値。
+   * **もう無い id は「未分類」として扱う**（データは書き換えない）。
+   * ほかの端末で作ったプレイリストの id が届くことがあるので、
+   * ここで消してしまうと、その文がどの絞り込みにも出てこなくなる。
+   */
+  function deckKeyOf(item) {
+    return (item && item.deck && findDeck(item.deck)) ? item.deck : DECK_NONE;
+  }
+
+  /** そのプレイリストに入っている文の数 */
+  function deckCount(deckId) {
+    var n = 0;
+    for (var i = 0; i < state.items.length; i++) {
+      if (deckKeyOf(state.items[i]) === deckId) n++;
+    }
+    return n;
+  }
+
+  /** どのプレイリストにも入っていない文の数（「未分類」を出すかの判断） */
+  function noDeckCount() { return deckCount(DECK_NONE); }
+
+  /** その絞り込みの値が選べるか。無くなったプレイリストは「すべて」へ戻す */
+  function deckExists(key) {
+    if (key === DECK_ALL) return true;
+    if (key === DECK_NONE) return noDeckCount() > 0;
+    return !!findDeck(key);
+  }
+
+  /** 知らせに出すための名前 */
+  function deckLabel(key) {
+    if (key === DECK_NONE) return '未分類';
+    var d = findDeck(key);
+    return d ? d.name : '';
   }
 
   function isStarred(id) {
@@ -543,6 +661,221 @@
         });
         elRateRow.appendChild(b);
       })(RATES[i], RATE_LABELS[i] || String(RATES[i]));
+    }
+  }
+
+  /**
+   * プレイリストの絞り込みを作り直す。**件数を添える** —
+   * 選ぶ前に何件あるかが分かるように（瞬間英作文のセット選びと同じ見た目）。
+   */
+  function renderDeckSelect() {
+    if (!elDeckSelect) return;
+    var keep = state.deck;
+    while (elDeckSelect.firstChild) elDeckSelect.removeChild(elDeckSelect.firstChild);
+
+    var all = document.createElement('option');
+    all.value = DECK_ALL;
+    all.textContent = 'すべて（' + state.items.length + '）';
+    elDeckSelect.appendChild(all);
+
+    for (var i = 0; i < state.decks.length; i++) {
+      var d = state.decks[i];
+      var opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = d.name + '（' + deckCount(d.id) + '）';   // textContent で XSS を避ける
+      elDeckSelect.appendChild(opt);
+    }
+
+    // 「未分類」は、そこに文があるときだけ出す（0 件の行は選ぶ意味がない）
+    var none = noDeckCount();
+    if (none) {
+      var optNone = document.createElement('option');
+      optNone.value = DECK_NONE;
+      optNone.textContent = '未分類（' + none + '）';
+      elDeckSelect.appendChild(optNone);
+    }
+
+    elDeckSelect.value = deckExists(keep) ? keep : DECK_ALL;
+    state.deck = elDeckSelect.value;
+  }
+
+  /**
+   * 追加・編集ダイアログの「入れ先」。**いちばん上に置く** —
+   * どこに入るのかを、書き始める前に見せる（カードの取り込みと同じ考え方）。
+   * 最後に「＋ 新しいプレイリスト」を出して、その場でも作れるようにする。
+   */
+  function renderDeckField(want) {
+    if (!elFieldDeck) return;
+    while (elFieldDeck.firstChild) elFieldDeck.removeChild(elFieldDeck.firstChild);
+
+    for (var i = 0; i < state.decks.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = state.decks[i].id;
+      opt.textContent = state.decks[i].name;
+      elFieldDeck.appendChild(opt);
+    }
+
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = '未分類（どこにも入れない）';
+    elFieldDeck.appendChild(none);
+
+    var fresh = document.createElement('option');
+    fresh.value = DECK_NEW;
+    fresh.textContent = '＋ 新しいプレイリスト';
+    elFieldDeck.appendChild(fresh);
+
+    elFieldDeck.value = findDeck(want) ? want : '';
+    syncNewDeckField();
+  }
+
+  /** 「＋ 新しいプレイリスト」を選んだときだけ、名前の欄を出す */
+  function syncNewDeckField() {
+    if (!elNewDeckField) return;
+    elNewDeckField.hidden = !(elFieldDeck && elFieldDeck.value === DECK_NEW);
+  }
+
+  /** 新しく足すときの既定の入れ先。**いま選んでいるプレイリスト** */
+  function defaultDeckId() {
+    var cur = state.deck;
+    return (cur && cur !== DECK_NONE && findDeck(cur)) ? cur : '';
+  }
+
+  /* --- プレイリストを作る・名前を変える・消す --------------------- */
+
+  function setDeckStatus(message, isError) {
+    if (!elDeckStatus) return;
+    elDeckStatus.textContent = str(message);
+    if (isError) elDeckStatus.setAttribute('data-error', 'true');
+    else elDeckStatus.removeAttribute('data-error');
+  }
+
+  /**
+   * プレイリストを作る。**名前だけ。** 空では作らず、同じ名前も作らない
+   * （同じ名前が 2 つあると、どちらに入れたのか分からなくなる）。
+   * @returns {?string} 作れたら id、作れなければ null
+   */
+  function createDeck(name, say) {
+    var clean = deckName(name);
+    if (!clean) {
+      say('プレイリストの名前を入れてください。', true);
+      return null;
+    }
+    var same = findDeckByName(clean);
+    if (same) {
+      say('「' + same.name + '」はもうあります。', true);
+      return null;
+    }
+    var deck = { id: makeId('listendeck'), name: clean, created: Date.now() };
+    state.decks.push(deck);
+    saveDecks();
+    renderDeckSelect();
+    renderDeckManageList();
+    say('「' + clean + '」を作りました。', false);
+    return deck.id;
+  }
+
+  function renameDeck(deckId, name) {
+    var deck = findDeck(deckId);
+    if (!deck) return;
+    var clean = deckName(name);
+    if (!clean) {
+      setDeckStatus('プレイリストの名前を入れてください。', true);
+      renderDeckManageList();
+      return;
+    }
+    if (clean === deck.name) { setDeckStatus('', false); return; }
+    if (findDeckByName(clean, deckId)) {
+      setDeckStatus('「' + clean + '」はもうあります。', true);
+      renderDeckManageList();
+      return;
+    }
+    var before = deck.name;
+    deck.name = clean;
+    saveDecks();
+    renderDeckSelect();
+    renderDeckManageList();
+    setDeckStatus('「' + before + '」を「' + clean + '」にしました。', false);
+  }
+
+  /**
+   * プレイリストを消す。**中の文は消さない** —
+   * `deck` を `''` に戻して「未分類」にするだけ。
+   * 聞く文そのものは本人の持ちもので、入れ物を片付けただけで消えては困る。
+   */
+  function deleteDeck(deckId) {
+    var deck = findDeck(deckId);
+    if (!deck) return;
+    var n = deckCount(deckId);
+    if (!window.confirm('プレイリスト「' + deck.name + '」を消します。'
+      + '中の ' + n + ' 文は消えず、「未分類」に戻ります。よろしいですか？')) return;
+
+    for (var i = state.decks.length - 1; i >= 0; i--) {
+      if (state.decks[i].id === deckId) state.decks.splice(i, 1);
+    }
+    var moved = 0;
+    for (var j = 0; j < state.items.length; j++) {
+      if (state.items[j].deck !== deckId) continue;
+      state.items[j].deck = '';
+      moved++;
+    }
+    // 消したことを同期に覚えさせないと、もう片方の端末から戻ってくる
+    noteDelete('listendeck:' + deckId);
+    saveDecks();
+    if (moved) saveItems();
+    if (state.deck === deckId) state.deck = DECK_ALL;
+    saveUI();
+
+    if (state.started) rebuildKeepingView(render);
+    else renderDeckSelect();
+    renderDeckManageList();
+    setDeckStatus('「' + deck.name + '」を消しました。'
+      + (moved ? '中の ' + moved + ' 文は「未分類」に戻しました。' : ''), false);
+    flashStatus('プレイリスト「' + deck.name + '」を消しました。中の文は残っています。');
+  }
+
+  /** プレイリストの一覧（名前を変える・消す）。件数も出す */
+  function renderDeckManageList() {
+    if (!elDeckList) return;
+    while (elDeckList.firstChild) elDeckList.removeChild(elDeckList.firstChild);
+
+    for (var i = 0; i < state.decks.length; i++) {
+      (function (deck) {
+        var li = document.createElement('li');
+        li.setAttribute('data-deck-id', deck.id);
+
+        // 名前は欄で直す。**Enter では保存しない**ので「変える」を押してもらう
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'field-input listen-deck-name';
+        input.value = deck.name;
+        input.autocomplete = 'off';
+        input.setAttribute('aria-label', deck.name + ' の名前');
+        blockEnter(input);
+        li.appendChild(input);
+
+        var count = document.createElement('span');
+        count.className = 'listen-deck-count';
+        count.textContent = deckCount(deck.id) + ' 文';
+        li.appendChild(count);
+
+        var ren = document.createElement('button');
+        ren.type = 'button';
+        ren.className = 'listen-deck-rename';
+        ren.textContent = '変える';
+        ren.setAttribute('aria-label', deck.name + ' の名前を変える');
+        ren.addEventListener('click', function () { renameDeck(deck.id, input.value); });
+        li.appendChild(ren);
+
+        var del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '消す';
+        del.setAttribute('aria-label', deck.name + ' を消す');
+        del.addEventListener('click', function () { deleteDeck(deck.id); });
+        li.appendChild(del);
+
+        elDeckList.appendChild(li);
+      })(state.decks[i]);
     }
   }
 
@@ -917,13 +1250,16 @@
 
   function applyFilter() {
     var q = state.query;
+    var deck = state.deck;
     var visible = 0;
 
     for (var i = 0; i < state.rows.length; i++) {
       var row = state.rows[i];
       if (!row.el) continue;
+      // プレイリストと検索は**両方**に当てはまったものだけ出す
       var ok = true;
-      if (q) {
+      if (deck !== DECK_ALL) ok = deckKeyOf(row.item) === deck;
+      if (ok && q) {
         // 英語はスラッシュを外したほうで見る（区切りを打たせない）
         ok = row.enLower.indexOf(q) >= 0
           || row.jaLower.indexOf(q) >= 0
@@ -941,7 +1277,11 @@
         elEmpty.textContent = 'まだ文がありません。「＋ 文を追加」から足せます。';
         elEmpty.hidden = false;
       } else if (!visible) {
-        elEmpty.textContent = '該当する文がありません。';
+        // 空のプレイリストを選んだだけなのに「該当なし」だと、
+        // 探し方が悪いのかデータが無いのかが分からない
+        elEmpty.textContent = (!q && deck !== DECK_ALL)
+          ? '「' + deckLabel(deck) + '」にはまだ文がありません。「＋ 追加」から足せます。'
+          : '該当する文がありません。';
         elEmpty.hidden = false;
       } else {
         elEmpty.hidden = true;
@@ -978,7 +1318,10 @@
       elStatus.textContent = '';
       return;
     }
-    var parts = ['全 ' + state.items.length + ' 文'];
+    var parts = [];
+    // どのプレイリストを見ているかを先に出す（絞っていることを忘れさせない）
+    if (state.deck !== DECK_ALL) parts.push(deckLabel(state.deck));
+    parts.push('全 ' + state.items.length + ' 文');
     if (state.visibleCount !== state.items.length) {
       parts.push('表示中 ' + state.visibleCount + ' 文');
     }
@@ -1013,6 +1356,10 @@
       return 'いまの検索「' + (elSearch ? trim(elSearch.value) : state.query)
         + '」に当てはまらないので、一覧には出ていません。';
     }
+    if (state.deck === DECK_NONE) return '「未分類」で絞っているので、一覧には出ていません。';
+    if (state.deck) {
+      return '「' + deckLabel(state.deck) + '」で絞っているので、一覧には出ていません。';
+    }
     return '絞り込みに当てはまらないので、一覧には出ていません。';
   }
 
@@ -1021,6 +1368,7 @@
    * ========================================================== */
 
   function render() {
+    renderDeckSelect();   // 件数が変わるので、行より先に作り直す
     buildRows();
     renderRows();
     applyFilter();
@@ -1101,6 +1449,11 @@
     state.editingId = row ? row.id : null;
     var item = row ? row.item : null;
 
+    // 入れ先。直すときはその文の入っている所、**新しく足すときは
+    // いま選んでいるプレイリスト**を既定にする（毎回選び直させない）。
+    renderDeckField(item ? item.deck : defaultDeckId());
+    if (elNewDeckName) elNewDeckName.value = '';
+
     if (elFieldEn) elFieldEn.value = item ? item.en : '';
     if (elFieldJa) elFieldJa.value = item ? item.ja : '';
     if (elFieldNote) elFieldNote.value = item ? item.note : '';
@@ -1111,6 +1464,29 @@
 
     openDialog(elEditDialog, invoker);
     if (elFieldEn) elFieldEn.focus();
+    // 入れ先はいちばん上にある。中ほどまでスクロールした状態で開くと見落とす
+    if (elEditDialog) elEditDialog.scrollTop = 0;
+  }
+
+  /**
+   * ダイアログで選ばれている入れ先を決める。「＋ 新しいプレイリスト」なら
+   * **その場で作る**（作れなければ null を返して、保存そのものを止める）。
+   * @returns {?string} プレイリストの id（`''` は未分類）／作れなければ null
+   */
+  function pickDeckFromDialog() {
+    if (!elFieldDeck) return '';
+    var v = elFieldDeck.value;
+    if (v !== DECK_NEW) return findDeck(v) ? v : '';
+
+    var made = createDeck(elNewDeckName ? elNewDeckName.value : '', setEditStatus);
+    if (!made) {
+      if (elNewDeckName) elNewDeckName.focus();
+      return null;
+    }
+    // 作ったプレイリストをそのまま入れ先にする
+    renderDeckField(made);
+    if (elNewDeckName) elNewDeckName.value = '';
+    return made;
   }
 
   /** 同じ英文がすでにあるか（直している自分は除く） */
@@ -1139,6 +1515,11 @@
       return;
     }
 
+    // 入れ先を先に決める。新しいプレイリストが作れなかったときは、
+    // 文のほうも保存しない（どこに入ったのか分からない状態を作らない）
+    var deckId = pickDeckFromDialog();
+    if (deckId === null) return;
+
     if (state.editingId) {
       var item = findItem(state.editingId);
       if (!item) {   // 直している最中に同期で消えた
@@ -1150,6 +1531,7 @@
       item.en = en;
       item.ja = ja;
       item.note = note;
+      item.deck = deckId;
       saveItems();
       closeDialog(elEditDialog);
       state.editingId = null;
@@ -1162,13 +1544,15 @@
     var fresh = {
       id: makeId('listen'),
       en: en, ja: ja, note: note,
+      deck: deckId,
       created: Date.now()
     };
     state.items.push(fresh);
     saveItems();
     rebuildKeepingView(render);
 
-    // 欄を空にして、そのまま次の 1 文を入れられるようにする
+    // 欄を空にして、そのまま次の 1 文を入れられるようにする。
+    // **入れ先はそのまま残す**（続けて同じプレイリストに入れることが多い）
     if (elFieldEn) elFieldEn.value = '';
     if (elFieldJa) elFieldJa.value = '';
     if (elFieldNote) elFieldNote.value = '';
@@ -1177,7 +1561,8 @@
     // 足したものが絞り込みで隠れているなら、そう言う。黙っていると
     //「追加したのに出てこない」＝足せていないように見える。
     var note2 = isFilteredOut(fresh.id) ? ' ' + whyHidden() : '';
-    setEditStatus('追加しました。続けて入力できます。' + note2, false);
+    var into = deckId ? '「' + deckLabel(deckId) + '」に' : '';
+    setEditStatus(into + '追加しました。続けて入力できます。' + note2, false);
   }
 
   /** その文が、いまの絞り込みで隠れているか */
@@ -1294,6 +1679,44 @@
       elAiBtn.addEventListener('click', function () { wakeAudio(); toggleAi(); });
     }
 
+    // プレイリストで絞る。検索との組み合わせは applyFilter が両方見る
+    if (elDeckSelect) {
+      elDeckSelect.addEventListener('change', function () {
+        state.deck = elDeckSelect.value;
+        saveUI();
+        applyFilter();
+      });
+    }
+
+    if (elDecksBtn) {
+      elDecksBtn.addEventListener('click', function () {
+        renderDeckManageList();
+        if (elDeckNewName) elDeckNewName.value = '';
+        setDeckStatus('', false);
+        openDialog(elDeckDialog, elDecksBtn);
+        if (elDeckDialog) elDeckDialog.scrollTop = 0;
+      });
+    }
+    if (elDeckNewBtn) {
+      elDeckNewBtn.addEventListener('click', function () {
+        var made = createDeck(elDeckNewName ? elDeckNewName.value : '', setDeckStatus);
+        if (!made) { if (elDeckNewName) elDeckNewName.focus(); return; }
+        if (elDeckNewName) elDeckNewName.value = '';
+        if (elDeckNewName) elDeckNewName.focus();
+      });
+    }
+    if (elDeckCloseBtn) {
+      elDeckCloseBtn.addEventListener('click', function () { closeDialog(elDeckDialog); });
+    }
+
+    // 「＋ 新しいプレイリスト」を選んだときだけ名前の欄を出す
+    if (elFieldDeck) {
+      elFieldDeck.addEventListener('change', function () {
+        syncNewDeckField();
+        if (elFieldDeck.value === DECK_NEW && elNewDeckName) elNewDeckName.focus();
+      });
+    }
+
     if (elSearch) {
       elSearch.addEventListener('input', runSearch);
       elSearch.addEventListener('search', runSearch);   // type="search" の × ボタン
@@ -1347,6 +1770,11 @@
     blockEnter(elFieldEn);
     blockEnter(elFieldJa);
     blockEnter(elFieldNote);
+    // 新しい欄にも必ず付ける。<form method="dialog"> の中なので、
+    // 素通しすると Enter で黙って閉じて、書いたものが消える
+    blockEnter(elFieldDeck);
+    blockEnter(elNewDeckName);
+    blockEnter(elDeckNewName);
 
     // 行の操作はキーボードからも。ほかのモードを開いている間は
     // この一覧が画面に無いので、キー操作はそちらに任せる。
@@ -1380,8 +1808,11 @@
   /**
    * 取り込みから足す口。**取り込み側に直に保存させない**（鍵の形も
    * 均し方もここにしか無いので、外から書くと形がずれる）。
-   * list は `[{en, ja, note}]`。英語はスラッシュ入りのまま渡してよい。
+   * list は `[{en, ja, note, deck}]`。英語はスラッシュ入りのまま渡してよい。
    * 同じ英文は飛ばす。
+   *
+   * `deck` はプレイリストの id（`decks()` で取れる）。**無ければ `''`**＝未分類。
+   * 知らない id が来たら `''` にする（指す先の無い所へは入れない）。
    *
    * **この名前と引数は変えない**（取り込みの担当が合わせている）。
    * @returns {number} 足せた件数
@@ -1402,12 +1833,15 @@
       var key = dupKey(en);
       if (seen[key]) continue;
       seen[key] = 1;
+      var deck = trim(raw.deck);
+      if (deck && !findDeck(deck)) deck = '';   // 知らない id は未分類にする
       lastId = makeId('listen');
       state.items.push({
         id: lastId,
         en: en,
         ja: trim(raw.ja),
         note: trim(raw.note),
+        deck: deck,
         created: now + i      // 取り込んだ順を保つ
       });
       added++;
@@ -1453,6 +1887,7 @@
     if (!state.started) {        // まだ開いていないなら、読み直すだけでよい
       loadAll();
       renderRates();
+      renderDeckSelect();
       return;
     }
     // 同期は裏で走る。出していたかたまり・現在行・見ている位置は戻す。
@@ -1466,11 +1901,52 @@
     });
   }
 
+  /**
+   * プレイリストの一覧 `[{id, name, count}]`。取り込みの「入れ先」を
+   * 作るためのもの（`SUNKAN_CARDS.decks()` と同じ役目）。
+   * **取り込み側に直に保存させない**ための口なので、読むだけ。
+   */
+  function deckList() {
+    var out = [];
+    for (var i = 0; i < state.decks.length; i++) {
+      out.push({
+        id: state.decks[i].id,
+        name: state.decks[i].name,
+        count: deckCount(state.decks[i].id)
+      });
+    }
+    return out;
+  }
+
+  /** いま絞り込んでいるプレイリストの id（`''` は「すべて」か「未分類」） */
+  function currentDeckId() { return defaultDeckId(); }
+
+  /**
+   * 名前からプレイリストを用意する。同じ名前があればその id を返す
+   * （**同じ名前は作らない**）。名前が空なら null。
+   * @returns {?string} プレイリストの id
+   */
+  function ensureDeck(name) {
+    var clean = deckName(name);
+    if (!clean) return null;
+    var same = findDeckByName(clean);
+    if (same) return same.id;
+    var deck = { id: makeId('listendeck'), name: clean, created: Date.now() };
+    state.decks.push(deck);
+    saveDecks();
+    renderDeckSelect();
+    renderDeckManageList();
+    return deck.id;
+  }
+
   window.SUNKAN_LISTEN = {
     onShow: onShow,
     onHide: onHide,
     reload: reloadFromStorage,
-    addItems: addItems
+    addItems: addItems,
+    decks: deckList,
+    currentDeckId: currentDeckId,
+    ensureDeck: ensureDeck
   };
 
   /* ============================================================
@@ -1486,6 +1962,7 @@
     bindEvents();
     renderRates();
     renderAiChip();
+    renderDeckSelect();
 
     // **自分で data-mode を見る。** paraphrase.js の init が setMode を呼ぶ時点では
     // window.SUNKAN_LISTEN がまだ無いので、見ないとリスニングを最後に開いた

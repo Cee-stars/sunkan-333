@@ -217,6 +217,22 @@
        行の中は「左に 🔈・右に英文」で、ほかのモードと左右が逆。
        操作列のほうはほかのモードと同じ並びにそろえる（押す場所を覚え直させない）。 -->
   <div class="header-row header-row--main" data-mode-view="listen">
+    <!-- プレイリスト（瞬間英作文の「セット」と同じ考え方。画面での言い方は
+         「プレイリスト」）。**操作列のいちばん上**に置く — 何を聞くつもりなのかを
+         先に選ぶものなので、速さや ✨ より手前にある。
+         中身と件数は listen.js が作る。選んでいるものは sunkan:listen:ui に覚える
+         （端末ごとの好みなので**同期しない**）。 -->
+    <div class="deck-picker">
+      <label class="visually-hidden" for="listen-deck">プレイリスト</label>
+      <select id="listen-deck" class="deck-select"></select>
+    </div>
+
+    <!-- 作る・名前を変える・消す。消しても中の文は消えない -->
+    <button type="button" id="btn-listen-decks" class="btn btn--ghost"
+      aria-label="プレイリストを作る・名前を変える・消す" aria-haspopup="dialog">
+      <span aria-hidden="true">🗂</span><span class="btn-label">プレイリスト</span>
+    </button>
+
     <div class="listen-rate">
       <span class="listen-rate-label" id="listen-rate-label">速さ</span>
       <!-- 札は listen.js が作る（選べる速さを 1 か所にまとめておきたいため）。
@@ -754,6 +770,22 @@
       行を押すたびに 1 かたまりずつ出ます。
     </p>
 
+    <!-- 入れ先は**いちばん上**。どこに入るのかを、書き始める前に見せる
+         （カード・瞬間英作文の取り込みと同じ考え方）。
+         中身は listen.js が作る。新しく足すときは、いま選んでいる
+         プレイリストが既定になる。 -->
+    <label class="field">
+      <span class="field-label">入れ先（プレイリスト）</span>
+      <select id="listen-deck-field" class="deck-select"></select>
+    </label>
+
+    <!-- 「＋ 新しいプレイリスト」を選んだときだけ出す（listen.js が hidden を外す） -->
+    <label class="field" id="listen-new-deck-field" hidden>
+      <span class="field-label">新しいプレイリストの名前</span>
+      <input type="text" id="listen-new-deck-name" class="field-input" autocomplete="off"
+        placeholder="例：映画のセリフ">
+    </label>
+
     <label class="field">
       <span class="field-label">英語（/ で区切る）</span>
       <input type="text" id="listen-en" class="field-input" autocomplete="off"
@@ -783,6 +815,42 @@
       <button type="button" id="btn-listen-close" class="btn btn--ghost">閉じる</button>
       <button type="button" id="btn-listen-delete" class="btn btn--ghost">削除する</button>
       <button type="button" id="btn-listen-save" class="btn btn--primary">保存する</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== リスニングのプレイリスト（作る・名前を変える・消す） =====
+     瞬間英作文の「セット」と同じ考え方だが、**画面に出す言葉は「プレイリスト」**。
+     名前だけで作れる。消しても**中の文は消えない**（「未分類」に戻るだけ）ので、
+     入れ物を片付けただけで聞く文が失われることはない。 -->
+<dialog id="listen-deck-dialog" class="dialog" aria-labelledby="listen-deck-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="listen-deck-dialog-title" class="dialog-title">プレイリスト</h2>
+    <p class="dialog-desc">
+      聞く文をまとめる入れ物です。<strong>消しても中の文は消えません</strong>
+      （「未分類」に戻るだけ）。
+    </p>
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">新しく作る</h3>
+      <div class="new-deck-row">
+        <label class="visually-hidden" for="listen-new-deck">新しいプレイリストの名前</label>
+        <input type="text" id="listen-new-deck" class="field-input" autocomplete="off"
+          placeholder="例：映画のセリフ">
+        <button type="button" id="btn-listen-new-deck" class="btn btn--primary">
+          ＋ 新しいプレイリスト
+        </button>
+      </div>
+    </div>
+
+    <h3 class="dialog-subtitle">いまあるプレイリスト</h3>
+    <!-- 1 行は「名前の欄・件数・変える・消す」。listen.js が作る -->
+    <ul class="deck-manage-list listen-deck-list" id="listen-deck-manage-list"></ul>
+
+    <p class="dialog-note" id="listen-deck-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-listen-deck-close" class="btn btn--primary">閉じる</button>
     </div>
   </form>
 </dialog>

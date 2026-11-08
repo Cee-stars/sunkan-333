@@ -3197,6 +3197,49 @@ legend.field-label {
    （#btn-listen-import と同じ扱い） */
 #btn-listen-ai .btn-label { display: inline; }
 
+/* --- プレイリスト ---
+   絞り込みの <select> は .deck-select（瞬間英作文のセット選びと同じ見た目）を
+   そのまま借りる。ここに書くのは、管理ダイアログの 1 行ぶんだけ。
+
+   **操作列は折り返す。** 390 幅では速さの札・✨・📄 と並べる場所が無いので、
+   .header-row--main の flex-wrap に任せて次の行へ落とす
+   （横に詰めると横スクロールが出る）。 */
+
+/* 名前の欄。.deck-manage-list > li の :first-child なので幅は伸びる。
+   高さだけ詰める（var(--tap) のままだと行が 52px になって一覧が長くなる）。 */
+.listen-deck-list .listen-deck-name {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 16px;            /* iOS のズーム防止。ここだけ縮めない */
+}
+
+.listen-deck-list .listen-deck-count {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 一覧のボタンは既定で「消す」色（--danger）。
+   「変える」は消す操作ではないので、そこだけ色を戻す。 */
+.deck-manage-list > li button.listen-deck-rename { color: var(--accent); }
+
+@media (hover: hover) and (pointer: fine) {
+  .deck-manage-list > li button.listen-deck-rename:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+}
+
+/* ごく狭い端末では件数を畳む（名前の欄を押しつぶさないため）。
+   件数は絞り込みの <select> にも出ているので、ここで消えても分かる。 */
+@media (max-width: 400px) {
+  .listen-deck-list .listen-deck-count { display: none; }
+  .listen-deck-list > li { padding-inline: 8px 4px; gap: 4px; }
+  .deck-manage-list > li button.listen-deck-rename { padding-inline: 6px; }
+}
+
 .listen-chunk.is-fresh .listen-chunk-ja {
   color: var(--accent);
   font-weight: 700;
