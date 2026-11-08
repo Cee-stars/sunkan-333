@@ -64,35 +64,34 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
   await page.waitForTimeout(600);
   ok('切のときは置き場に行かない', made === 0, '行った回数 ' + made);
 
-  // --- 入にする ---
+  // --- 入にする。**押される前に用意しはじめる**（押してから作ると待たされる）---
   await page.click('#btn-listen-ai');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(2500);
   ok('入にすると札が光る', (await page.$eval('#btn-listen-ai', e => e.getAttribute('aria-pressed'))) === 'true');
-
-  // --- 1 回目は作らせに行く ---
-  await page.click('#listen-rows .row:nth-child(1) .listen-speak');
-  await page.waitForTimeout(2000);
-  ok('1 回目は置き場で作る', made === 1, '行った回数 ' + made);
-  ok('できたことを知らせる', /できました/.test(await page.$eval('#listen-status', e => e.textContent)),
+  ok('押す前に用意しておく', made === 1, '行った回数 ' + made);
+  ok('用意したことを知らせる', /用意しました/.test(await page.$eval('#listen-status', e => e.textContent)),
     await page.$eval('#listen-status', e => e.textContent));
+  ok('音がある行は 🔈 に印が付く',
+    await page.$eval('#listen-rows .row:nth-child(1) .listen-speak', e => e.classList.contains('has-audio')));
 
   const saved = await page.evaluate(() => window.SUNKAN_AUDIO.usage());
   ok('作った音を端末にしまう', saved.count === 1 && saved.bytes > 256, JSON.stringify(saved));
 
-  // --- 2 回目は作らせない（しまってあるぶんで鳴らす）---
+  // --- 押しても、もう作らせない（しまってあるぶんで鳴らす＝待たされない）---
   await page.click('#listen-rows .row:nth-child(1) .listen-speak');
   await page.waitForTimeout(1200);
-  ok('2 回目は作らせない（しまってあるぶんで鳴らす）', made === 1, '行った回数 ' + made);
+  ok('押しても作らせない（しまってあるぶんで鳴らす）', made === 1, '行った回数 ' + made);
 
   // --- 読み直しても残る（無料枠を二度使わない）---
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#listen-rows .row', { timeout: 15000 });
   await page.waitForTimeout(500);
   ok('読み直しても入のまま', (await page.$eval('#btn-listen-ai', e => e.getAttribute('aria-pressed'))) === 'true');
+  await page.waitForTimeout(2000);   // 読み直しのあとの先読みが走る時間
   await page.click('#listen-rows .row:nth-child(1) .listen-speak');
   await page.waitForTimeout(1200);
-  ok('読み直しても作らせない', made === 1, '行った回数 ' + made);
-  ok('音がある行は 🔈 に印が付く',
+  ok('読み直しても作らせない（しまってあるぶんを使う）', made === 1, '行った回数 ' + made);
+  ok('読み直しても 🔈 の印が残る',
     await page.$eval('#listen-rows .row:nth-child(1) .listen-speak', e => e.classList.contains('has-audio')));
 
   // --- 文を直したら、古い音は鳴らさない（鍵が変わる）---
