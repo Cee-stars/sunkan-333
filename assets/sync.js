@@ -45,10 +45,12 @@
   var LS_SHADOW_DECKS = 'sunkan:shadow:decks';
   var LS_SHADOW_ITEMS = 'sunkan:shadow:items';
 
-  // リスニング（かたまりで聞き取る練習）。セットは持たず、1 件ずつひらたく並ぶ。
+  // リスニング（かたまりで聞き取る練習）。文は「プレイリスト」で分けられる
+  // （`deck` が `''` の文は「未分類」。プレイリストを持たない古いデータもこれになる）。
   // `sunkan:listen:ui` は端末ごとの好みなので**送らない**
   var LS_LISTEN_ITEMS = 'sunkan:listen:items';
   var LS_LISTEN_STARS = 'sunkan:listen:stars';
+  var LS_LISTEN_DECKS = 'sunkan:listen:decks';
 
   var LS_TOKEN = 'sunkan:sync:token';
   var LS_GIST = 'sunkan:sync:gistId';
@@ -264,7 +266,8 @@
       },
       listen: {
         items: isArray(readJSON(LS_LISTEN_ITEMS, [])) ? readJSON(LS_LISTEN_ITEMS, []) : [],
-        stars: isArray(readJSON(LS_LISTEN_STARS, [])) ? readJSON(LS_LISTEN_STARS, []) : []
+        stars: isArray(readJSON(LS_LISTEN_STARS, [])) ? readJSON(LS_LISTEN_STARS, []) : [],
+        decks: isArray(readJSON(LS_LISTEN_DECKS, [])) ? readJSON(LS_LISTEN_DECKS, []) : []
       },
       phrase: {
         items: isArray(readJSON(LS_PHRASE_ITEMS, [])) ? readJSON(LS_PHRASE_ITEMS, []) : [],
@@ -292,12 +295,17 @@
     };
   }
 
-  /** 古い版が書き出したぶんには listen が無い。読むときはここを通して形を揃える */
+  /**
+   * 古い版が書き出したぶんには listen が無い。読むときはここを通して形を揃える。
+   * **プレイリスト（`decks`）も無い版がある。** 無ければ空の並びにするだけで、
+   * 文の `deck` は触らない（「未分類」として `''` に揃えるのは読んだ側の仕事）。
+   */
   function listenPart(snap) {
     var c = (snap && isObject(snap.listen)) ? snap.listen : {};
     return {
       items: isArray(c.items) ? c.items : [],
-      stars: isArray(c.stars) ? c.stars : []
+      stars: isArray(c.stars) ? c.stars : [],
+      decks: isArray(c.decks) ? c.decks : []
     };
   }
 
@@ -423,6 +431,7 @@
     put(LS_PHRASE_LEVELS, mp.levels, {}, 'phrase', '場面の印');
     put(LS_PHRASE_SRS, mp.srs, {}, 'phrase', '場面の復習の予定');
     var ml = listenPart(merged);
+    put(LS_LISTEN_DECKS, ml.decks, [], 'listen', 'リスニングのプレイリスト');
     put(LS_LISTEN_ITEMS, ml.items, [], 'listen', 'リスニング');
     put(LS_LISTEN_STARS, ml.stars, [], 'listen', 'リスニングの「もう一度」');
     put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
@@ -444,6 +453,13 @@
    * 足したものは両方から拾う（どちらの端末の追加も消さない）。
    * 消したものだけ、記録を頼りに落とす。
    * ========================================================== */
+
+  /** 1 段だけ写す。元の物を書き換えずに 1 つの欄だけ直したいときに使う */
+  function shallowCopy(obj) {
+    var out = {}, k;
+    for (k in obj) { if (Object.prototype.hasOwnProperty.call(obj, k)) out[k] = obj[k]; }
+    return out;
+  }
 
   function mergeById(mine, theirs, tombs, prefix) {
     var out = [], seen = {}, i, item, id;
@@ -895,14 +911,30 @@
           srs: mergePhraseSrs(mp.srs, tp.srs, liveIds)
         };
       })(),
-      // リスニングは場面と同じ作り（セットを持たないので入れ物が 1 段ひらたい）
+      // リスニングは場面と同じ作り（文はセットを持たないので入れ物が 1 段ひらたい）。
+      // ちがうのはプレイリスト（`decks`）がぶら下がるところだけ。
+      // 文の `deck` は**中身の一部**なので、mergeById がそのまま運ぶ。
       listen: (function () {
         var ml = listenPart(mine), tl = listenPart(theirs);
+        var decks = mergeById(ml.decks, tl.decks, map, 'listendeck:');
         var items = mergeById(ml.items, tl.items, map, 'listenitem:');
-        var liveIds = {}, n;
-        for (n = 0; n < items.length; n++) liveIds[trim(items[n].id)] = true;
+        var liveDecks = {}, liveIds = {}, n;
+        for (n = 0; n < decks.length; n++) liveDecks[trim(decks[n].id)] = true;
+        // **指し先の無いプレイリストを指している文は「未分類」に戻す。**
+        // 片方で消したプレイリストの id が文に残ると、どの一覧にも出てこない文ができる
+        // （プレイリストで絞ると出ず、「未分類」にも入らない）。
+        for (n = 0; n < items.length; n++) {
+          var deckId = trim(items[n].deck);
+          if (deckId && !liveDecks[deckId]) {
+            // 元の物は書き換えない（相手から来たものをそのまま持っていることがある）
+            items[n] = shallowCopy(items[n]);
+            items[n].deck = '';
+          }
+          liveIds[trim(items[n].id)] = true;
+        }
         return {
           items: items,
+          decks: decks,
           // 外した「もう一度」は戻さない。消えた文の印も連れて戻さない
           stars: mergeStrings(ml.stars, tl.stars, function (id) {
             return !!liveIds[id] && !isDeleted(map, 'listenstar:' + id);
@@ -2019,7 +2051,7 @@
             LS_PHRASE_LEVELS, LS_PHRASE_SRS, LS_PARA_GENRES, LS_PARA_CARDS, LS_PARA_STARS,
             LS_CARD_DECKS, LS_CARD_ITEMS, LS_CARD_SRS, LS_CARD_STARS,
             LS_SHADOW_DECKS, LS_SHADOW_ITEMS,
-            LS_LISTEN_ITEMS, LS_LISTEN_STARS,
+            LS_LISTEN_ITEMS, LS_LISTEN_STARS, LS_LISTEN_DECKS,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }

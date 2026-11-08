@@ -1280,6 +1280,60 @@
     return (api && typeof api.addItems === 'function') ? api : null;
   }
 
+  /* --- 入れ先（プレイリスト） ---
+   *
+   * プレイリストは**ファイルの中身ではなく「入れ先」で決める**（見出し語は増やさない。
+   * 増やすと、前に書き出したファイルが読めなくなる）。
+   * `deck` が `''` の文は「未分類」。だから「＋ 新しいプレイリストを作る」は
+   * `''` とは別の値（`LISTEN_NEW`）で持つ。 */
+  var LISTEN_NEW = '__new__';
+  var LS_LISTEN_DECKS = 'sunkan:listen:decks';
+  var LS_LISTEN_ITEMS = 'sunkan:listen:items';
+
+  function isArrLike(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
+
+  function readStored(key) {
+    try { return JSON.parse(window.localStorage.getItem(key) || 'null'); } catch (e) { return null; }
+  }
+
+  /**
+   * プレイリストの一覧 `[{id, name, count}]`。
+   * listen.js が一覧を配っていれば借りる。無い版でも選べるよう、
+   * 配っていなければ保存先をそのまま**読む**（書くのは下の 1 か所だけ）。
+   */
+  function listenDeckList() {
+    var api = window.SUNKAN_LISTEN;
+    if (api && typeof api.decks === 'function') {
+      var got = api.decks();
+      if (isArrLike(got)) return got;
+    }
+    var decks = readStored(LS_LISTEN_DECKS);
+    if (!isArrLike(decks)) return [];
+    var items = readStored(LS_LISTEN_ITEMS);
+    var count = {}, i, d;
+    if (isArrLike(items)) {
+      for (i = 0; i < items.length; i++) {
+        d = trim(items[i] && items[i].deck);
+        if (d) count[d] = (count[d] || 0) + 1;
+      }
+    }
+    var out = [];
+    for (i = 0; i < decks.length; i++) {
+      var id = trim(decks[i] && decks[i].id);
+      if (!id) continue;
+      out.push({ id: id, name: trim(decks[i].name) || 'プレイリスト', count: count[id] || 0 });
+    }
+    return out;
+  }
+
+  /** いま開いているプレイリスト（`''` は未分類／すべて） */
+  function currentListenDeck() {
+    var api = window.SUNKAN_LISTEN;
+    if (api && typeof api.currentDeck === 'function') return trim(api.currentDeck());
+    if (api && typeof api.currentDeckId === 'function') return trim(api.currentDeckId());
+    return '';
+  }
+
   var elLsDialog = $('listen-import-dialog');
   var elLsOpen = $('btn-listen-import');
   var elLsText = $('listen-import-text');
@@ -1292,7 +1346,110 @@
   var elLsTemplate = $('btn-listen-template');
   var elLsPrompt = $('btn-listen-prompt');
   var elLsPromptStatus = $('listen-prompt-status');
+  var elLsTarget = $('listen-import-target');
+  var elLsNameField = $('listen-import-name-field');
+  var elLsName = $('listen-import-name');
   var lsPreviewTimer = null;
+
+  /**
+   * 「入れ先」の選択肢を作る。
+   * **初期値はいま開いているプレイリスト**（毎回 新しく作らせると増えていって続かない）。
+   * 「＋ 新しいプレイリストを作る」は初期値にしない。
+   */
+  function renderListenTarget() {
+    if (!elLsTarget) return;
+    var keep = elLsTarget.value;
+    var decks = listenDeckList(), i;
+
+    while (elLsTarget.firstChild) elLsTarget.removeChild(elLsTarget.firstChild);
+
+    var fresh = document.createElement('option');
+    fresh.value = LISTEN_NEW;
+    fresh.textContent = '＋ 新しいプレイリストを作る';
+    elLsTarget.appendChild(fresh);
+
+    var none = document.createElement('option');
+    none.value = '';
+    none.textContent = '未分類';
+    elLsTarget.appendChild(none);
+
+    var known = {};
+    for (i = 0; i < decks.length; i++) {
+      var id = trim(decks[i] && decks[i].id);
+      if (!id) continue;
+      known[id] = true;
+      var opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = trim(decks[i].name) + '（' + (decks[i].count || 0) + '）';
+      elLsTarget.appendChild(opt);
+    }
+
+    var want = (keep === LISTEN_NEW || known[keep]) ? keep : currentListenDeck();
+    elLsTarget.value = known[want] || want === LISTEN_NEW ? want : '';
+    syncListenNameField();
+  }
+
+  /** 新しいプレイリストを選んだときだけ、名前の欄を出す */
+  function syncListenNameField() {
+    if (!elLsNameField) return;
+    elLsNameField.hidden = !(elLsTarget && elLsTarget.value === LISTEN_NEW);
+  }
+
+  /** いま選ばれている入れ先の名前（下読みに「どこに入るか」を出すため） */
+  function listenTargetName() {
+    if (!elLsTarget) return '';
+    if (elLsTarget.value === LISTEN_NEW) return trim(elLsName && elLsName.value);
+    if (!elLsTarget.value) return '';
+    var opt = elLsTarget.options[elLsTarget.selectedIndex];
+    return opt ? opt.textContent.replace(/（\d+）$/, '') : '';
+  }
+
+  /** 新しいプレイリストを作るときの id。listen.js が作れるならそちらに任せる */
+  function makeListenDeckId() {
+    return 'listendeck-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  /**
+   * 選ばれている入れ先の `deck`（`''` は未分類）を返す。作れなかったときは `null`。
+   * 新しいプレイリストは listen.js に作らせるのが本筋。
+   * **口が無い版でも読み込めるよう**、最後の手段として保存先に 1 件足す
+   * （形は `{id, name, created}`。listen.js が `addDeck` を配ったらこの枝は消してよい）。
+   */
+  function resolveListenDeck() {
+    if (!elLsTarget) return '';
+    var v = trim(elLsTarget.value);
+    if (v !== LISTEN_NEW) return v;
+
+    var name = trim(elLsName && elLsName.value);
+    if (!name) return null;
+
+    // 同じ名前のプレイリストがあればそこへ。二重に作らない
+    var list = listenDeckList(), i;
+    for (i = 0; i < list.length; i++) {
+      if (trim(list[i].name) === name) return trim(list[i].id);
+    }
+
+    var api = window.SUNKAN_LISTEN;
+    var made = null;
+    if (api && typeof api.addDeck === 'function') made = api.addDeck(name);
+    else if (api && typeof api.createDeck === 'function') made = api.createDeck(name);
+    else if (api && typeof api.ensureDeck === 'function') made = api.ensureDeck(name);
+    if (made) {
+      var id = trim(typeof made === 'string' ? made : made.id);
+      if (id) return id;
+    }
+
+    var decks = readStored(LS_LISTEN_DECKS);
+    if (!isArrLike(decks)) decks = [];
+    var fresh = { id: makeListenDeckId(), name: name, created: Date.now() };
+    decks.push(fresh);
+    try {
+      window.localStorage.setItem(LS_LISTEN_DECKS, JSON.stringify(decks));
+    } catch (e) {
+      return null;   // 保存領域がいっぱい。黙って未分類に入れない
+    }
+    return fresh.id;
+  }
 
   function openListenDialog() {
     if (!elLsDialog) return;

@@ -1825,6 +1825,19 @@ export default {
       区切りはそのまま保存されます。
     </p>
 
+    <!-- 入れ先（どのプレイリストに入れるか）。初期値はいま開いているプレイリスト。
+         プレイリストはファイルの中身ではなく、ここで決める -->
+    <label class="field">
+      <span class="field-label">入れ先</span>
+      <select id="listen-import-target" class="deck-select"></select>
+    </label>
+
+    <label class="field" id="listen-import-name-field">
+      <span class="field-label">新しいプレイリストの名前</span>
+      <input type="text" id="listen-import-name" class="field-input"
+        placeholder="例：旅行で使う聞き取り" autocomplete="off">
+    </label>
+
     <h3 class="dialog-subtitle">1. ファイルを選ぶ</h3>
     <div class="dialog-actions dialog-actions--wrap">
       <button type="button" id="btn-listen-file" class="btn btn--primary">ファイルを選ぶ</button>
