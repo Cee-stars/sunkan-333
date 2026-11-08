@@ -35,6 +35,11 @@ const CODE_OK = /^[a-z0-9-]{16,64}$/;
 /** 1 回に読ませる長さの上限。無料枠は文字数で減るので、長文は受けない */
 const TTS_MAX_CHARS = 400;
 
+/** 前に通った型番。**次からはこれを最初に試す。**
+ *  通らない型番を毎回ひとつずつ試すと、そのぶん待たされる（押してから鳴るまでが遅い）。
+ *  Worker が入れ替わると忘れるが、そのときはまた探し直すだけで害は無い。 */
+let lastGoodTts = null;
+
 /**
  * Workers AI の返事から音の中身を取り出す。
  * 型番によって Response だったり、base64 を持った object だったりする。
@@ -188,8 +193,13 @@ export default {
         ['@cf/deepgram/aura-1', { text }],
         ['@cf/myshell-ai/melotts', { prompt: text, lang: 'en' }]
       ];
+      // 前に通ったものを先頭へ回す
+      const order = lastGoodTts
+        ? TRY.slice().sort((a, b) => (b[0] === lastGoodTts ? 1 : 0) - (a[0] === lastGoodTts ? 1 : 0))
+        : TRY;
+
       let why = '';
-      for (const [model, input] of TRY) {
+      for (const [model, input] of order) {
         let out = null;
         try {
           out = await toAudio(await env.AI.run(model, input, { returnRawResponse: true }));
@@ -198,6 +208,7 @@ export default {
           continue;
         }
         if (!out) { why = model + ' … 音が返りませんでした'; continue; }
+        lastGoodTts = model;
         return new Response(out.bytes, {
           status: 200,
           headers: Object.assign({

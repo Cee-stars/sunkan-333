@@ -241,6 +241,7 @@
     rate: DEFAULT_RATE, // 読み上げの速さ
     ai: false,          // AI の音声を使うか（置き場が要る）
     holdUntil: 0,       // この時刻まで、知らせを上書きさせない
+    prefetching: false, // いま先読みしている最中か（二重に走らせない）
     making: {},         // いま作らせている鍵。同じ文を二重に作らせない
 
     rows: [],           // 画面に出ている行 [{id, item, el, shown, ...}]
@@ -779,6 +780,67 @@
     });
   }
 
+  var PREFETCH_MAX = 20;    // 1 回に用意する上限。無料枠を知らないうちに使い切らない
+  var PREFETCH_GAP = 400;   // 1 つ作るごとに置く間（置き場を叩き続けない）
+
+  /**
+   * **押される前に作っておく。**
+   * 押してから作ると 2〜3 秒かかり、そのあいだ無音で「反応が遅い」ように見える。
+   * 画面を開いたときに、**見えている行のぶんだけ**静かに用意しておく。
+   * 無料枠を無駄にしないよう、上限つき・1 つずつ・1 回でも失敗したらそこで止める。
+   */
+  function prefetchAudio() {
+    if (!aiOn() || !ttsPort()) return;
+    if (window.navigator.onLine === false) return;
+    if (state.prefetching) return;
+    if (docEl.getAttribute('data-mode') !== 'listen') return;
+
+    var queue = [], i, row;
+    for (i = 0; i < state.rows.length && queue.length < PREFETCH_MAX; i++) {
+      row = state.rows[i];
+      if (!row.el || row.el.hidden) continue;            // 絞り込みで消えている行はしない
+      if (!trim(speechText(row.en))) continue;
+      queue.push(row);
+    }
+    if (!queue.length) return;
+    state.prefetching = true;
+    runPrefetch(queue, 0, 0);
+  }
+
+  function runPrefetch(queue, i, made) {
+    var store = audioStore();
+    var done = function () {
+      state.prefetching = false;
+      if (made) flashStatus('音を ' + made + ' 文ぶん用意しました。押すとすぐ鳴ります。');
+    };
+    if (!store || i >= queue.length) { done(); return; }
+
+    var row = queue[i];
+    var text = speechText(row.en);
+    var key = store.keyFor(text, 'ai');
+
+    store.get(key).then(function (rec) {
+      if (rec) {                                   // もうある
+        markAudio(row, true);
+        runPrefetch(queue, i + 1, made);
+        return;
+      }
+      var port = ttsPort();
+      if (!port) { done(); return; }
+      port.tts(text).then(function (res) {
+        if (!res || !res.ok || !res.blob) {
+          // 枠切れや設定違いのことがある。叩き続けず、ここで止める
+          state.prefetching = false;
+          return;
+        }
+        store.put(key, res.blob).then(function () {
+          markAudio(row, true);
+          window.setTimeout(function () { runPrefetch(queue, i + 1, made + 1); }, PREFETCH_GAP);
+        }, function () { state.prefetching = false; });
+      }, function () { state.prefetching = false; });
+    }, function () { state.prefetching = false; });
+  }
+
   /** その行に AI の音があるか、🔈 の見た目に出す（催促ではなく、ただの目印） */
   function markAudio(row, on) {
     if (!row || !row.speakEl) return;
@@ -826,7 +888,8 @@
       flashStatus('AI の音声には置き場が要ります。設定 → 同期 で URL と合言葉を入れ、置き場に AI をつないでください。');
       return;
     }
-    flashStatus('AI の音声にしました。🔈 を押すと、その文の音を 1 回だけ作ってしまいます。');
+    flashStatus('AI の音声にしました。見えている文のぶんを、いま用意します。');
+    window.setTimeout(prefetchAudio, 300);
   }
 
   function stopSpeech() {
@@ -1365,6 +1428,8 @@
     renderAiChip();
     render();
     refreshAudioMarks();
+    // 画面が出てから。先に描き切らないと、開いた瞬間がもたつく
+    window.setTimeout(prefetchAudio, 600);
   }
 
   /** ほかの画面へ移るとき。鳴らしっぱなしにしない */

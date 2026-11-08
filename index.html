@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 65 (2026-11-07)">
+<meta name="sunkan-build" content="build 66 (2026-11-08)">
 <meta name="description" content="瞬間英作文・場面・パラフレ帳・カード・リスニングの 5 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=65">
+<link rel="stylesheet" href="assets/style.css?v=66">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -1325,6 +1325,11 @@ const CODE_OK = /^[a-z0-9-]{16,64}$/;
 /** 1 回に読ませる長さの上限。無料枠は文字数で減るので、長文は受けない */
 const TTS_MAX_CHARS = 400;
 
+/** 前に通った型番。**次からはこれを最初に試す。**
+ *  通らない型番を毎回ひとつずつ試すと、そのぶん待たされる（押してから鳴るまでが遅い）。
+ *  Worker が入れ替わると忘れるが、そのときはまた探し直すだけで害は無い。 */
+let lastGoodTts = null;
+
 /**
  * Workers AI の返事から音の中身を取り出す。
  * 型番によって Response だったり、base64 を持った object だったりする。
@@ -1478,8 +1483,13 @@ export default {
         ['@cf/deepgram/aura-1', { text }],
         ['@cf/myshell-ai/melotts', { prompt: text, lang: 'en' }]
       ];
+      // 前に通ったものを先頭へ回す
+      const order = lastGoodTts
+        ? TRY.slice().sort((a, b) => (b[0] === lastGoodTts ? 1 : 0) - (a[0] === lastGoodTts ? 1 : 0))
+        : TRY;
+
       let why = '';
-      for (const [model, input] of TRY) {
+      for (const [model, input] of order) {
         let out = null;
         try {
           out = await toAudio(await env.AI.run(model, input, { returnRawResponse: true }));
@@ -1488,6 +1498,7 @@ export default {
           continue;
         }
         if (!out) { why = model + ' … 音が返りませんでした'; continue; }
+        lastGoodTts = model;
         return new Response(out.bytes, {
           status: 200,
           headers: Object.assign({
@@ -1992,22 +2003,22 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=65"></script>
-<script src="assets/data.js?v=65"></script>
-<script src="assets/app.js?v=65"></script>
-<script src="assets/paraphrase.js?v=65"></script>
+<script src="assets/speech.js?v=66"></script>
+<script src="assets/data.js?v=66"></script>
+<script src="assets/app.js?v=66"></script>
+<script src="assets/paraphrase.js?v=66"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=65"></script>
-<script src="assets/listen.js?v=65"></script>
+<script src="assets/phrase.js?v=66"></script>
+<script src="assets/listen.js?v=66"></script>
 
-<script src="assets/media.js?v=65"></script>
-<script src="assets/audio.js?v=65"></script>
-<script src="assets/srs.js?v=65"></script>
-<script src="assets/cards.js?v=65"></script>
-<script src="assets/import.js?v=65"></script>
-<script src="assets/inbox.js?v=65"></script>
-<script src="assets/sync.js?v=65"></script>
-<script src="assets/update.js?v=65"></script>
+<script src="assets/media.js?v=66"></script>
+<script src="assets/audio.js?v=66"></script>
+<script src="assets/srs.js?v=66"></script>
+<script src="assets/cards.js?v=66"></script>
+<script src="assets/import.js?v=66"></script>
+<script src="assets/inbox.js?v=66"></script>
+<script src="assets/sync.js?v=66"></script>
+<script src="assets/update.js?v=66"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
