@@ -29,6 +29,7 @@
 | `tests/fake-worker.mjs` | 共通 | 確かめ用の置き場。**`cloudflare/worker.mjs` をそのまま**動かす（D1 の代わりにその場かぎりの SQLite）。`node tests/fake-worker.mjs 8600` |
 | `tests/scenetest.mjs` | 共通 | 場面の確かめ（セリフ・言い方3本・印の言葉・写真・はみ出し）。`node tests/scenetest.mjs` |
 | `assets/audio.js` | – | 作った音をしまう所（IndexedDB `duo-audio`）。**写真の media.js とは別の入れ物**。バックアップには載せない（作り直せるため） |
+| `tests/listensynctest.mjs` | 共通 | リスニングが 2 台で揃うか（文・プレイリスト・足す・消す）。`node tests/fake-worker.mjs 8600 &` が要る。**置き場の部屋は走らせるたびに別にする**（使い回すと前の回の文が残って件数が合わない） |
 | `tests/ttstest.mjs` | 共通 | AI の音声の確かめ（1 回だけ作る・しまったぶんで鳴る・置き場が無ければ端末の声）。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/listentest.mjs` | 共通 | リスニングの確かめ（タブ名・🔈 の位置・ぼかし・かたまりを 1 つずつ・はみ出し）。**390px と 1180px の両方**で走る。`node tests/listentest.mjs` |
 | `tests/playlisttest.mjs` | 共通 | リスニングのプレイリストの確かめ（作る・空と同じ名前は作らない・入れ先・絞り込みと件数・名前を変える・消しても中の文は残る・古い形の文・長い名前のはみ出し）。**390px と 1180px の両方**で走る。`node tests/playlisttest.mjs` |
