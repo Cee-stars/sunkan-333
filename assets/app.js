@@ -51,7 +51,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 67 (2026-11-08)';
+  var APP_VERSION = 'build 68 (2026-11-14)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -64,6 +64,7 @@
     direction: 'ja-en',
     starredOnly: false,
     autoSpeak: false,
+    aiVoice: false,     // AI の音声を使うか（置き場が要る。リスニングと共通）
     levelFilter: 'all',
     deckId: ''
   };
@@ -231,6 +232,7 @@
       direction: DEFAULT_SETTINGS.direction,
       starredOnly: DEFAULT_SETTINGS.starredOnly,
       autoSpeak: DEFAULT_SETTINGS.autoSpeak,
+      aiVoice: DEFAULT_SETTINGS.aiVoice,
       levelFilter: DEFAULT_SETTINGS.levelFilter,
       deckId: DEFAULT_SETTINGS.deckId
     };
@@ -241,6 +243,7 @@
     if (isBool(raw.autoHide)) s.autoHide = raw.autoHide;
     if (isBool(raw.starredOnly)) s.starredOnly = raw.starredOnly;
     if (isBool(raw.autoSpeak)) s.autoSpeak = raw.autoSpeak;
+    if (isBool(raw.aiVoice)) s.aiVoice = raw.aiVoice;
     s.levelFilter = inList(str(raw.levelFilter), LEVEL_FILTERS, s.levelFilter);
     if (typeof raw.deckId === 'string') s.deckId = raw.deckId;
     return s;
@@ -601,6 +604,8 @@
     visibleCount: 0,
     speechOK: false,
     speakingId: null,   // いま読み上げている行の id（行を閉じたら止めるため）
+    makingAudio: {},    // いま置き場に作らせている鍵。同じ文を二重に頼まない
+    prefetchingAudio: false,   // 先読みの最中か
     flashTimer: null,   // status に出した知らせを消すタイマー
     lastFocus: null
   };
@@ -694,6 +699,7 @@
   var elOptHideJa = $('opt-hide-ja');
   var elOptStarredOnly = $('opt-starred-only');
   var elOptAutoSpeak = $('opt-auto-speak');
+  var elOptAiVoice = $('opt-ai-voice');
   var elOptAutoSpeakNote = $('opt-auto-speak-note');
   var elAppVersion = $('app-version');
   var elForceUpdate = $('btn-force-update');
@@ -1271,7 +1277,9 @@
     }
 
     // 読み上げ API が無い環境ではボタンごと隠す
-    if (speakEl && !state.speechOK) speakEl.hidden = true;
+    // 読み上げが使えない端末では 🔈 を出さない。**ただし AI の音声を使うなら出す**
+    // （端末に声が入っていなくても、しまってある音なら鳴らせる）
+    if (speakEl && !state.speechOK && !aiOn()) speakEl.hidden = true;
 
     // 自分で足した文だけ、その場で消せるようにする。
     // 収録データや取り込んだ表は、行単位では消せない（セットごと削除する）。
@@ -1564,6 +1572,15 @@
     elLevelFilter.value = keep;
   }
 
+  /**
+   * 絞り込みが落ち着いてから、AI の音の印を付け直して、見えているぶんを用意する。
+   * **打つたびに走らせない**（検索の 1 文字ごとに置き場へ行かせない）。
+   */
+  var audioUpkeep = debounce(function () {
+    refreshAudioMarks();
+    prefetchAudio();
+  }, 600);
+
   function applyFilter() {
     var q = state.query;
     var starredOnly = state.settings.starredOnly;
@@ -1617,6 +1634,9 @@
 
     // 表示される行が変わるとボタンの意味も変わる（隠れた行は数えない）
     syncToggleAllButton();
+
+    // AI の音の印と先読みは、絞り込みが落ち着いてから
+    audioUpkeep();
     updateStatusBar();
   }
 
@@ -1728,15 +1748,194 @@
     return port.speak(text);
   }
 
-  function speakRecord(rec) {
+  /* --- AI の音声 -------------------------------------------------
+   * リスニングと**同じ仕組み**（置き場に作らせて端末にしまう。同じ文は 2 度
+   * 作らせない）。入／切も同じ 1 つの設定を見るので、どちらのモードで入れても
+   * 両方に効く。置き場が無い・つながらない・枠切れのときは端末の声に戻る。
+   */
+
+  function audioStore() {
+    var a = window.SUNKAN_AUDIO;
+    return (a && typeof a.supported === 'function' && a.supported()) ? a : null;
+  }
+
+  /** 置き場に音を作らせる口。合言葉は sync.js の中にあるので、こちらは持たない */
+  function ttsPort() {
+    var p = window.SUNKAN_SYNC;
+    if (!p || typeof p.tts !== 'function' || typeof p.cfReady !== 'function') return null;
+    return p.cfReady() ? p : null;
+  }
+
+  function aiOn() { return !!(state.settings.aiVoice && audioStore()); }
+
+  /** 鳴らすための <audio> は 1 つだけ使い回す（iOS は一度タップの中で
+      play() した要素でないと、あとから src を替えて鳴らせない） */
+  var audioEl = null;
+  var audioAwake = false;
+  var SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+
+  function wakeAudio() {
+    if (!window.Audio) return null;
+    if (!audioEl) { audioEl = new window.Audio(); audioEl.preload = 'auto'; }
+    if (!audioAwake) {
+      audioAwake = true;
+      try {
+        audioEl.src = SILENT;
+        var pr = audioEl.play();
+        if (pr && typeof pr.catch === 'function') pr.catch(function () { });
+      } catch (e) { /* 使えない端末ではこのあと端末の声に戻る */ }
+    }
+    return audioEl;
+  }
+
+  function playUrl(url, id) {
+    var el = wakeAudio();
+    if (!el || !url) return false;
+    try {
+      stopSpeech();
+      el.src = url;
+      el.currentTime = 0;
+      var pr = el.play();
+      if (pr && typeof pr.catch === 'function') pr.catch(function () { state.speakingId = null; });
+      state.speakingId = id || null;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /** その文の音を作らせて、しまって、鳴らす */
+  function makeAudio(rec, key) {
+    var port = ttsPort();
+    if (!port) {
+      speakRecordPlain(rec);
+      flashStatus('AI の音声には置き場が要ります。⚙ → 同期の設定 で入れてください。いまは端末の声で鳴らします。');
+      return;
+    }
+    if (state.makingAudio[key]) return;
+    state.makingAudio[key] = true;
+    flashStatus('AI の音声を作っています…（できたら鳴ります。次からはすぐです）');
+
+    port.tts(rec.en).then(function (res) {
+      delete state.makingAudio[key];
+      var store = audioStore();
+      if (!res || !res.ok || !res.blob || !store) {
+        speakRecordPlain(rec);
+        flashStatus('AI の音声: ' + ((res && res.message) || 'うまくいきませんでした') + '。端末の声で鳴らします。');
+        return;
+      }
+      store.put(key, res.blob).then(function () {
+        markAudio(rec, true);
+        return store.url(key);
+      }).then(function (url) {
+        if (!url || !playUrl(url, rec.id)) speakRecordPlain(rec);
+        flashStatus('AI の音声ができました。次からはすぐ鳴ります。');
+      }, function () { speakRecordPlain(rec); });
+    }, function (e) {
+      delete state.makingAudio[key];
+      speakRecordPlain(rec);
+      flashStatus('AI の音声: ' + ((e && e.message) || '作れませんでした') + '。端末の声で鳴らします。');
+    });
+  }
+
+  /** その文に AI の音があるか、🔈 の見た目に出す（催促ではなく、ただの目印） */
+  function markAudio(rec, on) {
+    if (!rec || !rec.el) return;
+    var btn = rec.el.querySelector('.row-speak');
+    if (!btn) return;
+    if (on) btn.classList.add('has-audio');
+    else btn.classList.remove('has-audio');
+  }
+
+  var PREFETCH_MAX = 20;
+  var PREFETCH_GAP = 400;
+
+  /**
+   * **押される前に作っておく。** 押してから作ると 2〜3 秒かかり、
+   * そのあいだ無音になる。いま見えている行のぶんだけ、静かに用意する。
+   * 無料枠を知らないうちに使い切らないよう、上限つき・1 つずつ・
+   * 1 回でも失敗したらそこで止める。
+   */
+  function prefetchAudio() {
+    if (!aiOn() || !ttsPort()) return;
+    if (window.navigator.onLine === false) return;
+    if (state.prefetchingAudio) return;
+    if (docEl.getAttribute('data-mode') !== 'drill') return;
+    var list = visibleRecords().slice(0, PREFETCH_MAX);
+    if (!list.length) return;
+    state.prefetchingAudio = true;
+    runPrefetch(list, 0, 0);
+  }
+
+  function runPrefetch(list, i, made) {
+    var store = audioStore();
+    var done = function () {
+      state.prefetchingAudio = false;
+      if (made) flashStatus('音を ' + made + ' 文ぶん用意しました。押すとすぐ鳴ります。');
+    };
+    if (!store || i >= list.length) { done(); return; }
+    var rec = list[i];
+    if (!rec || !rec.en) { runPrefetch(list, i + 1, made); return; }
+    var key = store.keyFor(rec.en, 'ai');
+    store.get(key).then(function (has) {
+      if (has) { markAudio(rec, true); runPrefetch(list, i + 1, made); return; }
+      var port = ttsPort();
+      if (!port) { done(); return; }
+      port.tts(rec.en).then(function (res) {
+        if (!res || !res.ok || !res.blob) { state.prefetchingAudio = false; return; }
+        store.put(key, res.blob).then(function () {
+          markAudio(rec, true);
+          window.setTimeout(function () { runPrefetch(list, i + 1, made + 1); }, PREFETCH_GAP);
+        }, function () { state.prefetchingAudio = false; });
+      }, function () { state.prefetchingAudio = false; });
+    }, function () { state.prefetchingAudio = false; });
+  }
+
+  /** 見えている行に、しまってある音の印を付け直す */
+  function refreshAudioMarks() {
+    var store = audioStore();
+    var list = visibleRecords();
+    // 読み上げの無い端末では 🔈 を隠してあるので、AI を入にしたら出し直す
+    for (var j = 0; j < list.length; j++) {
+      if (!list[j].el) continue;
+      var btn = list[j].el.querySelector('.row-speak');
+      if (btn) btn.hidden = !state.speechOK && !aiOn();
+    }
+    for (var i = 0; i < list.length; i++) {
+      (function (rec) {
+        if (!rec.en) return;
+        if (!store || !aiOn()) { markAudio(rec, false); return; }
+        store.get(store.keyFor(rec.en, 'ai')).then(function (has) { markAudio(rec, !!has); });
+      })(list[i]);
+    }
+  }
+
+  /** 端末の声で読み上げる（AI の音が無い・使わないとき） */
+  function speakRecordPlain(rec) {
     if (!rec || !rec.en) return;
     state.speakingId = speak(rec.en) ? rec.id : null;
+  }
+
+  /**
+   * その文を鳴らす。AI の音声が入っていれば、しまってある音を先に探す。
+   * **タップから同期で呼ぶこと**（wakeAudio もここで呼んでいる）。
+   */
+  function speakRecord(rec) {
+    if (!rec || !rec.en) return;
+    if (!aiOn()) { speakRecordPlain(rec); return; }
+    wakeAudio();
+    var store = audioStore();
+    var key = store.keyFor(rec.en, 'ai');
+    store.url(key).then(function (url) {
+      if (url) { playUrl(url, rec.id); return; }
+      makeAudio(rec, key);
+    }, function () { speakRecordPlain(rec); });
   }
 
   function stopSpeech() {
     var port = speechPort();
     state.speakingId = null;
     if (port) port.cancel();
+    // AI の音も止める。端末の声だけ止めても、こちらが鳴り続ける
+    if (audioEl) { try { audioEl.pause(); } catch (e) { /* もう止まっている */ } }
   }
 
   /* ============================================================
@@ -3208,6 +3407,7 @@
       elOptAutoSpeak.disabled = !state.speechOK;
     }
     if (elOptAutoSpeakNote) elOptAutoSpeakNote.hidden = state.speechOK;
+    if (elOptAiVoice) elOptAiVoice.checked = !!state.settings.aiVoice;
 
     if (elOptFontSize) elOptFontSize.value = String(state.settings.fontSize);
     if (elOptFontOut) elOptFontOut.textContent = FONT_LABELS[state.settings.fontSize] || '標準';
@@ -3250,6 +3450,27 @@
   function onAutoSpeakChange() {
     state.settings.autoSpeak = !!elOptAutoSpeak.checked;
     saveSettings();
+  }
+
+  /** AI の音声の入／切。リスニングと同じ設定なので、あちらにも効く */
+  function onAiVoiceChange() {
+    state.settings.aiVoice = !!elOptAiVoice.checked;
+    saveSettings();
+    refreshAudioMarks();
+    if (!state.settings.aiVoice) { flashStatus('端末の声に戻しました。'); return; }
+    if (!audioStore()) {
+      flashStatus('この端末では音をしまえないので、AI の音声は使えません。');
+      state.settings.aiVoice = false;
+      saveSettings();
+      if (elOptAiVoice) elOptAiVoice.checked = false;
+      return;
+    }
+    if (!ttsPort()) {
+      flashStatus('AI の音声には置き場が要ります。⚙ → 同期の設定 で URL と合言葉を入れ、置き場に AI をつないでください。');
+      return;
+    }
+    flashStatus('AI の音声にしました。見えている文のぶんを、いま用意します。');
+    window.setTimeout(prefetchAudio, 300);
   }
 
   /* ============================================================
@@ -3439,6 +3660,11 @@
     if (elOptHideJa) elOptHideJa.addEventListener('change', onHideJaChange);
     if (elOptStarredOnly) elOptStarredOnly.addEventListener('change', onStarredOnlyChange);
     if (elOptAutoSpeak) elOptAutoSpeak.addEventListener('change', onAutoSpeakChange);
+    if (elOptAiVoice) {
+      // **押した指の中で**音を目覚めさせる（iOS 対策）
+      elOptAiVoice.addEventListener('click', function () { wakeAudio(); });
+      elOptAiVoice.addEventListener('change', onAiVoiceChange);
+    }
 
     // --- メニュー ---
     if (elMenuOpen) {
@@ -3650,6 +3876,17 @@
   }
 
   window.SUNKAN_DRILL = {
+    /** AI の音声を使うか。**瞬間英作文とリスニングで同じ 1 つの設定**を見る
+        （モードごとに別だと、片方で入れたのにもう片方が切のままになる） */
+    aiVoice: function () { return !!state.settings.aiVoice; },
+    /** 入／切を変える。変えた側の画面は自分で描き直すこと */
+    setAiVoice: function (on) {
+      state.settings.aiVoice = !!on;
+      saveSettings();
+      if (elOptAiVoice) elOptAiVoice.checked = !!on;
+      refreshAudioMarks();
+      if (on) window.setTimeout(prefetchAudio, 300);
+    },
     addSentences: addSentencesToNamedDeck,
     splitTable: splitTable,
 

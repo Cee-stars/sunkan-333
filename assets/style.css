@@ -3182,6 +3182,20 @@ legend.field-label {
 
 /* その文の音が端末にしまってある印。**🔈 は絵文字なので color では染まらない。**
    小さな点を 1 つ添えるだけにする（催促に見せたくないので、無い行には何も足さない）。 */
+/* 瞬間英作文の 🔈 にも同じ印を付ける（しまってある音がある行） */
+.row-speak.has-audio::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.row-speak { position: relative; }
+
 .listen-speak.has-audio::after {
   content: "";
   position: absolute;

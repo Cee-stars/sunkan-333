@@ -30,6 +30,7 @@
 | `tests/scenetest.mjs` | 共通 | 場面の確かめ（セリフ・言い方3本・印の言葉・写真・はみ出し）。`node tests/scenetest.mjs` |
 | `assets/audio.js` | – | 作った音をしまう所（IndexedDB `duo-audio`）。**写真の media.js とは別の入れ物**。バックアップには載せない（作り直せるため） |
 | `tests/listensynctest.mjs` | 共通 | リスニングが 2 台で揃うか（文・プレイリスト・足す・消す）。`node tests/fake-worker.mjs 8600 &` が要る。**置き場の部屋は走らせるたびに別にする**（使い回すと前の回の文が残って件数が合わない） |
+| `tests/drillttstest.mjs` | 共通 | 瞬間英作文でも AI の音声が使えるか（押す前に用意する・押したら作らせない・入／切がリスニングと共通）。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/ttstest.mjs` | 共通 | AI の音声の確かめ（1 回だけ作る・しまったぶんで鳴る・置き場が無ければ端末の声）。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/listentest.mjs` | 共通 | リスニングの確かめ（タブ名・🔈 の位置・ぼかし・かたまりを 1 つずつ・はみ出し）。**390px と 1180px の両方**で走る。`node tests/listentest.mjs` |
 | `tests/playlisttest.mjs` | 共通 | リスニングのプレイリストの確かめ（作る・空と同じ名前は作らない・入れ先・絞り込みと件数・名前を変える・消しても中の文は残る・古い形の文・長い名前のはみ出し）。**390px と 1180px の両方**で走る。`node tests/playlisttest.mjs` |
@@ -997,6 +998,21 @@ iPhone のキーが「次へ」「完了」に見えるのに何も起きない�
 
 `prefetchAudio()` は `row.el.hidden` を見ているので、**絞り込みで消えている行は先読みしない**。
 プレイリストで絞っているときに、見えていない文まで無料枠を使わないため。
+
+### AI の音声の入／切は、モードで分けない
+
+**瞬間英作文とリスニングで同じ 1 つの設定**（`sunkan:settings` の `aiVoice`）を見る。
+モードごとに別にすると、片方で入れたのにもう片方が切のままになり、
+同じ 🔈 を押しているのに声が変わる。
+
+- 持ち主は `app.js`。`SUNKAN_DRILL.aiVoice()` / `setAiVoice(on)` で出している
+- `listen.js` の札はその口を通して読み書きする（口が無い版でも落ちないよう、
+  自分の `listen:ui.ai` を控えとして残してある。前の版からの引き継ぎも 1 回だけここでやる）
+- 設定は**同期しない**（`sunkan:settings` は端末ごとの好み）
+
+**読み上げが使えない端末でも、AI の音声が入っていれば 🔈 を出す。**
+端末に声が入っていなくても、しまってある音なら鳴らせる。
+切に戻したらまた隠す（`refreshAudioMarks` が付け直す）。
 
 ### 押される前に用意しておく（先読み）
 
