@@ -15,7 +15,22 @@ const W = 'http://127.0.0.1:8600';
 // 置き場は走らせるたびに別の部屋にする。同じ部屋を使い回すと、
 // 前の回の文が残っていて件数が合わなくなる（実際に 53 → 106 になった）
 const ROOM = 'listensync-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+/* Chromium の置き場は、入れ物（コンテナ）が替わると動く。決め打ちにすると
+   中身とは関係ないところでテストが落ちるので、**あるものを探してから使う**。
+   どれも無ければ Playwright に任せる（executablePath を渡さない）。 */
+import fs from 'node:fs';
+const EXEC = [process.env.CHROMIUM]
+  .concat(fs.existsSync('/opt/pw-browsers')
+    ? fs.readdirSync('/opt/pw-browsers')
+        .filter(d => /^chromium-/.test(d))
+        .map(d => ['/opt/pw-browsers/' + d + '/chrome-linux64/chrome',
+                   '/opt/pw-browsers/' + d + '/chrome-linux/chrome'])
+        .reduce((a, b) => a.concat(b), [])
+    : [])
+  .concat(['/usr/bin/google-chrome', '/usr/bin/chromium'])
+  .filter(x => x && fs.existsSync(x))[0];
+const LAUNCH = EXEC ? { executablePath: EXEC } : {};
+const b = await chromium.launch(LAUNCH);
 let bad = 0;
 let pass = 0;
 const ok = (n, c, e='') => { c ? (pass++, console.log('  PASS  ' + n)) : (bad++, console.log('  FAIL  ' + n + (e ? '  → ' + e : ''))); };

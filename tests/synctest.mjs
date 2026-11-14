@@ -8,17 +8,30 @@
  * 置き場は `cloudflare/worker.mjs` をそのまま動かしている（tests/fake-worker.mjs）。
  * つまりここで通れば、Cloudflare に置いたものも同じように動く。
  */
-import fs from 'node:fs';
 const PLAYWRIGHT = process.env.PLAYWRIGHT_PKG || '/opt/node-tools/node_modules/playwright/index.mjs';
 const { chromium } = await import(PLAYWRIGHT);
 const APP = `http://127.0.0.1:${process.env.PORT || '8599'}/`;
 const WORKER = `http://127.0.0.1:${process.env.WPORT || '8600'}`;
-const EXEC = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+/* Chromium の置き場は、入れ物（コンテナ）が替わると動く。決め打ちにすると
+   中身とは関係ないところでテストが落ちるので、**あるものを探してから使う**。
+   どれも無ければ Playwright に任せる（executablePath を渡さない）。 */
+import fs from 'node:fs';
+const EXEC = [process.env.CHROMIUM]
+  .concat(fs.existsSync('/opt/pw-browsers')
+    ? fs.readdirSync('/opt/pw-browsers')
+        .filter(d => /^chromium-/.test(d))
+        .map(d => ['/opt/pw-browsers/' + d + '/chrome-linux64/chrome',
+                   '/opt/pw-browsers/' + d + '/chrome-linux/chrome'])
+        .reduce((a, b) => a.concat(b), [])
+    : [])
+  .concat(['/usr/bin/google-chrome', '/usr/bin/chromium'])
+  .filter(x => x && fs.existsSync(x))[0];
+const LAUNCH = EXEC ? { executablePath: EXEC } : {};
 
 let pass = 0, fail = 0;
 const ok = (n, c, e = '') => { c ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (e ? '  → ' + e : ''))); };
 
-const browser = await chromium.launch({ executablePath: EXEC });
+const browser = await chromium.launch(LAUNCH);
 
 /** 1 台ぶんを開く。端末ごとに別の入れ物にする（localStorage を分けるため） */
 async function device(label, width) {

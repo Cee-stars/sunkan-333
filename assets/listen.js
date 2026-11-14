@@ -374,6 +374,12 @@
     state.query = ui.query.toLowerCase();
     state.rate = ui.rate;
     state.ai = ui.ai;
+    // 前の版で listen:ui に入れていた人は、共通の設定へ引き継ぐ（1 回だけ）
+    var dShare = sharedAi();
+    if (dShare) {
+      if (state.ai && !dShare.aiVoice()) dShare.setAiVoice(true);
+      state.ai = dShare.aiVoice();
+    }
     // 見ていたプレイリストが消えていたら「すべて」へ戻す
     state.deck = deckExists(ui.deck) ? ui.deck : DECK_ALL;
   }
@@ -528,7 +534,9 @@
     }
 
     // 読み上げが使えない端末ではボタンごと隠す（押しても鳴らないものを出さない）
-    if (row.speakEl && !state.speechOK) row.speakEl.hidden = true;
+    // 読み上げが使えない端末では 🔈 を出さない。**ただし AI の音声を使うなら出す**
+    // （端末に声が入っていなくても、しまってある音なら鳴らせる）
+    if (row.speakEl && !state.speechOK && !aiOn()) row.speakEl.hidden = true;
 
     renderStar(row);
     renderShown(row);
@@ -1023,8 +1031,19 @@
     return s.cfReady() ? s : null;
   }
 
+  /** 瞬間英作文（app.js）が持っている、AI の音声の入／切。
+      **モードごとに別にしない** — 片方で入れたのにもう片方が切のままだと、
+      同じ 🔈 を押しているのに声が変わる。 */
+  function sharedAi() {
+    var d = window.SUNKAN_DRILL;
+    return (d && typeof d.aiVoice === 'function' && typeof d.setAiVoice === 'function') ? d : null;
+  }
+
   /** AI の音を使うか。入れていても、しまう所が無ければ使えない */
-  function aiOn() { return !!(state.ai && audioStore()); }
+  function aiOn() {
+    var d = sharedAi();
+    return !!((d ? d.aiVoice() : state.ai) && audioStore());
+  }
 
   /**
    * 鳴らすための <audio> は**1 つだけ**使い回す。
@@ -1210,13 +1229,17 @@
 
   /** AI の音声の入／切 */
   function renderAiChip() {
+    var d = sharedAi();
+    if (d) state.ai = d.aiVoice();   // 設定で入れ替わっていることがある
     if (!elAiBtn) return;
     elAiBtn.setAttribute('aria-pressed', state.ai ? 'true' : 'false');
     elAiBtn.classList.toggle('is-on', !!state.ai);
   }
 
   function toggleAi() {
-    state.ai = !state.ai;
+    var d = sharedAi();
+    state.ai = !(d ? d.aiVoice() : state.ai);
+    if (d) d.setAiVoice(state.ai);
     saveUI();
     renderAiChip();
     refreshAudioMarks();

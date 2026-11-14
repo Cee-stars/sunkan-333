@@ -10,7 +10,21 @@ const PLAYWRIGHT = process.env.PLAYWRIGHT_PKG || '/opt/node-tools/node_modules/p
 const { chromium } = await import(PLAYWRIGHT);
 
 const BASE = `http://127.0.0.1:${process.env.PORT || '8599'}/`;
-const EXEC = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+/* Chromium の置き場は、入れ物（コンテナ）が替わると動く。決め打ちにすると
+   中身とは関係ないところでテストが落ちるので、**あるものを探してから使う**。
+   どれも無ければ Playwright に任せる（executablePath を渡さない）。 */
+import fs from 'node:fs';
+const EXEC = [process.env.CHROMIUM]
+  .concat(fs.existsSync('/opt/pw-browsers')
+    ? fs.readdirSync('/opt/pw-browsers')
+        .filter(d => /^chromium-/.test(d))
+        .map(d => ['/opt/pw-browsers/' + d + '/chrome-linux64/chrome',
+                   '/opt/pw-browsers/' + d + '/chrome-linux/chrome'])
+        .reduce((a, b) => a.concat(b), [])
+    : [])
+  .concat(['/usr/bin/google-chrome', '/usr/bin/chromium'])
+  .filter(x => x && fs.existsSync(x))[0];
+const LAUNCH = EXEC ? { executablePath: EXEC } : {};
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -18,7 +32,7 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log(`  FAIL  ${name}${extra ? '  → ' + extra : ''}`); }
 };
 
-const browser = await chromium.launch({ executablePath: EXEC });
+const browser = await chromium.launch(LAUNCH);
 
 for (const [label, width, height] of [['iPhone 390', 390, 844], ['Mac 1180', 1180, 800]]) {
   console.log(`\n=== ${label} ===`);

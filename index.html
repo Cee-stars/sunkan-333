@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 67 (2026-11-08)">
+<meta name="sunkan-build" content="build 68 (2026-11-14)">
 <meta name="description" content="瞬間英作文・場面・パラフレ帳・カード・リスニングの 5 つ。PDF からカードが作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=67">
+<link rel="stylesheet" href="assets/style.css?v=68">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
@@ -965,6 +965,23 @@
       <span class="field-label">声</span>
       <select id="voice-select" class="field-input"></select>
     </label>
+
+    <!-- AI の音声。**瞬間英作文とリスニングで同じ 1 つの入／切**。
+         置き場（Cloudflare）に作らせて端末にしまうので、2 回目からはすぐ鳴る。
+         置き場が無い・つながらない・枠切れのときは、黙って端末の声に戻る。 -->
+    <fieldset class="field-group">
+      <legend class="field-label">AI の音声</legend>
+      <label class="check">
+        <input type="checkbox" id="opt-ai-voice">
+        端末の声ではなく、置き場で作った音を使う
+      </label>
+      <p class="dialog-hint">
+        <strong>瞬間英作文とリスニングの両方に効きます。</strong>
+        ⚙ → 同期の設定 で置き場（URL と合言葉）を入れておく必要があります。
+        一度作った音は端末に残るので、2 回目からはすぐ鳴り、オフラインでも鳴ります。
+        無料枠を使い切ったときや、つながらないときは、端末の声に戻ります。
+      </p>
+    </fieldset>
 
     <!-- 声の良し悪しは端末に入っているもので決まる。アプリ側ではこれ以上良くできない。
          いちばん効くのは「拡張」「プレミアム」を落としてもらうこと。 -->
@@ -2084,22 +2101,22 @@ EXJA: 会議を金曜まで延期した。</pre>
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=67"></script>
-<script src="assets/data.js?v=67"></script>
-<script src="assets/app.js?v=67"></script>
-<script src="assets/paraphrase.js?v=67"></script>
+<script src="assets/speech.js?v=68"></script>
+<script src="assets/data.js?v=68"></script>
+<script src="assets/app.js?v=68"></script>
+<script src="assets/paraphrase.js?v=68"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=67"></script>
-<script src="assets/listen.js?v=67"></script>
+<script src="assets/phrase.js?v=68"></script>
+<script src="assets/listen.js?v=68"></script>
 
-<script src="assets/media.js?v=67"></script>
-<script src="assets/audio.js?v=67"></script>
-<script src="assets/srs.js?v=67"></script>
-<script src="assets/cards.js?v=67"></script>
-<script src="assets/import.js?v=67"></script>
-<script src="assets/inbox.js?v=67"></script>
-<script src="assets/sync.js?v=67"></script>
-<script src="assets/update.js?v=67"></script>
+<script src="assets/media.js?v=68"></script>
+<script src="assets/audio.js?v=68"></script>
+<script src="assets/srs.js?v=68"></script>
+<script src="assets/cards.js?v=68"></script>
+<script src="assets/import.js?v=68"></script>
+<script src="assets/inbox.js?v=68"></script>
+<script src="assets/sync.js?v=68"></script>
+<script src="assets/update.js?v=68"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
