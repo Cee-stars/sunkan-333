@@ -9,7 +9,7 @@
  * 思いついた言い回しをその場で足せなくなる。場面は 1 文が持つ**ただの名前**で、
  * 絞り込みの欄はそれを数えて並べるだけ。名前を打ち替えれば場面も入れ替わる。
  *
- * app.js / paraphrase.js / cards.js / listen.js とは状態も保存先も共有しない。
+ * app.js / listen.js とは状態も保存先も共有しない。
  * 触れ合うのは <html data-mode> と window.SUNKAN_PHRASE だけ。
  *
  * DOM の定義は index.html、取り決めは CONTRACT.md を参照（どちらも変更しない）。
@@ -86,7 +86,7 @@
     return lsSet(key, text);
   }
 
-  /** 一意な id。cards.js / listen.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
+  /** 一意な id。listen.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
   function makeId(prefix) {
     return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
@@ -732,7 +732,7 @@
   /**
    * 選ばれた写真を縮めてしまう。
    * **入れ替えたぶんはすぐ消さない。**「閉じる」で取り消すかもしれないので、
-   * 保存するときに要らなくなったほうを捨てる（cards.js と同じ作法）。
+   * 保存するときに要らなくなったほうを捨てる。
    */
   function takePhoto(file) {
     var media = mediaPort();
@@ -826,7 +826,7 @@
       elSceneSelect.appendChild(optNone);
     }
 
-    // 見ていた場面が無くなっていたら「すべて」へ戻す（SUNKAN_PARA の reload と同じ）
+    // 見ていた場面が無くなっていたら「すべて」へ戻す
     elSceneSelect.value = sceneExists(keep) ? keep : SCENE_ALL;
     state.scene = elSceneSelect.value;
   }
@@ -1566,7 +1566,7 @@
     return { added: added, skipped: skipped };
   }
 
-  /** 画面を開いたとき（paraphrase.js の setMode から） */
+  /** 画面を開いたとき（mode.js の setMode から） */
   function onShow() {
     var first = !state.started;
     state.started = true;

@@ -11,8 +11,8 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 68 (2026-11-14)">
-<meta name="description" content="瞬間英作文・場面・パラフレ帳・カード・リスニングの 5 つ。PDF からカードが作れて、忘却曲線で出し直します。">
+<meta name="sunkan-build" content="build 69 (2026-11-14)">
+<meta name="description" content="瞬間英作文・場面・リスニングの 3 つ。PDF から出題が作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <!-- SVG だけだと、取り込めないブラウザ（Mac の Safari など）でアイコンが出ない。
@@ -21,17 +21,20 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=68">
+<link rel="stylesheet" href="assets/style.css?v=69">
 <title>Instant English</title>
 <script>
-// モード（瞬間英作文 / パラフレ帳 / カード）は描画より先に決める。
+// モード（瞬間英作文 / 場面 / リスニング）は描画より先に決める。
 // あとから付けると、開いた瞬間にほかの画面が一瞬見えてしまう。
+//
+// **ここに並べる名前は assets/mode.js の MODES と同じにする。**
+// 畳んだモード（para / cards）を覚えている端末もあるので、
+// 知らない名前は drill に寄せる（画面の無いモードを開くと真っ白になる）。
 (function () {
   var mode = 'drill';
   try {
     var saved = window.localStorage.getItem('sunkan:mode');
-    if (saved === 'para' || saved === 'cards' || saved === 'listen' ||
-        saved === 'phrase') { mode = saved; }
+    if (saved === 'phrase' || saved === 'listen') { mode = saved; }
   } catch (e) { /* プライベートモードなどでは既定のまま */ }
   document.documentElement.setAttribute('data-mode', mode);
 })();
@@ -47,8 +50,6 @@
     <h1 class="app-title visually-hidden">
       <span data-mode-view="drill">瞬間英作文</span>
       <span data-mode-view="phrase">場面</span>
-      <span data-mode-view="para">パラフレ帳</span>
-      <span data-mode-view="cards">カード</span>
       <span data-mode-view="listen">リスニング</span>
     </h1>
 
@@ -57,10 +58,6 @@
         aria-selected="true" aria-controls="view-drill">瞬間英作文</button>
       <button type="button" class="mode-tab" id="tab-phrase" role="tab"
         aria-selected="false" aria-controls="phrase-view" tabindex="-1">場面</button>
-      <button type="button" class="mode-tab" id="tab-para" role="tab"
-        aria-selected="false" aria-controls="view-para" tabindex="-1">パラフレ帳</button>
-      <button type="button" class="mode-tab" id="tab-cards" role="tab"
-        aria-selected="false" aria-controls="view-cards" tabindex="-1">カード</button>
       <button type="button" class="mode-tab" id="tab-listen" role="tab"
         aria-selected="false" aria-controls="listen-view" tabindex="-1">リスニング</button>
     </div>
@@ -131,85 +128,6 @@
       <label class="visually-hidden" for="phrase-search">場面を検索</label>
       <input type="search" id="phrase-search" class="search-input"
         placeholder="日本語・英語で検索" autocomplete="off" enterkeyhint="search">
-    </div>
-  </div>
-
-  <!-- ===== パラフレ帳の操作列（ジャンルがいちばん上） ===== -->
-  <div class="header-row header-row--genre" data-mode-view="para">
-    <div class="genre-field">
-      <label class="visually-hidden" for="genre-input">ジャンル</label>
-      <input type="search" id="genre-input" class="genre-input" placeholder="ジャンルを探す・作る"
-        autocomplete="off" enterkeyhint="search">
-      <button type="button" id="btn-genre-add" class="btn btn--primary genre-add">
-        <span aria-hidden="true">＋</span><span class="btn-label">作る</span>
-      </button>
-    </div>
-  </div>
-
-  <div class="header-row header-row--genres" data-mode-view="para">
-    <ul class="genre-chips" id="genre-chips"></ul>
-  </div>
-
-  <div class="header-row header-row--controls" data-mode-view="para">
-    <button type="button" id="btn-para-mask" class="btn btn--primary" aria-pressed="false" aria-label="言い換えを隠す">
-      <span class="btn-label" id="btn-para-mask-label">言い換えを隠す</span>
-    </button>
-
-    <div class="search-wrap">
-      <label class="visually-hidden" for="para-search">パラフレを検索</label>
-      <input type="search" id="para-search" class="search-input" placeholder="英文・意味で検索" autocomplete="off" enterkeyhint="search">
-      <button type="button" id="btn-para-search-clear" class="btn btn--icon search-clear" aria-label="検索をクリア" hidden>×</button>
-    </div>
-
-    <label class="visually-hidden" for="para-sort">並べ替え</label>
-    <select id="para-sort" class="deck-select para-sort">
-      <option value="added">追加順</option>
-      <option value="newest">新しい順</option>
-      <option value="alpha">A → Z</option>
-      <option value="genre">ジャンル順</option>
-    </select>
-
-    <button type="button" id="btn-para-shuffle" class="btn btn--ghost" aria-pressed="false" aria-label="順番をシャッフル">
-      <span aria-hidden="true">⇅</span><span class="btn-label">シャッフル</span>
-    </button>
-
-    <button type="button" id="btn-para-starred" class="btn btn--ghost" aria-pressed="false" aria-label="「もう一度」だけ表示">
-      <span aria-hidden="true">↻</span><span class="btn-label">だけ表示</span>
-    </button>
-
-    <button type="button" id="btn-para-data" class="btn btn--icon" aria-label="表の読み込み・書き出し" aria-haspopup="dialog">📋</button>
-  </div>
-
-  <!-- ===== カードの操作列 ===== -->
-  <div class="header-row header-row--main" data-mode-view="cards">
-    <div class="deck-picker">
-      <label class="visually-hidden" for="card-deck-select">セット</label>
-      <select id="card-deck-select" class="deck-select"></select>
-    </div>
-
-    <button type="button" id="btn-card-add" class="btn btn--ghost" aria-haspopup="dialog">
-      <span aria-hidden="true">＋</span><span class="btn-label">追加</span>
-    </button>
-
-    <button type="button" id="btn-card-import" class="btn btn--ghost" aria-haspopup="dialog">
-      <span aria-hidden="true">📄</span><span class="btn-label">PDF から</span>
-    </button>
-
-    <button type="button" id="btn-card-list" class="btn btn--icon" aria-label="カードの一覧" aria-haspopup="dialog">☰</button>
-    <button type="button" id="btn-card-settings" class="btn btn--icon" aria-label="カードの設定" aria-haspopup="dialog">⚙</button>
-  </div>
-
-  <!-- 今日の進み具合。予定は始めた時点で決まり、途中で増えないので必ず減る -->
-  <div class="header-row header-row--due" data-mode-view="cards">
-    <div class="progress" id="card-progress">
-      <div class="progress-line">
-        <span class="progress-left" id="progress-left">のこり 0 枚</span>
-        <span class="progress-count" id="progress-count">0 / 0</span>
-      </div>
-      <div class="progress-track" role="progressbar" id="progress-track"
-        aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-label="今日の進み具合">
-        <div class="progress-fill" id="progress-fill"></div>
-      </div>
     </div>
   </div>
 
@@ -297,8 +215,6 @@
 
   <p class="status-bar" id="status-bar" data-mode-view="drill" role="status" aria-live="polite"></p>
   <p class="status-bar" id="phrase-status" data-mode-view="phrase" role="status" aria-live="polite"></p>
-  <p class="status-bar" id="para-status" data-mode-view="para" role="status" aria-live="polite"></p>
-  <p class="status-bar" id="card-status" data-mode-view="cards" role="status" aria-live="polite"></p>
   <p class="status-bar" id="listen-status" data-mode-view="listen" role="status" aria-live="polite"></p>
 </header>
 
@@ -338,80 +254,6 @@
   </div>
   </section>
 
-  <!-- ===== パラフレ帳 ===== -->
-  <section class="view view--para" id="view-para" data-mode-view="para"
-    role="tabpanel" aria-labelledby="tab-para" tabindex="-1">
-    <h2 class="para-genre-title" id="para-genre-title">すべて</h2>
-
-    <ol class="para-list" id="para-list"></ol>
-
-    <p class="empty-state" id="para-empty" hidden></p>
-
-    <button type="button" id="btn-para-add" class="add-row" aria-haspopup="dialog">
-      <span aria-hidden="true">＋</span> パラフレを追加
-    </button>
-  </section>
-
-  <!-- ===== カード（1 枚ずつめくる。画面に出すものは常に 1 行＋ボタン） ===== -->
-  <section class="view view--cards" id="view-cards" data-mode-view="cards"
-    role="tabpanel" aria-labelledby="tab-cards" tabindex="-1">
-
-    <div class="card-stage" id="card-stage" hidden>
-      <p class="card-face-tag">
-        <span class="face-badge" id="card-face-badge">読</span>
-        <span class="face-desc" id="card-face-desc"></span>
-      </p>
-
-      <div class="flashcard" id="flashcard">
-        <div class="flashcard-front">
-          <!-- 「言」の面だけ、表に写真を出す。写真を見て英語を口に出す練習になる -->
-          <img class="card-photo card-photo--hint" id="card-photo-front" alt="" hidden>
-          <p class="card-text" id="card-front-text"></p>
-          <!-- 例文の中に覚える語が見つからなかったときだけ出す（どの語の話かを迷わせない） -->
-          <p class="card-target-tag" id="card-target-tag" hidden></p>
-          <button type="button" id="btn-card-play" class="btn card-play" hidden>
-            <span aria-hidden="true">🔈</span> <span id="card-play-label">きく</span>
-          </button>
-        </div>
-
-        <div class="flashcard-back" id="card-back" hidden>
-          <p class="card-answer" id="card-answer"></p>
-          <p class="card-sub" id="card-sub" hidden></p>
-          <img class="card-photo" id="card-photo-back" alt="" hidden>
-          <p class="card-note" id="card-note" hidden></p>
-        </div>
-      </div>
-
-      <div class="card-actions" id="card-actions-flip">
-        <button type="button" id="btn-card-flip" class="btn btn--primary card-flip">めくる</button>
-      </div>
-
-      <div class="card-actions card-actions--grade" id="card-actions-grade" hidden>
-        <button type="button" id="btn-grade-again" class="btn card-grade card-grade--again">
-          <span class="grade-label">もう一度</span><span class="grade-when" id="when-again"></span>
-        </button>
-        <button type="button" id="btn-grade-good" class="btn card-grade card-grade--good">
-          <span class="grade-label">できた</span><span class="grade-when" id="when-good"></span>
-        </button>
-        <button type="button" id="btn-grade-easy" class="btn card-grade card-grade--easy">
-          <span class="grade-label">かんたん</span><span class="grade-when" id="when-easy"></span>
-        </button>
-      </div>
-
-      <div class="card-foot">
-        <span class="card-recall" id="card-recall"></span>
-        <span class="card-tools">
-          <button type="button" id="btn-card-speak" class="btn btn--icon" aria-label="英語を読み上げる">🔈</button>
-          <button type="button" id="btn-card-slow" class="btn btn--icon" aria-label="ゆっくり読み上げる">🐢</button>
-          <button type="button" id="btn-card-star" class="btn btn--icon" aria-label="「もう一度」に入れる" aria-pressed="false">↻</button>
-          <button type="button" id="btn-card-edit" class="btn btn--icon" aria-label="このカードを編集する" aria-haspopup="dialog">✎</button>
-        </span>
-      </div>
-    </div>
-
-    <p class="card-empty" id="card-empty" hidden></p>
-  </section>
-
   <!-- ===== リスニング（かたまりごとに出していく） =====
        行の作りはほかのモードと**左右が逆**。左に 🔈、右に英文を置く。
        英文は ` / ` で割ったかたまりの並びで、まだ出していないぶんはぼかす。
@@ -437,9 +279,6 @@
   <p class="hint hint--mobile" data-mode-view="drill">行をタップすると英語が出ます</p>
   <p class="hint hint--desktop" data-mode-view="phrase">その時のセリフを見て、英語で言ってみます。行をクリックすると言い方が出ます。</p>
   <p class="hint hint--mobile" data-mode-view="phrase">行をタップすると英語が出ます</p>
-  <p class="hint" data-mode-view="para">見出しの英文が元の1文、その下が言い換えです。「言い換えを隠す」を押すと、見出しをタップするまで伏せられます。</p>
-  <p class="hint hint--desktop" data-mode-view="cards">Space・Enter めくる／1 もう一度／2 できた／3 かんたん／R もう一度きく</p>
-  <p class="hint hint--mobile" data-mode-view="cards">カードをタップしてもめくれます</p>
   <p class="hint hint--desktop" data-mode-view="listen">🔈 で文をまるごと聞いてから、行をクリックして 1 かたまりずつ出します。H 全部出す・全部隠す</p>
   <p class="hint hint--mobile" data-mode-view="listen">🔈 で聞いて、行をタップすると 1 かたまりずつ出ます</p>
 </footer>
@@ -550,36 +389,6 @@
       <button type="button" class="btn btn--icon row-edit" aria-label="この文を編集する" tabindex="-1" aria-haspopup="dialog">✎</button>
       <button type="button" class="btn btn--icon row-delete" aria-label="この文を削除する" tabindex="-1">🗑</button>
     </span>
-  </li>
-</template>
-
-<!-- ===== パラフレ 1 枚のテンプレート（JS からクローンして使う） ===== -->
-<template id="para-template">
-  <li class="para-card" data-id="">
-    <button type="button" class="para-head" aria-expanded="true">
-      <span class="para-head-en"></span>
-      <small class="para-head-ja"></small>
-    </button>
-
-    <ol class="para-lines"></ol>
-
-    <div class="para-foot">
-      <span class="para-genre-tag"></span>
-      <span class="para-tools">
-        <button type="button" class="btn btn--icon para-speak" aria-label="見出しの英文を読み上げる">🔈</button>
-        <button type="button" class="btn btn--icon para-star" aria-label="「もう一度」に入れる" aria-pressed="false">↻</button>
-        <button type="button" class="btn btn--icon para-send" aria-label="瞬間英作文へ送る">📤</button>
-        <button type="button" class="btn btn--icon para-edit" aria-label="このパラフレを編集する">✎</button>
-        <button type="button" class="btn btn--icon para-delete" aria-label="このパラフレを削除する">🗑</button>
-      </span>
-    </div>
-  </li>
-</template>
-
-<template id="para-line-template">
-  <li class="para-line">
-    <span class="para-line-en"></span>
-    <span class="para-line-ja"></span>
   </li>
 </template>
 
@@ -943,7 +752,7 @@
     </div>
 
     <p class="dialog-hint sheet-foot">
-      <strong>「ぜんぶ」</strong>は 3 つのモードぜんぶ（瞬間英作文・パラフレ帳・カード）と写真・覚えた記録。<br>
+      <strong>「ぜんぶ」</strong>はモードぜんぶ（瞬間英作文・場面・リスニング）と写真・覚えた記録。<br>
       <strong>「このセットだけ」</strong>は、いま開いているセットの 日本語 / 英語 / メモ だけ。<br>
       機種変更のときは「ぜんぶ」で書き出して、新しい端末で読み込んでください。
     </p>
@@ -1090,128 +899,6 @@ MEMO: take after = 〜に似ている</pre>
   </form>
 </dialog>
 
-<!-- ===== パラフレの追加・編集ダイアログ ===== -->
-<dialog id="para-dialog" class="dialog" aria-labelledby="para-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="para-dialog-title" class="dialog-title">パラフレを追加</h2>
-    <p class="dialog-desc">
-      見出しに元の 1 文、その下に言い換えを 4 つまで入れられます。
-      日本語の意味は空のままでもかまいません。
-    </p>
-
-    <label class="field">
-      <span class="field-label">ジャンル</span>
-      <select id="para-genre-select" class="deck-select"></select>
-    </label>
-
-    <fieldset class="field-group">
-      <legend class="field-label">見出し（元の 1 文）</legend>
-      <label class="field">
-        <span class="visually-hidden">見出しの英文</span>
-        <input type="text" id="para-head-en" class="field-input" autocomplete="off"
-          placeholder="例：It is important to keep trying.">
-      </label>
-      <label class="field">
-        <span class="visually-hidden">見出しの意味</span>
-        <input type="text" id="para-head-ja" class="field-input" autocomplete="off"
-          placeholder="例：やり続けることが大切だ。">
-      </label>
-    </fieldset>
-
-    <fieldset class="field-group">
-      <legend class="field-label">言い換え（4 つまで）</legend>
-
-      <div class="para-line-field">
-        <label class="visually-hidden" for="para-line-en-1">言い換え 1 の英文</label>
-        <input type="text" id="para-line-en-1" class="field-input" autocomplete="off" placeholder="1つめの英文">
-        <label class="visually-hidden" for="para-line-ja-1">言い換え 1 の意味</label>
-        <input type="text" id="para-line-ja-1" class="field-input field-input--sub" autocomplete="off" placeholder="1つめの意味">
-      </div>
-
-      <div class="para-line-field">
-        <label class="visually-hidden" for="para-line-en-2">言い換え 2 の英文</label>
-        <input type="text" id="para-line-en-2" class="field-input" autocomplete="off" placeholder="2つめの英文">
-        <label class="visually-hidden" for="para-line-ja-2">言い換え 2 の意味</label>
-        <input type="text" id="para-line-ja-2" class="field-input field-input--sub" autocomplete="off" placeholder="2つめの意味">
-      </div>
-
-      <div class="para-line-field">
-        <label class="visually-hidden" for="para-line-en-3">言い換え 3 の英文</label>
-        <input type="text" id="para-line-en-3" class="field-input" autocomplete="off" placeholder="3つめの英文">
-        <label class="visually-hidden" for="para-line-ja-3">言い換え 3 の意味</label>
-        <input type="text" id="para-line-ja-3" class="field-input field-input--sub" autocomplete="off" placeholder="3つめの意味">
-      </div>
-
-      <div class="para-line-field">
-        <label class="visually-hidden" for="para-line-en-4">言い換え 4 の英文</label>
-        <input type="text" id="para-line-en-4" class="field-input" autocomplete="off" placeholder="4つめの英文">
-        <label class="visually-hidden" for="para-line-ja-4">言い換え 4 の意味</label>
-        <input type="text" id="para-line-ja-4" class="field-input field-input--sub" autocomplete="off" placeholder="4つめの意味">
-      </div>
-    </fieldset>
-
-    <p class="dialog-note" id="para-dialog-status" role="status" aria-live="polite"></p>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-para-cancel" class="btn btn--ghost">閉じる</button>
-      <button type="button" id="btn-para-save" class="btn btn--primary">保存する</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">ジャンル</h3>
-      <p class="dialog-hint">ジャンルはいくつでも作れます。消してもパラフレは残り、「ジャンルなし」に移ります。</p>
-      <div class="new-deck-row">
-        <label class="visually-hidden" for="para-new-genre">新しいジャンルの名前</label>
-        <input type="text" id="para-new-genre" class="field-input" autocomplete="off"
-          placeholder="例：会議で使う言い換え">
-        <button type="button" id="btn-para-new-genre" class="btn btn--ghost">作る</button>
-      </div>
-      <ul class="deck-manage-list" id="genre-manage-list"></ul>
-    </div>
-  </form>
-</dialog>
-
-<!-- ===== パラフレ帳のデータダイアログ ===== -->
-<dialog id="para-data-dialog" class="dialog" aria-labelledby="para-data-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="para-data-dialog-title" class="dialog-title">表でまとめて出し入れする</h2>
-    <p class="dialog-desc">
-      1 行が 1 枚です。左から
-      <strong>ジャンル / 見出しの英文 / 見出しの意味 / 言い換え1の英文 / 言い換え1の意味 …</strong>
-      の順で、言い換えは 4 つまで（全 11 列）。タブ区切り・カンマ区切りのどちらでも読み込めます。
-      見出し行が付いていれば自動で外します。
-    </p>
-
-    <label class="field">
-      <span class="field-label">貼り付け</span>
-      <textarea id="para-import-text" class="field-input field-textarea" rows="8"
-        placeholder="日常会話&#9;It is important to keep trying.&#9;やり続けることが大切だ。&#9;Persistence matters.&#9;粘り強さが物を言う。"></textarea>
-    </label>
-
-    <p class="dialog-note" id="para-import-preview" role="status" aria-live="polite"></p>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-para-import-cancel" class="btn btn--ghost">キャンセル</button>
-      <button type="button" id="btn-para-import-save" class="btn btn--primary">読み込む</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">いま表示しているパラフレ</h3>
-      <p class="dialog-hint">ジャンルの絞り込み・検索で表示されているぶんが対象です。</p>
-      <button type="button" id="btn-para-export" class="btn btn--ghost">表にしてコピー（TSV）</button>
-      <button type="button" id="btn-para-send-all" class="btn btn--ghost">まとめて瞬間英作文へ送る</button>
-      <p class="dialog-hint">
-        送ると「パラフレ帳（ジャンル名）」というセットができ、同じ日本語に対する言い換えが
-        1 文ずつ並びます。元のパラフレはそのまま残ります。
-      </p>
-    </div>
-  </form>
-</dialog>
-
 <!-- ===== 設定ダイアログ ===== -->
 <dialog id="settings-dialog" class="dialog" aria-labelledby="settings-dialog-title">
   <form method="dialog" class="dialog-inner">
@@ -1245,7 +932,7 @@ MEMO: take after = 〜に似ている</pre>
 
     <fieldset class="field-group">
       <legend class="field-label">同期</legend>
-      <p class="dialog-hint">iPhone と MacBook で、自作セット・足した文・「もう一度」・パラフレ帳を揃えます。</p>
+      <p class="dialog-hint">iPhone と MacBook で、自作セット・足した文・「もう一度」・場面・リスニングを揃えます。</p>
       <button type="button" id="btn-sync-open" class="btn btn--ghost" aria-haspopup="dialog">
         同期の設定<span class="sync-state" id="sync-state"></span>
       </button>
@@ -1274,7 +961,7 @@ MEMO: take after = 〜に似ている</pre>
   <form method="dialog" class="dialog-inner">
     <h2 id="sync-dialog-title" class="dialog-title">iPhone・MacBook で揃える</h2>
     <p class="dialog-desc">
-      自作セット・足した文・「もう一度」・パラフレ帳を、端末どうしで揃えます。
+      自作セット・足した文・「もう一度」・場面・リスニングを、端末どうしで揃えます。
       収録の 360 文と、隠し方・文字サイズなどの設定はそのままです（端末ごとの好みのため）。
       <strong>どちらの端末で足したものも消えません。</strong>足りないほうに入るだけです。
     </p>
@@ -1717,117 +1404,6 @@ export default {
   </form>
 </dialog>
 
-<!-- ===== カードの追加・編集ダイアログ ===== -->
-<dialog id="card-dialog" class="dialog" aria-labelledby="card-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="card-dialog-title" class="dialog-title">カードを追加</h2>
-    <p class="dialog-desc">
-      <strong>例文は必ず入れてください。</strong>単語だけのカードより、文で覚えたほうが定着します。
-      例文があると「聞く」「言う」の面も作れます。
-    </p>
-
-    <label class="field">
-      <span class="field-label">英語（語・表現）</span>
-      <input type="text" id="card-en" class="field-input" autocomplete="off"
-        placeholder="例：take after">
-    </label>
-
-    <label class="field">
-      <span class="field-label">日本語の意味</span>
-      <input type="text" id="card-ja" class="field-input" autocomplete="off"
-        placeholder="例：〜に似ている">
-    </label>
-
-    <label class="field">
-      <span class="field-label">英語の例文</span>
-      <input type="text" id="card-ex-en" class="field-input" autocomplete="off"
-        placeholder="例：She takes after her mother.">
-    </label>
-
-    <label class="field">
-      <span class="field-label">例文の日本語訳</span>
-      <input type="text" id="card-ex-ja" class="field-input" autocomplete="off"
-        placeholder="例：彼女は母親似だ。">
-    </label>
-
-    <label class="field">
-      <span class="field-label">メモ（任意）</span>
-      <input type="text" id="card-note-input" class="field-input" autocomplete="off"
-        placeholder="つまずきやすい所があれば">
-    </label>
-
-    <fieldset class="field-group" id="card-photo-field">
-      <legend class="field-label">写真（任意）</legend>
-      <p class="dialog-hint">
-        写真があると、文字だけより思い出しやすくなります。
-        <strong>「言」の面では、表に小さく出ます</strong>（写真を見て英語を口に出す練習になります）。
-      </p>
-
-      <div class="photo-row">
-        <div class="photo-preview" id="card-photo-preview" hidden>
-          <img id="card-photo-img" alt="このカードの写真">
-        </div>
-        <div class="photo-actions">
-          <button type="button" id="btn-card-photo" class="btn btn--ghost">写真を選ぶ</button>
-          <button type="button" id="btn-card-photo-clear" class="btn btn--ghost" hidden>外す</button>
-        </div>
-      </div>
-      <input type="file" id="card-photo-file" accept="image/*" hidden>
-      <p class="dialog-hint" id="card-photo-status" role="status" aria-live="polite"></p>
-    </fieldset>
-
-    <p class="dialog-note" id="card-dialog-status" role="status" aria-live="polite"></p>
-
-    <div class="dialog-actions dialog-actions--wrap">
-      <button type="button" id="btn-card-cancel" class="btn btn--ghost">閉じる</button>
-      <button type="button" id="btn-card-delete" class="btn btn--ghost" hidden>削除する</button>
-      <button type="button" id="btn-card-save" class="btn btn--primary">追加する</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">新しいセットを作る</h3>
-      <p class="dialog-hint">空のセットを作って、そこに 1 枚ずつ足していけます。</p>
-      <div class="new-deck-row">
-        <label class="visually-hidden" for="card-new-deck">新しいセットの名前</label>
-        <input type="text" id="card-new-deck" class="field-input" autocomplete="off"
-          placeholder="例：英検準1級 動詞">
-        <button type="button" id="btn-card-new-deck" class="btn btn--ghost">作る</button>
-      </div>
-    </div>
-  </form>
-</dialog>
-
-<!-- ===== カードの一覧ダイアログ ===== -->
-<dialog id="card-list-dialog" class="dialog" aria-labelledby="card-list-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="card-list-dialog-title" class="dialog-title">カードの一覧</h2>
-    <p class="dialog-desc" id="card-list-desc"></p>
-
-    <label class="field">
-      <span class="visually-hidden">カードを検索</span>
-      <input type="search" id="card-list-search" class="field-input"
-        placeholder="英語・日本語で探す" autocomplete="off" enterkeyhint="search">
-    </label>
-
-    <ul class="card-list" id="card-list"></ul>
-    <p class="dialog-hint" id="card-list-more" hidden></p>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-card-list-close" class="btn btn--primary">閉じる</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">セット</h3>
-      <ul class="deck-manage-list" id="card-deck-manage-list"></ul>
-      <p class="dialog-hint">セットを消すと、その中のカードと覚えた記録もいっしょに消えます。</p>
-    </div>
-  </form>
-</dialog>
-
 <!-- ===== カードの取り込みダイアログ ===== -->
 <!-- ===== 場面の写真を大きく見る ===== -->
 <dialog id="phrase-photo-dialog" class="dialog" aria-labelledby="phrase-photo-dialog-title">
@@ -1964,159 +1540,22 @@ export default {
   </form>
 </dialog>
 
-<dialog id="card-import-dialog" class="dialog" aria-labelledby="card-import-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="card-import-dialog-title" class="dialog-title">PDF・テキストから作る</h2>
-    <p class="dialog-desc">
-      決まった書き方の PDF なら、そのまま読み込めます。
-      書き方がバラバラな PDF は、下の「AI への指示をコピー」を使って整えてから貼り付けてください。
-      <strong>どちらの道でも、できるカードは同じ形です。</strong>
-    </p>
-
-    <label class="field">
-      <span class="field-label">入れ先</span>
-      <select id="card-import-target" class="deck-select"></select>
-    </label>
-
-    <label class="field" id="card-import-name-field">
-      <span class="field-label">新しいセットの名前</span>
-      <input type="text" id="card-import-name" class="field-input"
-        placeholder="例：英検準1級 動詞" autocomplete="off">
-    </label>
-
-    <h3 class="dialog-subtitle">1. PDF を選ぶ</h3>
-    <div class="dialog-actions dialog-actions--wrap">
-      <button type="button" id="btn-card-pdf" class="btn btn--primary">PDF を選ぶ</button>
-      <button type="button" id="btn-card-template" class="btn btn--ghost">書き方の見本をダウンロード</button>
-    </div>
-    <input type="file" id="card-pdf-file" accept=".pdf,.txt,.md,application/pdf,text/plain" hidden>
-    <p class="dialog-hint" id="card-pdf-status" role="status" aria-live="polite"></p>
-
-    <h3 class="dialog-subtitle">2. または、貼り付ける</h3>
-    <label class="field">
-      <span class="visually-hidden">貼り付け</span>
-      <textarea id="card-import-text" class="field-input field-textarea" rows="10"
-        placeholder="EN: take after&#10;JA: 〜に似ている&#10;EX: She takes after her mother.&#10;EXJA: 彼女は母親似だ。&#10;---&#10;EN: put off&#10;JA: 延期する&#10;EX: They put off the meeting until Friday.&#10;EXJA: 会議を金曜まで延期した。"></textarea>
-    </label>
-
-    <p class="dialog-note" id="card-import-preview" role="status" aria-live="polite"></p>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-card-import-cancel" class="btn btn--ghost">キャンセル</button>
-      <button type="button" id="btn-card-import-save" class="btn btn--primary">読み込む</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">どんな PDF でも同じカードにする</h3>
-      <p class="dialog-hint">
-        下のボタンで指示文をコピーして、ChatGPT や Claude に <strong>PDF といっしょに</strong>渡してください。
-        返ってきた文字をそのまま上の欄に貼り付ければ、同じ形のカードになります。
-      </p>
-      <button type="button" id="btn-card-prompt" class="btn btn--ghost">AI への指示をコピー</button>
-      <p class="dialog-hint" id="card-prompt-status" role="status" aria-live="polite"></p>
-
-      <h3 class="dialog-subtitle">読み込める書き方</h3>
-      <pre class="dialog-pre">EN:   take after
-JA:   〜に似ている
-EX:   She takes after her mother.
-EXJA: 彼女は母親似だ。
-MEMO: 家族の話で頻出
----
-EN:   put off
-JA:   延期する
-EX:   They put off the meeting until Friday.
-EXJA: 会議を金曜まで延期した。</pre>
-      <p class="dialog-hint">
-        <code>EN JA EX EXJA MEMO</code> の 5 つだけです（<code>英語: 意味: 例文: 訳: メモ:</code> でも通ります）。
-        <code>---</code> が 1 枚の区切り。<code>MEMO</code> と <code>EXJA</code> は空でもかまいません。
-        タブ区切り・カンマ区切りの表（英語 / 意味 / 例文 / 訳 / メモ の 5 列）も、そのまま読み込めます。
-      </p>
-    </div>
-  </form>
-</dialog>
-
-<!-- ===== カードの設定ダイアログ ===== -->
-<dialog id="card-settings-dialog" class="dialog" aria-labelledby="card-settings-dialog-title">
-  <form method="dialog" class="dialog-inner">
-    <h2 id="card-settings-dialog-title" class="dialog-title">カードの設定</h2>
-
-    <fieldset class="field-group">
-      <legend class="field-label">使う面</legend>
-      <p class="dialog-hint">
-        1 枚のカードに 3 つの面があります。<strong>「読」から始まり、続けて思い出せた札にだけ
-        「聞」「言」が自動で増えます。</strong>最初から 3 倍になるわけではありません。
-      </p>
-      <label class="check"><input type="checkbox" id="opt-face-r" checked disabled> 読 … 英文を読んで意味を言う（いつも入ります）</label>
-      <label class="check"><input type="checkbox" id="opt-face-l" checked> 聞 … 音だけ聞いて英文を当てる</label>
-      <label class="check"><input type="checkbox" id="opt-face-s" checked> 言 … 日本語を見て英語を声に出す</label>
-    </fieldset>
-
-    <fieldset class="field-group">
-      <legend class="field-label">1 日に始める新しいカード（セットごと）</legend>
-      <input type="range" id="opt-new-per-day" min="0" max="60" step="5" value="20" class="field-range">
-      <output for="opt-new-per-day" id="opt-new-per-day-out" class="field-output">20 枚</output>
-      <p class="dialog-hint">
-        <strong>セットごとの数です。</strong>3 セットあれば 1 日 3 × この数まで始められます。
-        増やしすぎると数日後に復習が雪だるま式に増えるので、20 枚前後が続けやすい量です。
-      </p>
-      <p class="dialog-hint">
-        この上限がかかるのは<strong>今日から始めるカードだけ</strong>です。
-        復習の予定が来た札と、育って開いた「聞」「言」は、上限に関わらず全部出ます
-        （止めると忘却曲線の言うとおりに出せなくなるため）。
-      </p>
-    </fieldset>
-
-    <fieldset class="field-group">
-      <legend class="field-label">狙う定着率</legend>
-      <input type="range" id="opt-retention" min="80" max="95" step="1" value="90" class="field-range">
-      <output for="opt-retention" id="opt-retention-out" class="field-output">90%</output>
-      <p class="dialog-hint">
-        「次に会うとき、何割は思い出せる状態で出すか」です。上げるほど復習が増え、下げるほど忘れます。
-        迷ったら 90% のままにしてください。
-      </p>
-    </fieldset>
-
-    <fieldset class="field-group">
-      <legend class="field-label">読み上げ</legend>
-      <label class="check"><input type="checkbox" id="opt-card-auto-speak"> 自動で読み上げる（めくったときと、「聞」のカードが出たとき）</label>
-      <p class="dialog-hint">切っておくと、音が出るのは 🔈 を押したときだけです。</p>
-      <p class="dialog-hint" id="opt-card-speak-note" hidden>この端末（このブラウザ）は読み上げに対応していないので、「聞」の面は出しません。</p>
-    </fieldset>
-
-    <div class="dialog-actions">
-      <button type="button" id="btn-card-settings-close" class="btn btn--primary">閉じる</button>
-    </div>
-
-    <hr class="dialog-sep">
-
-    <div class="dialog-secondary">
-      <h3 class="dialog-subtitle">覚えた記録</h3>
-      <p class="dialog-hint" id="card-stats"></p>
-      <button type="button" id="btn-card-reset" class="btn btn--ghost">このセットの記録を消す</button>
-      <p class="dialog-hint">カードは残したまま、忘却曲線の記録だけを新品に戻します。</p>
-      <p class="dialog-note" id="card-reset-status" role="status" aria-live="polite"></p>
-    </div>
-  </form>
-</dialog>
-
-<script src="assets/speech.js?v=68"></script>
-<script src="assets/data.js?v=68"></script>
-<script src="assets/app.js?v=68"></script>
-<script src="assets/paraphrase.js?v=68"></script>
+<script src="assets/speech.js?v=69"></script>
+<script src="assets/data.js?v=69"></script>
+<script src="assets/app.js?v=69"></script>
+<!-- タブでのモード切り替えだけを持つ（もとは paraphrase.js の中にあった） -->
+<script src="assets/mode.js?v=69"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=68"></script>
-<script src="assets/listen.js?v=68"></script>
+<script src="assets/phrase.js?v=69"></script>
+<script src="assets/listen.js?v=69"></script>
 
-<script src="assets/media.js?v=68"></script>
-<script src="assets/audio.js?v=68"></script>
-<script src="assets/srs.js?v=68"></script>
-<script src="assets/cards.js?v=68"></script>
-<script src="assets/import.js?v=68"></script>
-<script src="assets/inbox.js?v=68"></script>
-<script src="assets/sync.js?v=68"></script>
-<script src="assets/update.js?v=68"></script>
+<script src="assets/media.js?v=69"></script>
+<script src="assets/audio.js?v=69"></script>
+<script src="assets/srs.js?v=69"></script>
+<script src="assets/import.js?v=69"></script>
+<script src="assets/inbox.js?v=69"></script>
+<script src="assets/sync.js?v=69"></script>
+<script src="assets/update.js?v=69"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。

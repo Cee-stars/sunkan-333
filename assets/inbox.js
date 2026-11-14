@@ -6,7 +6,7 @@
  * 両方から同じキーが読み書きできる。そこを 1 本の受け渡し場所として使う。
  *
  * 送り手は shunkan:inbox に足すだけ。取り込みと後始末はここだけが行う。
- * app.js / paraphrase.js の中身には触らず、window.SUNKAN_DRILL 越しに足す。
+ * ほかのモードの中身には触らず、window.SUNKAN_DRILL 越しに足す。
  * 取り決めは CONTRACT.md を参照。
  */
 (function () {

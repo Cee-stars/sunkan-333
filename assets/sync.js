@@ -1,10 +1,10 @@
 /*!
  * 瞬間英作文 — 端末どうしの同期（GitHub のシークレット Gist 経由）
  *
- * iPhone と MacBook で、自作セット・足した文・「もう一度」・パラフレ帳を揃える。
+ * iPhone と MacBook で、自作セット・足した文・「もう一度」・場面・リスニングを揃える。
  * サーバーは持たない。GitHub の Gist を 1 枚の置き場として使うだけ。
  *
- * app.js / paraphrase.js の中身には触らない。localStorage を読み書きしたあと、
+ * 各モードの中身には触らない。localStorage を読み書きしたあと、
  * それぞれが開けている reload() を呼んで画面を追いつかせる。
  * 消したものが同期で戻ってこないよう、削除は SUNKAN_SYNC.recordDelete で覚える。
  * 取り決めは CONTRACT.md を参照。
@@ -122,7 +122,7 @@
   /* ============================================================
    * 3. 消したものの記録（同期で戻ってこないように）
    *
-   * app.js / paraphrase.js が消したときに呼ぶ。足し直したら忘れる。
+   * 各モードが消したときに呼ぶ。足し直したら忘れる。
    * ========================================================== */
 
   function readTombs() {
@@ -213,7 +213,7 @@
     return !!rec && rec.t > rec.a;
   }
 
-  // 鍵の作り方。app.js / paraphrase.js / inbox.js もこれと同じ形で渡す
+  // 鍵の作り方。app.js / inbox.js もこれと同じ形で渡す
   function addedKey(deckId, ja, en) { return 'added:' + deckId + '\n' + ja + '\n' + en; }
 
   /** 収録の文 1 つぶんの上書きの鍵。「元に戻す」は取り消しなので、これで記録に残す */
@@ -1667,14 +1667,13 @@
     }
   }
 
-  /** 画面を作り直す。app.js / paraphrase.js がそれぞれ開けている口 */
+  /** 画面を作り直す。各モードがそれぞれ開けている口 */
   /** 変わった所だけ作り直す。触らなくていい画面はそのままにしておく */
   function refreshViews(hit) {
-    var drill = window.SUNKAN_DRILL, para = window.SUNKAN_PARA, inbox = window.SUNKAN_INBOX;
-    var cards = window.SUNKAN_CARDS;
+    var drill = window.SUNKAN_DRILL, inbox = window.SUNKAN_INBOX;
     if (hit.drill && drill && typeof drill.reload === 'function') drill.reload();
-    if (hit.para && para && typeof para.reload === 'function') para.reload();
-    if (hit.cards && cards && typeof cards.reload === 'function') cards.reload();
+    // パラフレ帳とカードは build 69 で畳んだ。**預かりと突き合わせは残してある**
+    // ので、前の端末にあるぶんは消えずに往復する。作り直す画面だけが無い。
     var shadow = window.SUNKAN_SHADOW;
     if (hit.shadow && shadow && typeof shadow.reload === 'function') shadow.reload();
     var phrase = window.SUNKAN_PHRASE;
@@ -2522,7 +2521,7 @@
         return { ok: false, message: '置き場につながりませんでした' };
       });
     },
-    /** app.js / paraphrase.js が消したときに呼ぶ（同期で戻ってこないように） */
+    /** 各モードが消したときに呼ぶ（同期で戻ってこないように） */
     recordDelete: recordDelete,
     /** 受信箱の 1 件の鍵。inbox.js と作り方をそろえるためここで配る */
     inboxKey: inboxKey,

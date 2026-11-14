@@ -113,11 +113,11 @@ for (const [label,w,h] of [['iPhone 390',390,844],['Mac 1180',1180,800]]) {
   }, backup);
   ok('phrase を知らない古い版と同期しても消えない', survives===5, String(survives));
 
-  // --- 5 モードの行き来 ---
-  for (const id of ['tab-drill','tab-para','tab-cards','tab-listen','tab-phrase']) {
+  // --- モードの行き来（build 69 でパラフレ帳とカードを畳んで 3 つ）---
+  for (const id of ['tab-drill','tab-listen','tab-phrase']) {
     await p.click('#'+id); await p.waitForTimeout(200);
   }
-  ok('5 モードを行き来してもエラーが出ない', errs.length===0, errs.join(' / '));
+  ok('モードを行き来してもエラーが出ない', errs.length===0, errs.join(' / '));
 
   ok('エラーなし', errs.length===0, errs.join(' / '));
   if (w===390) await p.screenshot({ path: D+'phrase-imported.png' });

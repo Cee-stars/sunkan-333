@@ -33,9 +33,10 @@ const LAUNCH = EXEC ? { executablePath: EXEC } : {};
 let pass = 0, fail = 0;
 const ok = (n, c, e = '') => { c ? (pass++, console.log('  PASS  ' + n)) : (fail++, console.log('  FAIL  ' + n + (e ? '  → ' + e : ''))); };
 
-// --- 入口がどこにも残っていないか（カード・リスニング・言い換えはここで見る）---
+// --- 入口がどこにも残っていないか（リスニング・場面はここで見る）---
+// build 69 でパラフレ帳とカードを畳んだので cards.js / paraphrase.js は見ない。
 console.log('\n=== 中身 ===');
-for (const f of ['app', 'cards', 'listen', 'paraphrase', 'phrase']) {
+for (const f of ['app', 'listen', 'phrase']) {
   const src = fs.readFileSync(new URL(`../assets/${f}.js`, import.meta.url), 'utf8');
   ok(`${f}.js に blockEnter がある`, /function blockEnter\(/.test(src));
   ok(`${f}.js に Enter で保存する道が残っていない`,

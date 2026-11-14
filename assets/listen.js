@@ -18,7 +18,7 @@
  * **段階（％）と忘却曲線は持たない。** 聞き取りは「言えたか」の自己採点と
  * 噛み合わないので、印は ↻「もう一度」だけにしてある。
  *
- * app.js / paraphrase.js / cards.js / phrase.js とは状態も保存先も共有しない。
+ * app.js / phrase.js とは状態も保存先も共有しない。
  * 触れ合うのは <html data-mode> と window.SUNKAN_LISTEN だけ。
  *
  * DOM の定義は index.html、取り決めは CONTRACT.md を参照。
@@ -95,7 +95,7 @@
     return lsSet(key, text);
   }
 
-  /** 一意な id。phrase.js / cards.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
+  /** 一意な id。phrase.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
   function makeId(prefix) {
     return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
@@ -1885,7 +1885,7 @@
     return added;
   }
 
-  /** 画面を開いたとき（paraphrase.js の setMode から） */
+  /** 画面を開いたとき（mode.js の setMode から） */
   function onShow() {
     var first = !state.started;
     state.started = true;
@@ -1926,7 +1926,7 @@
 
   /**
    * プレイリストの一覧 `[{id, name, count}]`。取り込みの「入れ先」を
-   * 作るためのもの（`SUNKAN_CARDS.decks()` と同じ役目）。
+   * 作るためのもの（`SUNKAN_DRILL` の「セット」と同じ役目）。
    * **取り込み側に直に保存させない**ための口なので、読むだけ。
    */
   function deckList() {
@@ -1987,9 +1987,9 @@
     renderAiChip();
     renderDeckSelect();
 
-    // **自分で data-mode を見る。** paraphrase.js の init が setMode を呼ぶ時点では
+    // **自分で data-mode を見る。** mode.js の init が setMode を呼ぶ時点では
     // window.SUNKAN_LISTEN がまだ無いので、見ないとリスニングを最後に開いた
-    // 状態で起動したとき画面が空になる（phrase.js / cards.js と同じ）。
+    // 状態で起動したとき画面が空になる（phrase.js と同じ）。
     if (docEl.getAttribute('data-mode') === 'listen') onShow();
   }
 

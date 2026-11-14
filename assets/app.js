@@ -51,7 +51,7 @@
 
   // 配信のたびに上げる。設定ダイアログに出して、
   // 「更新が届いているのか」を推測せず確認できるようにするためのもの。
-  var APP_VERSION = 'build 68 (2026-11-14)';
+  var APP_VERSION = 'build 69 (2026-11-14)';
 
   var SEARCH_DEBOUNCE = 120;   // 検索のデバウンス（ミリ秒）
   var PREVIEW_DEBOUNCE = 150;  // 取り込みプレビューのデバウンス（ミリ秒）
@@ -2616,8 +2616,9 @@
     setDataStatus(r.message + '\n写真 ' + want + ' 枚を戻しています…', !r.ok);
     media.restore(bag).then(function (put) {
       setDataStatus(r.message + '\n写真を ' + put + ' 枚戻しました。', !r.ok);
-      var cards = window.SUNKAN_CARDS;
-      if (cards && typeof cards.reload === 'function') cards.reload();
+      // 写真を持つのは場面だけになった（カードは build 69 で畳んだ）
+      var phrase = window.SUNKAN_PHRASE;
+      if (phrase && typeof phrase.reload === 'function') phrase.reload();
     }, function () {
       setDataStatus(r.message + '\n⚠ 写真は戻せませんでした。', true);
     });
@@ -2668,12 +2669,13 @@
       var decks = state.userDecks.length;
       if (decks) parts.push('自作セット ' + decks);
       try {
-        var cards = JSON.parse(window.localStorage.getItem('sunkan:cards:items') || '[]');
-        if (cards.length) parts.push('カード ' + cards.length);
-        var para = JSON.parse(window.localStorage.getItem('sunkan:para:cards') || '[]');
-        if (para.length) parts.push('パラフレ ' + para.length);
         var phrase = JSON.parse(window.localStorage.getItem('sunkan:phrase:items') || '[]');
         if (phrase.length) parts.push('場面 ' + phrase.length);
+        var listen = JSON.parse(window.localStorage.getItem('sunkan:listen:items') || '[]');
+        if (listen.length) parts.push('リスニング ' + listen.length);
+        // 畳んだモード（カード・パラフレ帳）は**数に出さない**。画面に無いものを
+        // 数えると「どこで見るのか」を探させる。**書き出しからは外していない**ので、
+        // 前の端末で作ったぶんは「ぜんぶ」にそのまま入って持ち出せる。
       } catch (e) { /* 読めなければ数は出さない */ }
       elBackupOutHint.textContent = parts.length ? parts.join('・') + ' など ぜんぶ' : 'ぜんぶ';
     }

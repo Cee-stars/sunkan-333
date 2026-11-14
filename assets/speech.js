@@ -1,6 +1,6 @@
 /* 瞬間英作文 — 読み上げ（Web Speech API）
  *
- * app.js と paraphrase.js の共通の口。window.SUNKAN_SPEECH から使う。
+ * 全モードの共通の口。window.SUNKAN_SPEECH から使う。
  * この API は端末ごとの癖が強いので、面倒はぜんぶここに閉じ込める。
  *
  *  - 声は遅れて届く（iOS/Safari は初回 getVoices() が空）。届く前に押されても、
