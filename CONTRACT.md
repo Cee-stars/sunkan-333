@@ -388,14 +388,39 @@ app.js は `looksBlock` が真のときだけ `parseBlocks` を借り、表は�
 | `backupText()` / `backupName()` | バックアップの中身（JSON）とファイル名 |
 | `takeBackupText(text)` | 書き出したファイルを取り込む。`{ok, message}` を返す（画面に出すのは呼んだ側） |
 
-シャドーイングの鍵の頭は `shadowdeck:` / `shadowline:`。
+鍵の形は**モードごとに全部ここに並べる**。並べ忘れると、そのモードだけ
+「消したのに戻ってくる」が起きる。**畳んだモードのぶんも消さずに残すこと**
+（画面は無くても、前の端末のデータが同期で行き来しているため）。
 
-鍵の形は `deck:<deckId>` / `card:<cardId>` / `genre:<genreId>` /
-`added:<deckId>\n<ja>\n<en>` / `star:<deckId>:<itemId>` / `parastar:<cardId>` /
-`edit:<deckId>:<itemId>` の 7 つ。
+| モード | 鍵 |
+| --- | --- |
+| 瞬間英作文 | `deck:<deckId>` / `added:<deckId>\n<ja>\n<en>` / `star:<deckId>:<itemId>` / `edit:<deckId>:<itemId>` |
+| 場面 | `phraseitem:<itemId>` / `phrasestar:<itemId>` |
+| 文法予測 | `gramrule:<ruleId>` / `gramitem:<itemId>` |
+| リスニング | `listendeck:<deckId>` / `listenitem:<itemId>` / `listenstar:<itemId>` |
+| パラフレ帳（畳んだ） | `genre:<genreId>` / `card:<cardId>` / `parastar:<cardId>` |
+| カード（畳んだ） | `carddeck:<deckId>` / `carditem:<itemId>` / `cardstar:<itemId>` |
+| シャドーイング（畳んだ） | `shadowdeck:<deckId>` / `shadowline:<itemId>` |
+| 受信箱 | `inboxKey(card)` が配る（作り方を 1 か所にそろえるため） |
 
 **★の付け外しもここを通す。** 突き合わせが足し算だけだと、外した★が相手側から復活する。
 **「元に戻す」も同じ。** 上書きを捨てただけでは、相手側の上書きが次の同期で戻ってくる。
+
+★を持つモードは、**付けたときは `clearDelete`、外したときは `recordDelete`** を対で呼ぶ。
+片方だけだと、外した★が次の同期で付き直す（畳む前のカードが実際にそうなっていた。
+`cards.js` の `toggleStar` が外したことを記録していなかった）。
+
+### 「何か届いたか」は `anyHit()` 1 本で見る
+
+`apply()` が立てた旗を `||` で並べた式を**写さないこと**。前は同じ式が 3 か所にあり、
+文法予測を足したときに**1 か所だけ書き落とした**。落ちた所では「ほかの端末のぶんも
+取り込みました」と言わなくなる。**中身はちゃんと入っているので、言わないことに誰も気付けない。**
+
+`anyHit()` は旗の名前を手で並べず `hit` の中を回すので、**モードを足しても直す所が無い**。
+`failed`（保存できなかったものの覚え書き）だけは外す — **空配列は truthy** なので、
+外さないと常に「届いた」になる。
+
+見張りは `tests/gramsynctest.mjs`「文法予測だけ届いた回も『取り込みました』と言う」。
 
 ## データ形式（`assets/data.js`）
 

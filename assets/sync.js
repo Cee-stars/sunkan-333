@@ -474,6 +474,27 @@
   }
 
   /** 保存できなかったものを名指しする。何が落ちたか分からないのがいちばん困る */
+  /**
+   * `apply()` が立てた旗を見て、**何か 1 つでも届いたか**を返す。
+   *
+   * **ここを 1 本にしておくこと。** 前はこの式が 3 か所に写してあり、
+   * 文法予測（gram）を足したときに**書き足すのを 1 か所落とした**。
+   * 落ちた所では「ほかの端末のぶんも取り込みました」と言わなくなる。
+   * 中身はちゃんと入っているので、言わないことに誰も気付けない。
+   *
+   * 旗の名前を手で並べない（`hit` の中を回す）ので、**モードを足しても直す所が無い**。
+   * `failed` は「保存できなかった」の覚え書きで、届いたかどうかとは別の話なので外す。
+   */
+  function anyHit(hit) {
+    if (!isObject(hit)) return false;
+    for (var k in hit) {
+      if (!Object.prototype.hasOwnProperty.call(hit, k)) continue;
+      if (k === 'failed') continue;
+      if (hit[k]) return true;
+    }
+    return false;
+  }
+
   function saveFailNote(hit) {
     return (hit && hit.failed && hit.failed.length)
       ? 'この端末に保存できませんでした（' + hit.failed.join('・') + '）。'
@@ -1159,7 +1180,7 @@
     var hit = apply(merged);
     refreshViews(hit);
     state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
-    return hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.listen || hit.inbox;
+    return anyHit(hit);
   }
 
   function handoffLink() {
@@ -1862,8 +1883,7 @@
       var before = countAdded(mine.added);
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase
-                 || hit.listen || hit.gram || hit.inbox;
+      var changed = anyHit(hit);
       refreshViews(hit);
       state.saveNote = saveFailNote(hit);
       if (hit.drill) announceArrivals(before, merged);
@@ -2037,8 +2057,7 @@
         : '';
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase
-                 || hit.listen || hit.gram || hit.inbox;
+      var changed = anyHit(hit);
       refreshViews(hit);
       // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
       // 「同期しました」で流すと、届いていないのに届いた気になる

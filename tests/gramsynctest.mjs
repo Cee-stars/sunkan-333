@@ -97,8 +97,15 @@ await A.p.evaluate(() => {
 });
 
 console.log('A 同期1:', await sync(A));
-console.log('B 同期1:', await sync(B));
+const msgB1 = await sync(B);
+console.log('B 同期1:', msgB1);
 const b1 = await state(B);
+
+/* **文法予測だけが届いた回に、ちゃんと「取り込みました」と言うか。**
+ * 「何か届いたか」の旗の式が 3 か所に写してあり、gram を足したとき 1 か所
+ * 書き落としていた。中身は入るので、言わないことに誰も気付けない。
+ * いまは `anyHit()` 1 本にまとめてあるが、戻ったらここで落ちる。 */
+ok('文法予測だけ届いた回も「取り込みました」と言う', /取り込みました/.test(msgB1), msgB1);
 
 ok('規則が B に渡る（5 個）', b1.rules.length === 5, JSON.stringify(b1.rules));
 ok('例文が B に渡る（38 文）', b1.items.length === 38, String(b1.items.length));
