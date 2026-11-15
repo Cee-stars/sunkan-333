@@ -33,11 +33,13 @@
 | `tests/drillttstest.mjs` | 共通 | 瞬間英作文でも AI の音声が使えるか（押す前に用意する・押したら作らせない・入／切がリスニングと共通）。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/ttstest.mjs` | 共通 | AI の音声の確かめ（1 回だけ作る・しまったぶんで鳴る・置き場が無ければ端末の声）。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/listentest.mjs` | 共通 | リスニングの確かめ（タブ名・🔈 の位置・ぼかし・かたまりを 1 つずつ・はみ出し）。**390px と 1180px の両方**で走る。`node tests/listentest.mjs` |
+| `tests/chunkplaytest.mjs` | 共通 | リスニングで**かたまり 1 つだけ**鳴らせるか（札は出したぶんだけ・押しても行は進まない・自動読み上げもかたまりだけ・AI の音声でも別の鍵でしまう・2 度は作らせない）。**390px と 1180px の両方**で走る。`node tests/fake-worker.mjs 8600 &` が要る |
 | `tests/playlisttest.mjs` | 共通 | リスニングのプレイリストの確かめ（作る・空と同じ名前は作らない・入れ先・絞り込みと件数・名前を変える・消しても中の文は残る・古い形の文・長い名前のはみ出し）。**390px と 1180px の両方**で走る。`node tests/playlisttest.mjs` |
 | `tests/synctest.mjs` | 共通 | 2 台が揃うかの確かめ。アプリと置き場の両方を上げてから `node tests/synctest.mjs` |
 | `tests/gramtest.mjs` | 共通 | 文法予測の確かめ（収録・順序の決まり・二択のラベル・並置・帯・旗・タイプの段・ゲート）。**390px と 1180px の両方**で走る。`node tests/gramtest.mjs` |
 | `tests/gramsynctest.mjs` | 共通 | 文法予測が 2 台で揃うか（規則・例文・予定・記録・段・消す）。`node tests/fake-worker.mjs 8600 &` が要る。**部屋は走らせるたびに別にする** |
 | `tests/modetest.mjs` | 共通 | モードの確かめ（タブ 3 つ・開いた画面だけが見える・← →・畳んだモードを覚えている端末・口の有無・畳んだぶんの預かりが残っているか）。**390px と 1180px の両方**で走る。`node tests/modetest.mjs`。`python3 -m http.server 8599 --bind 127.0.0.1` が要る |
+| `tests/roomswitchtest.mjs` | 共通 | **合言葉（部屋）を取り替えても、先に入っていたものが消えないか。**2 台が別々の置き場を入れていたときの直し方（片方の URL と合言葉を相手と同じに書き換える）を、足した文・場面・リスニングの 3 種類で実際に動かす。消した記録が部屋を移っても効くことも見る。**390px と 1180px の両方**で走る。`node tests/fake-worker.mjs 8600 &` が要る |
 | `cloudflare/worker.mjs` | 共通 | 同期の置き場（Cloudflare Worker）。**アプリの一式ではない**ので `index.html` からは読まない。管理画面に貼って使う（npm もビルドも要らない）。中身は解釈せず、合言葉ごとに JSON を 1 つ預かって返すだけ |
 
 `app.js` と `phrase.js` と `listen.js` と `inbox.js` は状態も保存先も共有しない。触れ合うのは
