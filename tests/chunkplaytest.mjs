@@ -272,6 +272,60 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
     (await page.evaluate(() => window.__CP.said.length)) === 0,
     JSON.stringify(await page.evaluate(() => window.__CP.said)));
 
+  /* --- **同じかたまりの音を 2 回作らせない** ---------------------------
+   * 行を開くと「出したかたまりを鳴らす」と「その行のぶんを用意する」が
+   * 続けて走る。鳴らす側が作らせている最中は `store.get` がまだ空振りなので、
+   * 気付かないと**同じ鍵をもう一度作らせる**（無料枠を二重に使う）。
+   * 置き場が即答すると出ないので、**わざと遅らせて**確かめる
+   *（本物の Cloudflare は 2〜3 秒かかる。コメント自身がそう書いている）。
+   * ------------------------------------------------------------------- */
+  await page.evaluate(() => {
+    window.SUNKAN_AUDIO.clear();
+    const s = JSON.parse(localStorage.getItem('sunkan:settings') || '{}');
+    s.autoSpeak = true;                 // 出したかたまりをその場で鳴らす
+    localStorage.setItem('sunkan:settings', JSON.stringify(s));
+  });
+  const slow = async route => {
+    const req = route.request();
+    let body = {};
+    try { body = JSON.parse(req.postData() || '{}'); } catch (e) { /* 形が違えば数えない */ }
+    if (req.method() === 'POST' && req.url().indexOf('8600') >= 0 && body.op === 'tts') {
+      made++;
+      await new Promise(r => setTimeout(r, 1500));   // 本物の置き場の遅さ
+    }
+    await route.continue();
+  };
+  await page.unroute('**/*');
+  await page.route('**/*', slow);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector(ROW1, { timeout: 15000 });
+  // **開いた直後の「まるごと」の先読みが終わるまで待つ。**
+  // 走っている間は、かたまりの用意は譲って帰る作りなので、
+  // ここで待たないと数えたいものが走らない
+  await page.waitForTimeout(5000);
+  const madeBefore = made;
+  await page.click(ROW1 + ' .row-main');       // 1 かたまり出す＝鳴らす＋用意する
+  await page.waitForTimeout(9000);
+  ok('同じかたまりの音を 2 回作らせない（3 かたまり＝3 回）',
+     made - madeBefore === 3, '行った回数 ' + (made - madeBefore));
+
+  await page.unroute('**/*');
+  await page.route('**/*', async route => {
+    const req = route.request();
+    if (req.method() === 'POST' && req.url().indexOf('8600') >= 0) {
+      let body = {};
+      try { body = JSON.parse(req.postData() || '{}'); } catch (e) { /* 形が違えば数えない */ }
+      if (body.op === 'tts') made++;
+    }
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('sunkan:settings') || '{}');
+    s.autoSpeak = false;
+    localStorage.setItem('sunkan:settings', JSON.stringify(s));
+  });
+
   // 置き場を外すと、黙って端末の声に戻る
   await page.evaluate(() => {
     localStorage.removeItem('sunkan:sync:cfUrl');

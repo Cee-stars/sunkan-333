@@ -1040,6 +1040,24 @@
         var items = mergeById(mg.items, tg.items, map, 'gramitem:');
         var liveRules = {}, liveItems = {}, n;
         for (n = 0; n < rules.length; n++) liveRules[trim(rules[n].id)] = true;
+
+        // **消した規則にぶら下がったままの例文は連れてこない。**
+        // 規則を消した端末は自分の例文に墓標を立てるが、**もう片方の端末が
+        // その規則に足した例文には墓標が無い**ので、そのまま残ってしまう。
+        // 残ると出題もされず、✎ でも開けず、消すこともできないのに件数だけ増え、
+        // 「2 台で件数を見比べる」が狂う。
+        // **規則が墓標に入っているものだけ**落とす（まだ届いていないだけの規則は
+        // 墓標が無いので残る。リスニングの「指し先の無いプレイリスト」と同じ考え方で、
+        // あちらは入れ物が任意なので「未分類」へ戻すが、例文は規則に属するので
+        // 行き先が無い）。
+        var kept = [];
+        for (n = 0; n < items.length; n++) {
+          var rid = trim(items[n].rule);
+          if (rid && !liveRules[rid] && isDeleted(map, 'gramrule:' + rid)) continue;
+          kept.push(items[n]);
+        }
+        items = kept;
+
         for (n = 0; n < items.length; n++) liveItems[trim(items[n].id)] = true;
         return {
           rules: rules,
@@ -1971,7 +1989,7 @@
       lines.push(mineLine);
       lines.push(found
         ? '2 台目なら、このまま「いま同期する」で取り込めます。'
-        : '1 台目ならこれで正常です。2 台目のつもりなら、**合言葉が 1 台目と違っています**。');
+        : '1 台目ならこれで正常です。2 台目のつもりなら、合言葉が 1 台目と違っています。');
       setStatus(lines.join('\n'), false);
     }, function (err) {
       setStatus('置き場につながりませんでした: ' + ((err && err.message) || '通信エラー')
@@ -2317,13 +2335,13 @@
     if (cfReady()) {
       // 合言葉そのものは出さない。末尾だけで「同じものを入れたか」は照合できる
       text += '\n置き場 ' + cfUrl().replace(/^https?:\/\//, '') + ' ／ 合言葉 …' + cfRoom().slice(-4)
-            + '　← **この道を使います**';
+            + '　← この道を使います';
     }
     if (gistReady()) {
       // 保存先そのものを見せる。畳んだ印だけだと、トークンが違うのか
       // 保存先が違うのか区別が付かず、直しようがない
       text += '\n保存先 …' + gistId().slice(-6) + ' ／ 照合コード ' + pairCode()
-            + (cfReady() ? '　（置き場があるので、こちらは使いません）' : '　← **この道を使います**');
+            + (cfReady() ? '　（置き場があるので、こちらは使いません）' : '　← この道を使います');
     }
     // **2 台が同じ道かを見比べさせる。** 片方が置き場・片方が Gist だと、
     // どちらも「同期しました」と出たままずっとすれ違う（エラーが出ないので気付けない）
