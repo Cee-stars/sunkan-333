@@ -2644,6 +2644,99 @@ legend.field-label {
 
 .listen-chunk-ja[hidden] { display: none; }
 
+/* --- かたまりごとに鳴らす（英文の下の番号の札） ---
+   `.row-main` はボタンなので、**中にボタンは置けない**（左の 🔈 を行に重ねて
+   いるのと同じ事情）。かたまりの真横には置けないので、英文の**下**に番号を並べ、
+   どのかたまりかは触れたときの下線（`.is-cued`）で出す。
+
+   **出したぶんだけ出す。** 札の数が「あと何かたまり残っているか」の答えに
+   なってしまうため（ぼかしているのと同じ理由）。畳むのは JS の `hidden`。
+
+   右は道具列（↻ ✎ 🗑）のぶんを空ける。道具列は行の**上下の真ん中**に出るので、
+   開いて行が高くなるとちょうどこの段に重なる。狭幅の `--tools-space`（56px）は
+   閉じた行の ↻ 1 つぶんしか無いので、ここだけは 3 つぶん空けておく。 */
+.listen-plays {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding-inline-start: var(--listen-speak-space);
+  padding-inline-end: max(var(--tools-space), 132px);
+  padding-block-end: var(--row-pad-y);
+}
+
+.listen-plays[hidden] { display: none; }
+
+/* 「かたまり」の字。札だけでは何の番号か分からない（押す前に読めるように） */
+.listen-plays-label {
+  color: var(--text-faint);
+  font-size: max(0.6875rem, calc(var(--row-font) * 0.72));
+  letter-spacing: -0.02em;
+}
+
+.listen-play {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  min-width: 32px;
+  min-height: 32px;
+  padding-inline: 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-family: var(--font-en);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.listen-play[hidden] { display: none; }
+
+/* 見た目は 32px でも、指の当たり判定は 44px 以上を確保する
+   （行の道具と同じ手。札が小さいぶん、ここは広めに取る） */
+.listen-play::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+}
+
+.listen-play:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .listen-play:hover { border-color: var(--accent); background: var(--accent-soft); }
+}
+
+/* その かたまり の音が端末にしまってある印（🔈 の点と同じ意味・同じ大きさ） */
+.listen-play.has-audio::after {
+  content: "";
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline-end: -1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* 札に触れているあいだ、そのかたまりに下線を引く。
+   **背景は変えない** — `.is-fresh`（出したばかり）の色と見分けが付かなくなる。 */
+.listen-chunk.is-cued .listen-chunk-en {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
 /* 出したばかりのかたまりは、**日本語も同じ色**にする。
    英語だけ色が変わると、下の日本語が前のかたまりのものに見えて、
    どこの訳なのかが読み取りにくい（本人の申し出）。

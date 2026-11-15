@@ -27,12 +27,12 @@ jobs:
         run: |
           node --check assets/app.js
           node --check assets/data.js
-          node --check assets/paraphrase.js
+          node --check assets/mode.js
           node --check assets/phrase.js
+          node --check assets/gram.js
           node --check assets/media.js
           node --check assets/audio.js
           node --check assets/srs.js
-          node --check assets/cards.js
           node --check assets/listen.js
           node --check assets/import.js
           node --check assets/inbox.js

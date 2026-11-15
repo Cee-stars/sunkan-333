@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 70 (2026-11-14)">
+<meta name="sunkan-build" content="build 71 (2026-11-15)">
 <meta name="description" content="瞬間英作文・場面・リスニングの 3 つ。PDF から出題が作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=70">
+<link rel="stylesheet" href="assets/style.css?v=71">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / 場面 / リスニング）は描画より先に決める。
@@ -400,8 +400,8 @@
   <p class="hint hint--mobile" data-mode-view="phrase">行をタップすると英語が出ます</p>
   <p class="hint hint--desktop" data-mode-view="gram">手がかりだけ見て、続きが「1つ」か「複数」かを先に決めます。押すまで続きは出ません。</p>
   <p class="hint hint--mobile" data-mode-view="gram">続きが 1つか複数かを先に決めてからタップします</p>
-  <p class="hint hint--desktop" data-mode-view="listen">🔈 で文をまるごと聞いてから、行をクリックして 1 かたまりずつ出します。H 全部出す・全部隠す</p>
-  <p class="hint hint--mobile" data-mode-view="listen">🔈 で聞いて、行をタップすると 1 かたまりずつ出ます</p>
+  <p class="hint hint--desktop" data-mode-view="listen">🔈 で文をまるごと聞いてから、行をクリックして 1 かたまりずつ出します。下の番号でそのかたまりだけ聞き直せます。H 全部出す・全部隠す</p>
+  <p class="hint hint--mobile" data-mode-view="listen">🔈 で聞いて、行をタップすると 1 かたまりずつ出ます。番号でそこだけ聞き直せます</p>
 </footer>
 
 <!-- ===== 行テンプレート（JS からクローンして使う） ===== -->
@@ -503,6 +503,14 @@
         <small class="listen-ja" hidden></small>
       </span>
     </button>
+
+    <!-- かたまりごとに鳴らす。.row-main（ボタン）の中にボタンは置けないので、
+         英文の下に番号の札を並べる。**出したぶんだけ出す**ので、札の数が
+         「残りいくつあるか」の答えにならない（listen.js が hidden を外す）。
+         ここに 🔈 は置かない（行の 🔈 と見分けが付かなくなる） -->
+    <span class="listen-plays" hidden>
+      <span class="listen-plays-label" aria-hidden="true">かたまり</span>
+    </span>
 
     <span class="row-tools">
       <!-- 言えなかった文に付けて、聞き取れるようになったら外す印 -->
@@ -1781,23 +1789,23 @@ export default {
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=70"></script>
-<script src="assets/data.js?v=70"></script>
-<script src="assets/app.js?v=70"></script>
+<script src="assets/speech.js?v=71"></script>
+<script src="assets/data.js?v=71"></script>
+<script src="assets/app.js?v=71"></script>
 <!-- タブでのモード切り替えだけを持つ（もとは paraphrase.js の中にあった） -->
-<script src="assets/mode.js?v=70"></script>
+<script src="assets/mode.js?v=71"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=70"></script>
-<script src="assets/gram.js?v=70"></script>
-<script src="assets/listen.js?v=70"></script>
+<script src="assets/phrase.js?v=71"></script>
+<script src="assets/gram.js?v=71"></script>
+<script src="assets/listen.js?v=71"></script>
 
-<script src="assets/media.js?v=70"></script>
-<script src="assets/audio.js?v=70"></script>
-<script src="assets/srs.js?v=70"></script>
-<script src="assets/import.js?v=70"></script>
-<script src="assets/inbox.js?v=70"></script>
-<script src="assets/sync.js?v=70"></script>
-<script src="assets/update.js?v=70"></script>
+<script src="assets/media.js?v=71"></script>
+<script src="assets/audio.js?v=71"></script>
+<script src="assets/srs.js?v=71"></script>
+<script src="assets/import.js?v=71"></script>
+<script src="assets/inbox.js?v=71"></script>
+<script src="assets/sync.js?v=71"></script>
+<script src="assets/update.js?v=71"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
