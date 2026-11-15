@@ -147,6 +147,52 @@ ok('状態の文に合言葉を丸ごと出さない', whenText.indexOf(room) < 
 ok('同じものを入れたか照合できる末尾は出す',
    whenText.indexOf(room.slice(-4)) >= 0 || whenText === '', whenText.slice(0, 120));
 
+/* --- **どちらの道を使うのかを必ず出す** ---------------------------------
+ * 同期には道が 2 つある（置き場 と GitHub の Gist）。使うほうを黙って選ぶので、
+ * 2 台が別の道だと**どちらも「同期しました」と出たまま一生すれ違う**。
+ * エラーは一度も出ない。実際にこれで「同期が壊れている」ことになっていた。
+ * だから、どの道を使うのかと、どこへ書いたのかを必ず画面に出す。
+ * ------------------------------------------------------------------- */
+ok('使う道が「この道を使います」と出る', /この道を使います/.test(whenText), whenText.slice(0, 240));
+ok('もう 1 台と見比べるよう促す', /もう 1 台/.test(whenText), whenText.slice(0, 240));
+
+// 置き場と GitHub の両方が入っているとき、使わないほうに「使いません」と書く
+await A.page.evaluate(() => {
+  localStorage.setItem('sunkan:sync:token', 'ghp_' + 'x'.repeat(36));
+  localStorage.setItem('sunkan:sync:gistId', 'a'.repeat(32));
+});
+await A.page.click('#btn-sync-close');
+await A.page.waitForTimeout(250);
+await openSync(A);
+const bothText = await A.page.$eval('#sync-status', e => e.textContent);
+ok('両方入れても、使うのは置き場だと分かる', /置き場[\s\S]*この道を使います/.test(bothText), bothText.slice(0, 300));
+ok('使わないほうには「使いません」と書く', /使いません/.test(bothText), bothText.slice(0, 300));
+
+// 置き場を外すと、GitHub のほうが「使う道」に変わる
+await A.page.evaluate(() => localStorage.removeItem('sunkan:sync:cfUrl'));
+await A.page.click('#btn-sync-close');
+await A.page.waitForTimeout(250);
+await openSync(A);
+const gistText = await A.page.$eval('#sync-status', e => e.textContent);
+ok('置き場を外すと GitHub が使う道になる',
+   /保存先[\s\S]*この道を使います/.test(gistText) && !/使いません/.test(gistText),
+   gistText.slice(0, 300));
+
+// 元に戻す（このあとの検査がまた置き場を使うので）
+await A.page.evaluate(u => {
+  localStorage.setItem('sunkan:sync:cfUrl', u);
+  localStorage.removeItem('sunkan:sync:token');
+  localStorage.removeItem('sunkan:sync:gistId');
+}, WORKER);
+await A.page.click('#btn-sync-close');
+await A.page.waitForTimeout(250);
+await openSync(A);
+
+// 同期の知らせにも、どこへ書いたのかを出す
+const whereMsg = await syncNow(A);
+ok('同期の知らせに、どこへ書いたのかが出る', /置き場（…/.test(whereMsg), whereMsg.slice(0, 160));
+ok('知らせにも合言葉を丸ごと出さない', whereMsg.indexOf(room) < 0, whereMsg.slice(0, 160));
+
 // --- 置き場を調べる：2 台で見比べられるものが出るか ---
 // 繋がらないときに知りたいのは「向こうに何件あるか」と「合言葉が同じか」。
 await A.page.click('#btn-sync-cf-check');
