@@ -1,4 +1,7 @@
 .DS_Store
+# テストを走らせるとき /opt/node-tools/node_modules へリンクを張る。
+# **末尾の / を付けた形だけだと、そのリンクに当たらない**（一度コミットに紛れた）
 node_modules/
+node_modules
 *.log
 .claude/

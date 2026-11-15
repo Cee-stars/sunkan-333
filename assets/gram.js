@@ -606,6 +606,15 @@
    * 直近に外したもの（grade 1 以下で AVOID_DAYS 以内）は、ほかに出せるものが
    * あるあいだは避ける。**ほかに無ければ出す**（出せる問題が無くなるほうが困る）。
    */
+  /** 旗を下ろす。出した時点で下ろすので、次の回には普通の順で並ぶ */
+  function dropFlag(itemId) {
+    var rec = state.seen[itemId];
+    if (!rec || rec.q !== 1) return;
+    rec.q = 0;
+    state.seen[itemId] = rec;
+    saveSeen();
+  }
+
   function pickItem(ruleId, now) {
     var list = itemsOf(ruleId);
     if (!list.length) return null;
@@ -786,6 +795,10 @@
         stage: activeStage(rule),
         picked: -1, typed: '', step: 'pick'
       };
+      // **旗はここで下りる。** 「次にこの規則が来たとき先に出す」ための印なので、
+      // 先に出した時点で役目が終わる。採点のときに消すと、旗を付けてから採点する
+      // というただ 1 つの道で必ず消えてしまい、一度も効かない。
+      dropFlag(item.id);
     }
 
     elEmpty.hidden = true;
@@ -985,8 +998,12 @@
       saveSrs();
     }
 
-    // 例文の「最後に出した」を控える。旗は出した時点で下ろす
-    state.seen[cur.item.id] = { at: now, g: g, q: 0 };
+    // 例文の「最後に出した」を控える。
+    // **旗（これでもいい?）はここで消さない。** 旗と採点は同時に出るので、
+    // ここで消すと「旗を付けて採点する」というただ 1 つの道で必ず消え、
+    // 旗が一度も効かない。下りるのは**次にこの例文を出したとき**（pickItem）。
+    var was = state.seen[cur.item.id];
+    state.seen[cur.item.id] = { at: now, g: g, q: (was && was.q === 1) ? 1 : 0 };
     saveSeen();
 
     // 記録。**直近 LOG_MAX 件だけ残す**（無制限に伸びるのはここだけ）
@@ -1348,7 +1365,15 @@
     if (elSpeak) elSpeak.addEventListener('click', speakCurrent);
     if (elEdit) {
       elEdit.addEventListener('click', function () {
-        if (state.cur) openItemDialog(state.cur.item.id);
+        if (!state.cur) return;
+        // **答え合わせの前は開かない。** 直す画面には英文が区切りごと丸ごと入り、
+        // 訳も、どちらが正しいかの印まで入っている。開けたら答えがそのまま読める
+        // （🔈 と同じ門。こちらに付け忘れていた）。
+        if (state.cur.step !== 'done') {
+          flash('答え合わせのあとに直せます。');
+          return;
+        }
+        openItemDialog(state.cur.item.id);
       });
     }
 
@@ -1428,6 +1453,12 @@
     var step = state.cur ? state.cur.step : '';
     var picked = state.cur ? state.cur.picked : -1;
     var typed = state.cur ? state.cur.typed : '';
+    // **段も持ち越す。** ここで引き直すと、相手の端末の記録が届いて段が
+    // 二択 → タイプに上がった瞬間に、二択で答えて答え合わせを見ている画面が
+    // タイプの採点に化け、**自分の答えが「（書かなかった）」に置き換わって赤くなる**。
+    // 「自分の答えは採点を押し終えるまで消さない」の約束を破るので、
+    // いま出ている問題は**出したときの段のまま**最後まで終わらせる。
+    var stage = state.cur ? state.cur.stage : '';
 
     load();
 
@@ -1436,7 +1467,7 @@
       var r = findRule(it.rule);
       if (r) {
         state.cur = {
-          item: it, rule: r, stage: activeStage(r),
+          item: it, rule: r, stage: stage || activeStage(r),
           picked: picked, typed: typed, step: step || 'pick'
         };
       }

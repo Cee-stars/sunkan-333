@@ -97,8 +97,15 @@ await A.p.evaluate(() => {
 });
 
 console.log('A 同期1:', await sync(A));
-console.log('B 同期1:', await sync(B));
+const msgB1 = await sync(B);
+console.log('B 同期1:', msgB1);
 const b1 = await state(B);
+
+/* **文法予測だけが届いた回に、ちゃんと「取り込みました」と言うか。**
+ * 「何か届いたか」の旗の式が 3 か所に写してあり、gram を足したとき 1 か所
+ * 書き落としていた。中身は入るので、言わないことに誰も気付けない。
+ * いまは `anyHit()` 1 本にまとめてあるが、戻ったらここで落ちる。 */
+ok('文法予測だけ届いた回も「取り込みました」と言う', /取り込みました/.test(msgB1), msgB1);
 
 ok('規則が B に渡る（5 個）', b1.rules.length === 5, JSON.stringify(b1.rules));
 ok('例文が B に渡る（38 文）', b1.items.length === 38, String(b1.items.length));
@@ -188,20 +195,70 @@ const a4 = await state(A);
 ok('消したものが A に戻らない', a4.items.indexOf('gi-13') < 0, String(a4.items.length));
 
 /* ---------------------------------------------------------------
+ * 4b. 消した規則にぶら下がった例文を、連れて戻らない
+ *
+ * 規則を消した端末は**自分の例文**に墓標を立てるが、もう片方が
+ * その規則に足した例文には墓標が無い。そのまま残すと、出題もされず
+ * ✎ でも開けず消すこともできない例文が居座り、件数だけ合わなくなる。
+ * ------------------------------------------------------------- */
+await B.p.evaluate(() => {
+  // B がその規則に 1 つ足した（A はこれを知らない）
+  const items = JSON.parse(localStorage.getItem('sunkan:gram:items') || '[]');
+  items.push({ id: 'gi-orphan', rule: 'gr-oneof', en: 'One of / my friends / lives here.',
+               ja: '友だちの 1 人 / がここに住んでいる', a: 0, created: Date.now() });
+  localStorage.setItem('sunkan:gram:items', JSON.stringify(items));
+});
+console.log('B 同期6:', await sync(B));
+
+await A.p.evaluate(() => {
+  // A が規則ごと消す（自分の例文には墓標が立つ）
+  const items = JSON.parse(localStorage.getItem('sunkan:gram:items') || '[]');
+  const rules = JSON.parse(localStorage.getItem('sunkan:gram:rules') || '[]');
+  items.filter(x => x.rule === 'gr-oneof').forEach(function (it) {
+    window.SUNKAN_SYNC.recordDelete('gramitem:' + it.id);
+  });
+  localStorage.setItem('sunkan:gram:items', JSON.stringify(items.filter(x => x.rule !== 'gr-oneof')));
+  localStorage.setItem('sunkan:gram:rules', JSON.stringify(rules.filter(x => x.id !== 'gr-oneof')));
+  window.SUNKAN_SYNC.recordDelete('gramrule:gr-oneof');
+});
+console.log('A 同期7:', await sync(A));
+console.log('B 同期7:', await sync(B));
+
+const a5 = await state(A), b5 = await state(B);
+ok('消した規則が 2 台から消える',
+   a5.rules.indexOf('gr-oneof') < 0 && b5.rules.indexOf('gr-oneof') < 0,
+   JSON.stringify(a5.rules) + ' / ' + JSON.stringify(b5.rules));
+ok('★ 相手が足した例文も、規則ごと消える（行き先の無い例文を残さない）',
+   a5.items.indexOf('gi-orphan') < 0 && b5.items.indexOf('gi-orphan') < 0,
+   'A=' + a5.items.length + ' B=' + b5.items.length);
+ok('ほかの規則の例文は巻き添えにしない',
+   a5.items.length === b5.items.length && a5.items.length >= 25,
+   'A=' + a5.items.length + ' B=' + b5.items.length);
+
+/* ---------------------------------------------------------------
  * 5. 文法予測を知らない古い版と同期しても消えない
  * ------------------------------------------------------------- */
+// **件数は決め打ちにしない。** 上の段で規則を 1 つ消しているので、
+// ここで見たいのは「数が変わらないこと」であって、特定の数ではない
 const survives = await A.p.evaluate(() => {
+  const before = {
+    rules: JSON.parse(localStorage.getItem('sunkan:gram:rules') || '[]').length,
+    items: JSON.parse(localStorage.getItem('sunkan:gram:items') || '[]').length
+  };
   const text = window.SUNKAN_SYNC.backupText({});
   const d = JSON.parse(text);
   delete d.gram;                       // 古い版のつもり
   window.SUNKAN_SYNC.takeBackupText(JSON.stringify(d));
   return {
+    before: before,
     rules: JSON.parse(localStorage.getItem('sunkan:gram:rules') || '[]').length,
     items: JSON.parse(localStorage.getItem('sunkan:gram:items') || '[]').length
   };
 });
-ok('gram を知らない古い版と同期しても規則が消えない', survives.rules === 5, JSON.stringify(survives));
-ok('gram を知らない古い版と同期しても例文が消えない', survives.items === 37, JSON.stringify(survives));
+ok('gram を知らない古い版と同期しても規則が消えない',
+   survives.rules === survives.before.rules && survives.rules > 0, JSON.stringify(survives));
+ok('gram を知らない古い版と同期しても例文が消えない',
+   survives.items === survives.before.items && survives.items > 0, JSON.stringify(survives));
 
 ok('A にエラーが出ていない', A.errs.length === 0, A.errs.join(' / '));
 ok('B にエラーが出ていない', B.errs.length === 0, B.errs.join(' / '));

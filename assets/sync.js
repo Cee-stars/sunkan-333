@@ -474,6 +474,27 @@
   }
 
   /** 保存できなかったものを名指しする。何が落ちたか分からないのがいちばん困る */
+  /**
+   * `apply()` が立てた旗を見て、**何か 1 つでも届いたか**を返す。
+   *
+   * **ここを 1 本にしておくこと。** 前はこの式が 3 か所に写してあり、
+   * 文法予測（gram）を足したときに**書き足すのを 1 か所落とした**。
+   * 落ちた所では「ほかの端末のぶんも取り込みました」と言わなくなる。
+   * 中身はちゃんと入っているので、言わないことに誰も気付けない。
+   *
+   * 旗の名前を手で並べない（`hit` の中を回す）ので、**モードを足しても直す所が無い**。
+   * `failed` は「保存できなかった」の覚え書きで、届いたかどうかとは別の話なので外す。
+   */
+  function anyHit(hit) {
+    if (!isObject(hit)) return false;
+    for (var k in hit) {
+      if (!Object.prototype.hasOwnProperty.call(hit, k)) continue;
+      if (k === 'failed') continue;
+      if (hit[k]) return true;
+    }
+    return false;
+  }
+
   function saveFailNote(hit) {
     return (hit && hit.failed && hit.failed.length)
       ? 'この端末に保存できませんでした（' + hit.failed.join('・') + '）。'
@@ -1019,6 +1040,24 @@
         var items = mergeById(mg.items, tg.items, map, 'gramitem:');
         var liveRules = {}, liveItems = {}, n;
         for (n = 0; n < rules.length; n++) liveRules[trim(rules[n].id)] = true;
+
+        // **消した規則にぶら下がったままの例文は連れてこない。**
+        // 規則を消した端末は自分の例文に墓標を立てるが、**もう片方の端末が
+        // その規則に足した例文には墓標が無い**ので、そのまま残ってしまう。
+        // 残ると出題もされず、✎ でも開けず、消すこともできないのに件数だけ増え、
+        // 「2 台で件数を見比べる」が狂う。
+        // **規則が墓標に入っているものだけ**落とす（まだ届いていないだけの規則は
+        // 墓標が無いので残る。リスニングの「指し先の無いプレイリスト」と同じ考え方で、
+        // あちらは入れ物が任意なので「未分類」へ戻すが、例文は規則に属するので
+        // 行き先が無い）。
+        var kept = [];
+        for (n = 0; n < items.length; n++) {
+          var rid = trim(items[n].rule);
+          if (rid && !liveRules[rid] && isDeleted(map, 'gramrule:' + rid)) continue;
+          kept.push(items[n]);
+        }
+        items = kept;
+
         for (n = 0; n < items.length; n++) liveItems[trim(items[n].id)] = true;
         return {
           rules: rules,
@@ -1159,7 +1198,7 @@
     var hit = apply(merged);
     refreshViews(hit);
     state.saveNote = saveFailNote(hit);   // 書けなかったぶんは report が名指しする
-    return hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.listen || hit.inbox;
+    return anyHit(hit);
   }
 
   function handoffLink() {
@@ -1862,7 +1901,7 @@
       var before = countAdded(mine.added);
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.listen || hit.inbox;
+      var changed = anyHit(hit);
       refreshViews(hit);
       state.saveNote = saveFailNote(hit);
       if (hit.drill) announceArrivals(before, merged);
@@ -1950,7 +1989,7 @@
       lines.push(mineLine);
       lines.push(found
         ? '2 台目なら、このまま「いま同期する」で取り込めます。'
-        : '1 台目ならこれで正常です。2 台目のつもりなら、**合言葉が 1 台目と違っています**。');
+        : '1 台目ならこれで正常です。2 台目のつもりなら、合言葉が 1 台目と違っています。');
       setStatus(lines.join('\n'), false);
     }, function (err) {
       setStatus('置き場につながりませんでした: ' + ((err && err.message) || '通信エラー')
@@ -1977,7 +2016,11 @@
       state.saveNote = '';
       if (saveNote) lsSet(LS_ERR, saveNote + '\n' + Date.now()); else lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
-      var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
+      // **どこへ書いたのかまで言う。** 「同期しました」だけだと、2 台が別の道を
+      // 使っていても同じ文が出てしまい、すれ違っていることに気付けない
+      var msg = changed
+        ? '置き場（…' + cfRoom().slice(-4) + '）と同期しました。ほかの端末のぶんも取り込みました。'
+        : '置き場（…' + cfRoom().slice(-4) + '）と同期しました。';
       msg += '\nいま この端末にあるぶん: ' + countsLine(snapshot());
       if (saveNote) msg += '\n⚠ ' + saveNote;
       if (!silent || changed || saveNote) setStatus(msg, !!saveNote);
@@ -2032,7 +2075,7 @@
         : '';
       var merged = merge(mine, theirs);
       var hit = apply(merged);
-      var changed = hit.drill || hit.para || hit.cards || hit.shadow || hit.phrase || hit.listen || hit.inbox;
+      var changed = anyHit(hit);
       refreshViews(hit);
       // 相手のぶんを受け取っても、この端末に書けなければ何も残らない。
       // 「同期しました」で流すと、届いていないのに届いた気になる
@@ -2064,7 +2107,9 @@
       // 書けなかったのなら、それは「済んだ」ことにしない。⚠ を残して次に気付けるようにする
       if (saveNote) lsSet(LS_ERR, saveNote + '\n' + Date.now()); else lsRemove(LS_ERR);
       state.fingerprint = fingerprint();
-      var msg = changed ? '同期しました。ほかの端末のぶんも取り込みました。' : '同期しました。';
+      var msg = changed
+        ? 'GitHub の Gist（…' + gistId().slice(-6) + '）と同期しました。ほかの端末のぶんも取り込みました。'
+        : 'GitHub の Gist（…' + gistId().slice(-6) + '）と同期しました。';
       msg += '\nいま この端末にあるぶん: ' + countsLine(snapshot());
       if (state.handedNote) { msg += '\n' + state.handedNote; state.handedNote = ''; }
       if (state.repairNote) { msg += '\n' + state.repairNote; state.repairNote = ''; }
@@ -2267,6 +2312,19 @@
     return (h >>> 0).toString(36).toUpperCase().slice(-4);
   }
 
+  /**
+   * **いま同期に使う道の名前。** `sync()` の選び方とここを必ず同じにする。
+   *
+   * 2 台が別の道を使っていると、**どちらも「同期しました」と出るのに永久にすれ違う。**
+   * エラーは一度も出ないので、本人には「同期が壊れている」としか見えない。
+   * 道の名前を出していなかったのが、その状態を作っていた。
+   */
+  function routeName() {
+    if (cfReady()) return '置き場（Cloudflare）';
+    if (gistReady()) return 'GitHub の Gist';
+    return '';
+  }
+
   function whenText() {
     var last = parseInt(lsGet(LS_LAST), 10);
     var err = lastError();
@@ -2276,12 +2334,20 @@
     text += ' ・ ' + snap.decks.length + ' セット ・ 同期データ ' + kb(total);
     if (cfReady()) {
       // 合言葉そのものは出さない。末尾だけで「同じものを入れたか」は照合できる
-      text += '\n置き場 ' + cfUrl().replace(/^https?:\/\//, '') + ' ／ 合言葉 …' + cfRoom().slice(-4);
+      text += '\n置き場 ' + cfUrl().replace(/^https?:\/\//, '') + ' ／ 合言葉 …' + cfRoom().slice(-4)
+            + '　← この道を使います';
     }
     if (gistReady()) {
       // 保存先そのものを見せる。畳んだ印だけだと、トークンが違うのか
       // 保存先が違うのか区別が付かず、直しようがない
-      text += '\n保存先 …' + gistId().slice(-6) + ' ／ 照合コード ' + pairCode();
+      text += '\n保存先 …' + gistId().slice(-6) + ' ／ 照合コード ' + pairCode()
+            + (cfReady() ? '　（置き場があるので、こちらは使いません）' : '　← この道を使います');
+    }
+    // **2 台が同じ道かを見比べさせる。** 片方が置き場・片方が Gist だと、
+    // どちらも「同期しました」と出たままずっとすれ違う（エラーが出ないので気付けない）
+    if (routeName()) {
+      text += '\nもう 1 台でもここが「' + routeName() + '」になっているか見てください。'
+            + '違う道どうしでは、両方とも「同期しました」と出たまま一生すれ違います。';
     }
     // 上限に近づいたら、どこが重いのかもその場で見せる
     if (total > FILE_MAX / 2) text += '\n内訳: ' + breakdown(snap);

@@ -1304,6 +1304,16 @@
     var text = job.text;
     var key = store.keyFor(text, 'ai');
 
+    // **いま作らせている最中のものは飛ばす。** 押して鳴らす道（makeAudio）が
+    // 先に同じ鍵を作らせていると、置き場が返すまで `store.get` は空振りするので、
+    // ここで気付かないと**同じ音を 2 回作らせる**（無料枠を二重に使う）。
+    // 行を開くと「出したかたまりを鳴らす」と「その行のぶんを用意する」が
+    // 続けて走るので、1 つめのかたまりでいつも起きていた。
+    if (state.making[key]) {
+      runPrefetch(queue, i + 1, made);
+      return;
+    }
+
     store.get(key).then(function (rec) {
       if (rec) {                                   // もうある
         markMade(row, job.which, true);
@@ -1312,7 +1322,11 @@
       }
       var port = ttsPort();
       if (!port) { done(); return; }
+      // 先読みの側も札を立てる。立てないと、用意している最中に同じかたまりを
+      // 押されたときに、押した側がもう一度作らせる（上と逆向きの二重）
+      state.making[key] = true;
       port.tts(text).then(function (res) {
+        delete state.making[key];
         if (!res || !res.ok || !res.blob) {
           // 枠切れや設定違いのことがある。叩き続けず、ここで止める
           state.prefetching = false;
@@ -1322,7 +1336,7 @@
           markMade(row, job.which, true);
           window.setTimeout(function () { runPrefetch(queue, i + 1, made + 1); }, PREFETCH_GAP);
         }, function () { state.prefetching = false; });
-      }, function () { state.prefetching = false; });
+      }, function () { delete state.making[key]; state.prefetching = false; });
     }, function () { state.prefetching = false; });
   }
 

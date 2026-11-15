@@ -184,8 +184,16 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
      JSON.stringify(Object.keys(after.srs)));
   ok('There の規則にも予定が付いた', !!after.srs['gr-there'], JSON.stringify(Object.keys(after.srs)));
   ok('記録（log）が付いた', (after.log['gr-there'] || []).length === 1, JSON.stringify(after.log['gr-there']));
-  ok('出したら旗は下りる',
-     Object.keys(after.seen).every(k => after.seen[k].q === 0), JSON.stringify(after.seen));
+  /* **採点しても旗は下りない。**
+   * CONTRACT は「出した時点で下りる」と書いてある。旗と採点は**同時に出る**ので、
+   * 採点のときに消すと「旗を付けてから採点する」というただ 1 つの道で必ず消え、
+   * 旗が一度も効かない。ここは前、**採点した時点で下りる**ことを確かめていて、
+   * 決まりと違うものを測っていた（不具合を追認していた）。 */
+  const flaggedIds = Object.keys(after.seen).filter(k => after.seen[k].q === 1);
+  ok('★ 採点しても旗は下りない（下りるのは次に出したとき）',
+     flaggedIds.length === 1, JSON.stringify(after.seen));
+  ok('採点そのものは記録されている',
+     flaggedIds.length === 1 && after.seen[flaggedIds[0]].g >= 3, JSON.stringify(after.seen));
 
   const countAfter = (await p.innerText('#gram-count')).trim();
   ok('帯が 1 つ進んだ', countAfter.split('/')[0].trim() === '1', countBefore + ' → ' + countAfter);
@@ -277,6 +285,127 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
   await p.waitForTimeout(300);
   ok('足せた', await p.evaluate(() =>
     JSON.parse(localStorage.getItem('sunkan:gram:items') || '[]').length) === 39);
+
+  /* ===================================================================
+   * ✎ は、答え合わせの前には開かない
+   *
+   * **ここは答えが漏れるかどうかの見張り。** 直す画面には英文が区切りごと
+   * 丸ごと入り、訳も、どちらが正しいかの印まで入っている。送信前に開けたら
+   * 問題の答えがそのまま読める。🔈 には同じ門があったのに、✎ には無かった。
+   * ================================================================= */
+  // 上で今日ぶんを答え切っているので、予定を組み直させてから問題を出す
+  // （`#gram-stage` は「今日はもう無い」とき**正しく畳まれる**ので、
+  //   そのまま待つと出てこない）
+  await p.evaluate(() => {
+    const ui = JSON.parse(localStorage.getItem('sunkan:gram:ui') || '{}');
+    delete ui.session;
+    localStorage.setItem('sunkan:gram:ui', JSON.stringify(ui));
+    localStorage.setItem('sunkan:gram:srs', '{}');
+  });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('#gram-stage', { state: 'visible', timeout: 15000 });
+  await p.waitForTimeout(300);
+
+  await p.click('#btn-gram-edit');
+  await p.waitForTimeout(300);
+  ok('★ 送る前に ✎ を押しても、直す画面が開かない',
+     (await p.locator('#gram-item-dialog').isVisible()) === false);
+  ok('なぜ開かないのかを言う',
+     /答え合わせのあと/.test(await p.innerText('#gram-status')),
+     await p.innerText('#gram-status'));
+  const leakEn = await p.evaluate(() => {
+    const el = document.getElementById('gram-item-en');
+    return el ? el.value : '(欄が無い)';
+  });
+  ok('★ 英文が欄に入っていない（開かなかったので）', !/\//.test(leakEn), leakEn);
+
+  // 答え合わせのあとなら開ける（門が固すぎないことの確かめ）。
+  // **二択の規則を名指しで開く** — どれが出るかは日によって変わり、
+  // タイプの段が出ると押す所が違う
+  await p.selectOption('#gram-rule-select', 'gr-there');
+  await p.waitForTimeout(400);
+  await p.click('#btn-gram-pick-0');
+  await p.waitForTimeout(350);
+  await p.click('#btn-gram-edit');
+  await p.waitForTimeout(300);
+  ok('答え合わせのあとなら ✎ で直せる', await p.locator('#gram-item-dialog').isVisible(),
+     'status=' + (await p.innerText('#gram-status'))
+     + ' / grades=' + (await p.locator('#gram-grades').isVisible())
+     + ' / view=' + (await p.innerText('#gram-view')).replace(/\s+/g, ' ').slice(0, 60));
+  await p.click('#btn-gram-item-cancel');
+  await p.waitForTimeout(250);
+
+  /* ===================================================================
+   * 旗は「次に出したとき」に下りる（決まりどおりか）
+   *
+   * Has / Have の例文に 1 つだけ旗を立て、その規則を開く。
+   * **旗の付いた例文が先に出て、出た時点で旗が下りる**のが決まり。
+   * ================================================================= */
+  const target = await p.evaluate(() => {
+    // 今日ぶんは上で答え切っているので、予定を組み直させる
+    // （`sunkan:gram:ui` が「今日やった規則」を覚えている）
+    const ui = JSON.parse(localStorage.getItem('sunkan:gram:ui') || '{}');
+    delete ui.session;
+    localStorage.setItem('sunkan:gram:ui', JSON.stringify(ui));
+    localStorage.setItem('sunkan:gram:srs', '{}');   // 今日また出るようにする
+
+    const items = JSON.parse(localStorage.getItem('sunkan:gram:items') || '[]')
+      .filter(x => x.rule === 'gr-have');
+    // わざと 2 つめを立てる（1 つめが先に出ただけ、では確かめにならない）
+    const pick = items[1];
+    const seen = JSON.parse(localStorage.getItem('sunkan:gram:seen') || '{}');
+    items.forEach(function (it, i) { seen[it.id] = { at: 1000 + i, g: 3, q: 0 }; });
+    seen[pick.id] = { at: 1000, g: 3, q: 1 };
+    localStorage.setItem('sunkan:gram:seen', JSON.stringify(seen));
+    return { id: pick.id, en: pick.en };
+  });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await p.waitForSelector('#gram-stage', { state: 'visible', timeout: 15000 });
+  await p.selectOption('#gram-rule-select', 'gr-have');
+  await p.waitForTimeout(400);
+
+  const shownEn = (await p.innerText('#gram-view')).replace(/\s+/g, ' ');
+  const head = target.en.split('/')[0].trim();
+  ok('★ 旗の付いた例文が先に出る', shownEn.indexOf(head) >= 0, head + '  /  ' + shownEn);
+  ok('★ 出した時点で旗が下りる',
+     await p.evaluate(k => {
+       const seen = JSON.parse(localStorage.getItem('sunkan:gram:seen') || '{}');
+       return !!seen[k] && seen[k].q === 0;
+     }, target.id),
+     JSON.stringify(await p.evaluate(k => {
+       const seen = JSON.parse(localStorage.getItem('sunkan:gram:seen') || '{}');
+       return seen[k];
+     }, target.id)));
+
+  /* ===================================================================
+   * 裏で同期が走っても、自分の答えは消えない
+   *
+   * 相手の端末の記録が届いて段が「二択 → タイプ」に上がると、
+   * **二択で答えて答え合わせを見ている画面がタイプの採点に化け**、
+   * 自分の答えが「（書かなかった）」に置き換わって赤くなっていた。
+   * 「自分の答えは採点を押し終えるまで消さない」の約束を破る。
+   * ================================================================= */
+  await p.selectOption('#gram-rule-select', 'gr-there');
+  await p.waitForTimeout(400);
+  await p.click('#btn-gram-pick-1');
+  await p.waitForTimeout(300);
+  const mineBefore = (await p.innerText('#gram-mine')).trim();
+  ok('二択で答えると「あなた」が出ている', mineBefore.length > 0, mineBefore);
+
+  // 相手の端末から記録が届いて段が上がった、のと同じことを起こす
+  await p.evaluate(() => {
+    const log = JSON.parse(localStorage.getItem('sunkan:gram:log') || '{}');
+    log['gr-there'] = [{ at: 1, g: 3, iv: 1 }, { at: 2, g: 3, iv: 2 }, { at: 3, g: 3, iv: 3 }];
+    localStorage.setItem('sunkan:gram:log', JSON.stringify(log));
+    window.SUNKAN_GRAM.reload();     // sync.js の refreshViews が呼ぶのと同じ口
+  });
+  await p.waitForTimeout(350);
+  const mineAfter = (await p.innerText('#gram-mine')).trim();
+  ok('★ 裏で同期が走っても、自分の答えが消えない', mineAfter === mineBefore,
+     '前=' + mineBefore + ' / 後=' + mineAfter);
+  ok('★ 答え合わせが勝手に赤くならない',
+     (await p.locator('#gram-mine').getAttribute('class') || '').indexOf('is-wrong') < 0,
+     String(await p.locator('#gram-mine').getAttribute('class')));
 
   ok('最後までエラーなし', errs.length === 0, errs.join(' / '));
   await p.screenshot({ path: '/tmp/claude-0/-home-user-sunkan-333/d66a3ed4-89ad-527a-b1fe-8ea58c430df8/scratchpad/gram-' + width + '.png', fullPage: true });
