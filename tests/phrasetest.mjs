@@ -114,7 +114,7 @@ for (const [label,w,h] of [['iPhone 390',390,844],['Mac 1180',1180,800]]) {
   ok('phrase を知らない古い版と同期しても消えない', survives===5, String(survives));
 
   // --- モードの行き来（build 69 でパラフレ帳とカードを畳んで 3 つ）---
-  for (const id of ['tab-drill','tab-listen','tab-phrase']) {
+  for (const id of ['tab-drill','tab-listen','tab-phrase','tab-gram']) {
     await p.click('#'+id); await p.waitForTimeout(200);
   }
   ok('モードを行き来してもエラーが出ない', errs.length===0, errs.join(' / '));

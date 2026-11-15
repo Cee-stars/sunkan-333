@@ -20,12 +20,13 @@
 (function () {
   'use strict';
 
-  var LS_MODE = 'sunkan:mode';   // 'drill' | 'phrase' | 'listen'
+  var LS_MODE = 'sunkan:mode';   // 'drill' | 'phrase' | 'gram' | 'listen'
 
   /* 並び順はタブの並びと同じ。← → での行き来もこの順に回る。
      **ここに書いたモードは index.html にタブと画面が在ること。**
-     無いものを書くと、← → で画面の無いモードへ行けてしまい真っ白になる。 */
-  var MODES = ['drill', 'phrase', 'listen'];
+     無いものを書くと、← → で画面の無いモードへ行けてしまい真っ白になる。
+     足すときは CONTRACT.md の「モードを足すときにそろえる所（6 か所）」を見る。 */
+  var MODES = ['drill', 'phrase', 'gram', 'listen'];
 
   /* モード名 → そのモードの本体（window に開いている口）の名前。
      増えたらここに 1 行足すだけでよい。瞬間英作文（app.js）は
@@ -33,6 +34,7 @@
      onShow / onHide を要らないので載せない。 */
   var MODE_PORTS = {
     phrase: 'SUNKAN_PHRASE',
+    gram: 'SUNKAN_GRAM',
     listen: 'SUNKAN_LISTEN'
   };
 
@@ -67,11 +69,13 @@
   var elTabs = $('mode-tabs');
   var elTabDrill = $('tab-drill');
   var elTabPhrase = $('tab-phrase');
+  var elTabGram = $('tab-gram');
   var elTabListen = $('tab-listen');
 
   /** モード名 → そのタブ。増えたらここだけ足す */
   function tabFor(mode) {
     if (mode === 'phrase') return elTabPhrase;
+    if (mode === 'gram') return elTabGram;
     if (mode === 'listen') return elTabListen;
     return elTabDrill;
   }
@@ -125,6 +129,8 @@
    * （シャドーイングが裏で鳴り続けた）。だから表（MODE_PORTS）を回す形にしてある。
    *
    * ・リスニングは離れたら必ず黙らせる
+   * ・文法予測は開いた時点でその日の予定を凍結する（裏で組み直すと
+   *   「のこり」が答えている最中に動いて、やめ時が分からなくなる）
    * ・口がまだ無いファイル（別担当が書いている最中）や、onHide を持たない
    *   ファイルは黙って飛ばす。ここで落ちるとモード切り替えごと死ぬ。 */
   function notifyViews(mode) {
@@ -150,6 +156,7 @@
   function bindEvents() {
     if (elTabDrill) elTabDrill.addEventListener('click', function () { setMode('drill'); });
     if (elTabPhrase) elTabPhrase.addEventListener('click', function () { setMode('phrase'); });
+    if (elTabGram) elTabGram.addEventListener('click', function () { setMode('gram'); });
     if (elTabListen) elTabListen.addEventListener('click', function () { setMode('listen'); });
     if (elTabs) elTabs.addEventListener('keydown', onTabsKeyDown);
   }

@@ -20,8 +20,9 @@
      10. 空状態・フッター
      11. ダイアログ
      12. フォーム部品
-     13. モード切り替え（瞬間英作文 / 場面 / リスニング）
+     13. モード切り替え（瞬間英作文 / 場面 / 文法予測 / リスニング）
      13b. ダイアログの中の部品（写真・畳める説明・貼り付け用）
+     13c. 文法予測（手がかり → コミット → 開示）
      15. 画面幅ごとの調整
      16. モーション配慮
      17. 印刷
@@ -1623,20 +1624,25 @@ legend.field-label {
 }
 
 /* =============================================================
-   13. モード切り替え（瞬間英作文 / 場面 / リスニング）
+   13. モード切り替え（瞬間英作文 / 場面 / 文法予測 / リスニング）
    ============================================================= */
 
 /* いま開いていないモードの部品はまとめて畳む。JS は <html data-mode> を替えるだけでよい。
-   モードが増えたら、その名前の行を 3 か所（ここ・下の選択中・index.html のタブ）に足す。
-   **モード同士の総当たりで書く。** 3 モードなら 3×2 = 6 組。数が合わないと、
+   **モード同士の総当たりで書く。** 4 モードなら 4×3 = 12 組。数が合わないと、
    そのモードを開いたときに別のモードの画面まで見えてしまう。
-   （パラフレ帳とカードは build 69 で畳んだので、5×4 = 20 組から減っている。） */
+   足すときは CONTRACT.md の「モードを足すときにそろえる所（6 か所）」を見る。 */
 :root[data-mode="drill"]  [data-mode-view="phrase"],
+:root[data-mode="drill"]  [data-mode-view="gram"],
 :root[data-mode="drill"]  [data-mode-view="listen"],
 :root[data-mode="phrase"] [data-mode-view="drill"],
+:root[data-mode="phrase"] [data-mode-view="gram"],
 :root[data-mode="phrase"] [data-mode-view="listen"],
+:root[data-mode="gram"]   [data-mode-view="drill"],
+:root[data-mode="gram"]   [data-mode-view="phrase"],
+:root[data-mode="gram"]   [data-mode-view="listen"],
 :root[data-mode="listen"] [data-mode-view="drill"],
-:root[data-mode="listen"] [data-mode-view="phrase"] { display: none !important; }
+:root[data-mode="listen"] [data-mode-view="phrase"],
+:root[data-mode="listen"] [data-mode-view="gram"] { display: none !important; }
 
 .header-row--modes {
   padding-block: 8px 4px;
@@ -1693,6 +1699,7 @@ legend.field-label {
 /* 選ばれている側は data-mode で決める（aria-selected を待たないので初回に瞬かない） */
 :root[data-mode="drill"]  #tab-drill,
 :root[data-mode="phrase"] #tab-phrase,
+:root[data-mode="gram"]   #tab-gram,
 :root[data-mode="listen"] #tab-listen {
   background: var(--surface);
   color: var(--text);
@@ -1813,6 +1820,268 @@ legend.field-label {
 
 /* --- 狭幅（iPhone 縦） --- */
 @media (max-width: 560px) {   /* 英語と面の印だけで足りる */
+}
+
+
+/* =============================================================
+   13c. 文法予測（手がかり → コミット → 開示）
+   方針: 画面に出すのは 1 問だけ。押せるものは、その段で押せるものだけ。
+        **送信するまで続きを一切見せない**（見せたら照合になり予測でなくなる）。
+        自分の答えは採点を押し終えるまで消さず、模範解答と並べて置く。
+   ============================================================= */
+
+/* --- 今日の予定の帯（カードの進み具合と同じ作り。単位が「規則」） --- */
+
+.header-row--gram-due { padding-block: 0 8px; }
+
+.progress { flex: 1 1 auto; min-width: 0; }
+
+.progress-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.progress-left { font-size: 0.875rem; font-weight: 700; color: var(--text); }
+
+.progress-count {
+  font-size: 0.8125rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+
+/* --- 1 問 --- */
+
+.view--gram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px var(--cell-pad-x) 32px;
+}
+
+.gram-stage {
+  width: 100%;
+  max-width: 34rem;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gram-rule-tag {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+
+.gram-rule-name { font-size: 0.875rem; font-weight: 700; color: var(--text-muted); }
+.gram-stage-tag { font-size: 0.75rem; color: var(--text-faint); }
+
+/* 問題文。**出していないかたまりはぼかす**（リスニングと同じ見せ方にそろえる） */
+.gram-sentence {
+  margin: 0;
+  padding: 18px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  font-family: var(--font-en);
+  font-size: 1.25rem;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.gram-chunk { transition: filter var(--dur) var(--ease); }
+
+/* まだ出していないかたまり。**選べない**ようにもする
+   （長押しで選択して盗み見られると、順序の決まりが破れる） */
+.gram-chunk.is-hidden {
+  filter: blur(7px);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.gram-chunk.is-shown { filter: none; }
+.gram-chunk.is-fresh { color: var(--accent); }
+
+.gram-ja {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* --- ① 二択 --- */
+
+.gram-picks { display: flex; gap: 10px; }
+
+.gram-pick {
+  flex: 1 1 0;
+  min-height: 56px;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gram-pick:hover { background: var(--hover); }
+}
+
+.gram-pick.is-picked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* --- ② タイプ --- */
+
+.gram-type { display: flex; gap: 8px; }
+.gram-input { flex: 1 1 auto; min-width: 0; font-family: var(--font-en); }
+
+/* --- ③ 答え合わせ（並べて置く） --- */
+
+.gram-answer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.gram-side { flex: 1 1 10rem; min-width: 0; }
+
+.gram-side-label {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.gram-side-body {
+  margin: 0;
+  font-family: var(--font-en);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* 外したときだけ色を替える。合っていたときは静かにしておく */
+.gram-answer.is-wrong .gram-side:first-child .gram-side-body { color: var(--danger); }
+
+/* 説明。**その例文の語で**書いてもらうもの（規則の言い換えではない） */
+.gram-why {
+  flex: 1 1 100%;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.gram-alts {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-faint);
+  font-family: var(--font-en);
+}
+
+/* --- ④ 自己採点 --- */
+
+.gram-grades { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.gram-grade {
+  flex: 1 1 6rem;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.gram-grade .grade-label { font-size: 0.9375rem; font-weight: 700; }
+.gram-grade .grade-when { font-size: 0.6875rem; color: var(--text-faint); }
+
+.gram-grade--no { border-color: var(--danger); color: var(--danger); }
+.gram-grade--no .grade-when { color: var(--danger); opacity: 0.75; }
+.gram-grade--ok { border-color: var(--accent); color: var(--accent); }
+.gram-grade--ok .grade-when { color: var(--accent); opacity: 0.8; }
+
+@media (hover: hover) and (pointer: fine) {
+  .gram-grade:hover { background: var(--hover); }
+  .gram-grade--no:hover { background: var(--danger-soft); }
+}
+
+/* --- 足元 --- */
+
+.gram-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 「これでもいい?」の旗。**予定には効かない**ので、採点ボタンより控えめに置く */
+.gram-flag { font-size: 0.8125rem; }
+.gram-flag[aria-pressed="true"] { border-color: var(--star); color: var(--star); }
+
+/* 旗が出ていないとき（答え合わせの前）でも右端に居させる */
+.gram-tools { display: flex; gap: 2px; margin-inline-start: auto; }
+
+.gram-empty {
+  margin: 0;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+}
+
+.gram-del { color: var(--danger); }
+
+/* 規則の一覧の 1 行（次はいつ出るかも出す） */
+.gram-rule-list .deck-manage-when {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- 狭幅（iPhone 縦） --- */
+@media (max-width: 560px) {
+  .view--gram { padding-top: 10px; }
+  .gram-sentence { padding: 14px 12px; font-size: 1.125rem; }
+  .gram-grade { flex: 1 1 5rem; min-height: 48px; }
+  .gram-grade .grade-label { font-size: 0.875rem; }
 }
 
 

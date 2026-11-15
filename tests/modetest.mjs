@@ -1,11 +1,11 @@
-/* モードの確かめ — パラフレ帳とカードを畳んだあと（build 69）。
+/* モードの確かめ — タブの数と、開いた画面だけが見えること。
  *
  * 使い方:
  *   python3 -m http.server 8599 --bind 127.0.0.1 &
  *   node tests/modetest.mjs
  *
  * **390px と 1180px の両方**で走る。見ているのは次の 7 こと。
- *   ・タブが 3 つで、パラフレ帳とカードがタブも画面も残っていない
+ *   ・タブが 4 つで、畳んだパラフレ帳とカードがタブも画面も残っていない
  *   ・開いたモードの画面**だけ**が見える（出し分けの総当たりの数が合っているか）
  *   ・← → で端から端まで回って戻る
  *   ・畳んだモードを覚えている端末でも真っ白にならず、覚え直す
@@ -34,24 +34,25 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
   await p.goto(APP, { waitUntil: 'domcontentloaded' });
   await p.waitForSelector('.row');
 
-  ok('タブは 3 つ', await p.locator('.mode-tab').count() === 3,
+  ok('タブは 4 つ', await p.locator('.mode-tab').count() === 4,
      String(await p.locator('.mode-tab').allInnerTexts()));
   ok('パラフレ帳のタブが無い', await p.locator('#tab-para').count() === 0);
   ok('カードのタブが無い', await p.locator('#tab-cards').count() === 0);
   ok('パラフレ帳の画面が無い', await p.locator('#view-para').count() === 0);
   ok('カードの画面が無い', await p.locator('#view-cards').count() === 0);
 
-  for (const id of ['tab-listen', 'tab-phrase', 'tab-drill', 'tab-listen']) {
+  for (const id of ['tab-listen', 'tab-phrase', 'tab-gram', 'tab-drill', 'tab-listen']) {
     await p.click('#' + id); await p.waitForTimeout(250);
   }
   ok('モードを行き来してもエラーが出ない', errs.length === 0, errs.join(' / '));
 
   // 開いているモードの画面だけが見えているか（総当たりの数が合っているかの検算）
-  for (const [mode, view] of [['drill', '#view-drill'], ['phrase', '#phrase-view'], ['listen', '#listen-view']]) {
+  for (const [mode, view] of [['drill', '#view-drill'], ['phrase', '#phrase-view'],
+                              ['gram', '#gram-view'], ['listen', '#listen-view']]) {
     await p.click('#tab-' + mode); await p.waitForTimeout(250);
     const shown = await p.locator(view).isVisible();
     let leak = '';
-    for (const o of ['#view-drill', '#phrase-view', '#listen-view']) {
+    for (const o of ['#view-drill', '#phrase-view', '#gram-view', '#listen-view']) {
       if (o !== view && await p.locator(o).isVisible()) leak += o + ' ';
     }
     ok(mode + ' を開くと ' + view + ' だけが見える', shown && !leak,
@@ -63,9 +64,9 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
   // ← → でタブを行き来する（端で折り返す）
   await p.click('#tab-drill');
   await p.focus('#tab-drill');
-  for (let i = 0; i < 3; i++) { await p.keyboard.press('ArrowRight'); await p.waitForTimeout(150); }
+  for (let i = 0; i < 4; i++) { await p.keyboard.press('ArrowRight'); await p.waitForTimeout(150); }
   const after = await p.evaluate(() => document.documentElement.getAttribute('data-mode'));
-  ok('→ を 3 回で一周して drill に戻る', after === 'drill', String(after));
+  ok('→ を 4 回で一周して drill に戻る', after === 'drill', String(after));
 
   // 畳んだモードを覚えている端末で開いても真っ白にならないか
   await p.evaluate(() => localStorage.setItem('sunkan:mode', 'cards'));
@@ -80,11 +81,13 @@ for (const [label, width] of [['iPhone 390', 390], ['Mac 1180', 1180]]) {
     para: !!window.SUNKAN_PARA, cards: !!window.SUNKAN_CARDS,
     mode: !!window.SUNKAN_MODE, drill: !!window.SUNKAN_DRILL,
     phrase: !!window.SUNKAN_PHRASE, listen: !!window.SUNKAN_LISTEN,
+    gram: !!window.SUNKAN_GRAM,
     imp: !!window.SUNKAN_IMPORT, sync: !!window.SUNKAN_SYNC, srs: !!window.SUNKAN_SRS
   }));
   ok('SUNKAN_PARA / SUNKAN_CARDS が無い', !ports.para && !ports.cards, JSON.stringify(ports));
   ok('残りの口はぜんぶ在る',
-     ports.mode && ports.drill && ports.phrase && ports.listen && ports.imp && ports.sync && ports.srs,
+     ports.mode && ports.drill && ports.phrase && ports.listen && ports.gram &&
+     ports.imp && ports.sync && ports.srs,
      JSON.stringify(ports));
 
   // 畳んだぶんの預かりは消していない（「同期は後で」の約束）

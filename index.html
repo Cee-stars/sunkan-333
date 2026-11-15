@@ -11,7 +11,7 @@
 <!-- この index.html の版。assets/app.js の APP_VERSION と同じ文字列にする。
      ここに持たせないと、index.html だけが古いまま（本体は新しい）という
      半端な状態を見抜けない。実際それで「版は新しいのに画面が変わらない」が起きた。 -->
-<meta name="sunkan-build" content="build 69 (2026-11-14)">
+<meta name="sunkan-build" content="build 70 (2026-11-14)">
 <meta name="description" content="瞬間英作文・場面・リスニングの 3 つ。PDF から出題が作れて、忘却曲線で出し直します。">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -21,7 +21,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
 <link rel="apple-touch-icon" href="assets/icon-180.png">
-<link rel="stylesheet" href="assets/style.css?v=69">
+<link rel="stylesheet" href="assets/style.css?v=70">
 <title>Instant English</title>
 <script>
 // モード（瞬間英作文 / 場面 / リスニング）は描画より先に決める。
@@ -34,7 +34,7 @@
   var mode = 'drill';
   try {
     var saved = window.localStorage.getItem('sunkan:mode');
-    if (saved === 'phrase' || saved === 'listen') { mode = saved; }
+    if (saved === 'phrase' || saved === 'gram' || saved === 'listen') { mode = saved; }
   } catch (e) { /* プライベートモードなどでは既定のまま */ }
   document.documentElement.setAttribute('data-mode', mode);
 })();
@@ -50,6 +50,7 @@
     <h1 class="app-title visually-hidden">
       <span data-mode-view="drill">瞬間英作文</span>
       <span data-mode-view="phrase">場面</span>
+      <span data-mode-view="gram">文法予測</span>
       <span data-mode-view="listen">リスニング</span>
     </h1>
 
@@ -58,6 +59,8 @@
         aria-selected="true" aria-controls="view-drill">瞬間英作文</button>
       <button type="button" class="mode-tab" id="tab-phrase" role="tab"
         aria-selected="false" aria-controls="phrase-view" tabindex="-1">場面</button>
+      <button type="button" class="mode-tab" id="tab-gram" role="tab"
+        aria-selected="false" aria-controls="gram-view" tabindex="-1">文法予測</button>
       <button type="button" class="mode-tab" id="tab-listen" role="tab"
         aria-selected="false" aria-controls="listen-view" tabindex="-1">リスニング</button>
     </div>
@@ -128,6 +131,38 @@
       <label class="visually-hidden" for="phrase-search">場面を検索</label>
       <input type="search" id="phrase-search" class="search-input"
         placeholder="日本語・英語で検索" autocomplete="off" enterkeyhint="search">
+    </div>
+  </div>
+
+  <!-- ===== 文法予測の操作列 =====
+       「どの規則をやるか」を先に選ぶものなので、ほかのモードの「セット」と
+       同じ位置（操作列のいちばん上）に置く。 -->
+  <div class="header-row header-row--main" data-mode-view="gram">
+    <div class="deck-picker">
+      <label class="visually-hidden" for="gram-rule-select">規則</label>
+      <select id="gram-rule-select" class="deck-select"></select>
+    </div>
+
+    <button type="button" id="btn-gram-add" class="btn btn--ghost" aria-haspopup="dialog">
+      <span aria-hidden="true">＋</span><span class="btn-label">足す</span>
+    </button>
+
+    <button type="button" id="btn-gram-rules" class="btn btn--icon" aria-label="規則の一覧" aria-haspopup="dialog">☰</button>
+  </div>
+
+  <!-- 今日の予定。**始めた時点で決まり、途中で増えない。**
+       これが「やめ時が分かる」ということ。カードモードの帯と同じ作りで、
+       ちがうのは数える単位が「札」ではなく「規則」なところ。 -->
+  <div class="header-row header-row--gram-due" data-mode-view="gram">
+    <div class="progress" id="gram-progress">
+      <div class="progress-line">
+        <span class="progress-left" id="gram-left">のこり 0 問</span>
+        <span class="progress-count" id="gram-count">0 / 0</span>
+      </div>
+      <div class="progress-track" role="progressbar" id="gram-track"
+        aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-label="今日の進み具合">
+        <div class="progress-fill" id="gram-fill"></div>
+      </div>
     </div>
   </div>
 
@@ -215,6 +250,7 @@
 
   <p class="status-bar" id="status-bar" data-mode-view="drill" role="status" aria-live="polite"></p>
   <p class="status-bar" id="phrase-status" data-mode-view="phrase" role="status" aria-live="polite"></p>
+  <p class="status-bar" id="gram-status" data-mode-view="gram" role="status" aria-live="polite"></p>
   <p class="status-bar" id="listen-status" data-mode-view="listen" role="status" aria-live="polite"></p>
 </header>
 
@@ -254,6 +290,89 @@
   </div>
   </section>
 
+  <!-- ===== 文法予測（1 問ずつ。手がかり → コミット → 開示） =====
+       守るのは**順序**で、時間ではない。送信（＝二択を押す／タイプして送る）までは
+       続きを一切開示しない。これを破ると、予測ではなく照合になる。
+
+       二択のラベルは **「1つ」「複数」のまま固定**。`is / are` のような
+       **形を並べてはいけない** — 形を見せた瞬間、素性の予測ではなく形の照合に
+       なってしまう（大規模追試で崩れた「形の予測」のほうへ戻る）。
+
+       自分の答えは、自己採点を押し終えるまで**画面から消さない**。
+       模範解答とは**同時に**出す（順に出すのではない）。 -->
+  <section class="view view--gram" id="gram-view" data-mode-view="gram"
+    role="tabpanel" aria-labelledby="tab-gram" tabindex="-1">
+
+    <div class="gram-stage" id="gram-stage" hidden>
+      <p class="gram-rule-tag">
+        <span class="gram-rule-name" id="gram-rule-name"></span>
+        <span class="gram-stage-tag" id="gram-stage-tag"></span>
+      </p>
+
+      <!-- 問題文。かたまりの並びで、出していないぶんはぼかす（リスニングと同じ作り） -->
+      <p class="gram-sentence" id="gram-sentence"></p>
+      <p class="gram-ja" id="gram-ja"></p>
+
+      <!-- ① 二択。ラベルは規則の既定（1つ／複数）か、例文の opt -->
+      <div class="gram-picks" id="gram-picks">
+        <button type="button" class="btn gram-pick" id="btn-gram-pick-0"></button>
+        <button type="button" class="btn gram-pick" id="btn-gram-pick-1"></button>
+      </div>
+
+      <!-- ② タイプ（mode が type の規則だけ。二択のあとに出る） -->
+      <div class="gram-type" id="gram-type" hidden>
+        <label class="visually-hidden" for="gram-input">続きを入力</label>
+        <input type="text" id="gram-input" class="field-input gram-input"
+          autocomplete="off" autocapitalize="off" spellcheck="false"
+          enterkeyhint="done" placeholder="続きをタイプ">
+        <button type="button" id="btn-gram-send" class="btn btn--primary">送る</button>
+      </div>
+
+      <!-- ③ 答え合わせ。**自分の答えと模範解答を並べて置く**（片方を消さない） -->
+      <div class="gram-answer" id="gram-answer" hidden>
+        <div class="gram-side">
+          <p class="gram-side-label">あなた</p>
+          <p class="gram-side-body" id="gram-mine"></p>
+        </div>
+        <div class="gram-side">
+          <p class="gram-side-label">模範</p>
+          <p class="gram-side-body" id="gram-model"></p>
+        </div>
+        <p class="gram-why" id="gram-why" hidden></p>
+        <p class="gram-alts" id="gram-alts" hidden></p>
+      </div>
+
+      <!-- ④ 自己採点。音声認識が無く、答えが 1 つに決まらないので本人が押す -->
+      <div class="gram-grades" id="gram-grades" hidden>
+        <button type="button" id="btn-gram-g1" class="btn gram-grade gram-grade--no">
+          <span class="grade-label">ちがった</span><span class="grade-when" id="gram-when-1"></span>
+        </button>
+        <button type="button" id="btn-gram-g2" class="btn gram-grade">
+          <span class="grade-label">迷った</span><span class="grade-when" id="gram-when-2"></span>
+        </button>
+        <button type="button" id="btn-gram-g3" class="btn gram-grade gram-grade--ok">
+          <span class="grade-label">出た</span><span class="grade-when" id="gram-when-3"></span>
+        </button>
+        <button type="button" id="btn-gram-g4" class="btn gram-grade">
+          <span class="grade-label">すぐ出た</span><span class="grade-when" id="gram-when-4"></span>
+        </button>
+      </div>
+
+      <div class="gram-foot">
+        <!-- 「これでもいい?」の旗。採点とは**別**で、予定（間隔）には一切効かせない。
+             次にこの規則が来たとき、旗の付いた例文を先に出すだけ。 -->
+        <button type="button" id="btn-gram-flag" class="btn btn--ghost gram-flag" hidden
+          aria-pressed="false">これでもいい?</button>
+        <span class="gram-tools">
+          <button type="button" id="btn-gram-speak" class="btn btn--icon" aria-label="英語を読み上げる">🔈</button>
+          <button type="button" id="btn-gram-edit" class="btn btn--icon" aria-label="この例文を編集する" aria-haspopup="dialog">✎</button>
+        </span>
+      </div>
+    </div>
+
+    <p class="gram-empty" id="gram-empty" hidden></p>
+  </section>
+
   <!-- ===== リスニング（かたまりごとに出していく） =====
        行の作りはほかのモードと**左右が逆**。左に 🔈、右に英文を置く。
        英文は ` / ` で割ったかたまりの並びで、まだ出していないぶんはぼかす。
@@ -279,6 +398,8 @@
   <p class="hint hint--mobile" data-mode-view="drill">行をタップすると英語が出ます</p>
   <p class="hint hint--desktop" data-mode-view="phrase">その時のセリフを見て、英語で言ってみます。行をクリックすると言い方が出ます。</p>
   <p class="hint hint--mobile" data-mode-view="phrase">行をタップすると英語が出ます</p>
+  <p class="hint hint--desktop" data-mode-view="gram">手がかりだけ見て、続きが「1つ」か「複数」かを先に決めます。押すまで続きは出ません。</p>
+  <p class="hint hint--mobile" data-mode-view="gram">続きが 1つか複数かを先に決めてからタップします</p>
   <p class="hint hint--desktop" data-mode-view="listen">🔈 で文をまるごと聞いてから、行をクリックして 1 かたまりずつ出します。H 全部出す・全部隠す</p>
   <p class="hint hint--mobile" data-mode-view="listen">🔈 で聞いて、行をタップすると 1 かたまりずつ出ます</p>
 </footer>
@@ -660,6 +781,126 @@
 
     <div class="dialog-actions">
       <button type="button" id="btn-listen-deck-close" class="btn btn--primary">閉じる</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 文法予測：例文を足す・直す =====
+     入れる欄は**4つだけ**（規則・英文・日本語・答え）＋別解は任意。
+     説明は**規則の側に 1 本**持つので、例文ごとには書かせない
+     （例文ごとに説明を書かせると、作るのが重くて続かない）。 -->
+<dialog id="gram-item-dialog" class="dialog" aria-labelledby="gram-item-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="gram-item-dialog-title" class="dialog-title">例文を足す</h2>
+    <p class="dialog-desc">
+      英文は <code>/</code> で区切ります。<strong>1 つめのかたまりが手がかり、2 つめが答えの正体</strong>です。
+      手がかりだけ見て「1つ／複数」を決めてから、2 つめが出ます。
+    </p>
+
+    <label class="field">
+      <span class="field-label">規則</span>
+      <select id="gram-item-rule" class="field-input"></select>
+    </label>
+
+    <label class="field">
+      <span class="field-label">英文（<code>/</code> で区切る）</span>
+      <input type="text" id="gram-item-en" class="field-input" autocomplete="off"
+        autocapitalize="off" spellcheck="false"
+        placeholder="There are / three apples / in the basket.">
+    </label>
+
+    <label class="field">
+      <span class="field-label">日本語</span>
+      <input type="text" id="gram-item-ja" class="field-input" autocomplete="off"
+        placeholder="かごにりんごが3つある。">
+    </label>
+
+    <fieldset class="field-group">
+      <legend class="field-label">答え</legend>
+      <!-- 英文から機械判定しない。children / feet / water で必ず破綻する -->
+      <p class="dialog-hint">
+        英文から自動では決めません（<code>children</code> や <code>water</code> で必ず間違えるため）。
+      </p>
+      <label class="field-check">
+        <input type="radio" name="gram-item-a" id="gram-item-a0" value="0" checked>
+        <span id="gram-item-a0-label">1つ</span>
+      </label>
+      <label class="field-check">
+        <input type="radio" name="gram-item-a" id="gram-item-a1" value="1">
+        <span id="gram-item-a1-label">複数</span>
+      </label>
+    </fieldset>
+
+    <label class="field">
+      <span class="field-label">二択の言い方（任意）</span>
+      <input type="text" id="gram-item-opt" class="field-input" autocomplete="off"
+        placeholder="猫を1匹 / 猫を何匹か">
+      <span class="field-hint">
+        空なら規則の既定（「1つ」「複数」）を使います。<code>/</code> で 2 つに区切ってください。
+      </span>
+    </label>
+
+    <label class="field">
+      <span class="field-label">別解（任意）</span>
+      <input type="text" id="gram-item-alt" class="field-input" autocomplete="off"
+        autocapitalize="off" spellcheck="false" placeholder="There's / もう 1 つは , で区切る">
+      <span class="field-hint">タイプで答える規則のとき、通したい言い方を <code>,</code> 区切りで。</span>
+    </label>
+
+    <p class="dialog-note" id="gram-item-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions dialog-actions--wrap">
+      <button type="button" id="btn-gram-item-delete" class="btn btn--ghost gram-del" hidden>この例文を消す</button>
+      <button type="button" id="btn-gram-item-cancel" class="btn btn--ghost">キャンセル</button>
+      <button type="button" id="btn-gram-item-save" class="btn btn--primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== 文法予測：規則の一覧（作る・直す・消す） ===== -->
+<dialog id="gram-rule-dialog" class="dialog" aria-labelledby="gram-rule-dialog-title">
+  <form method="dialog" class="dialog-inner">
+    <h2 id="gram-rule-dialog-title" class="dialog-title">規則</h2>
+    <p class="dialog-desc">
+      予定（忘却曲線）は<strong>規則ごと</strong>に進みます。出る例文は毎回入れ替わるので、
+      例文を覚えるのではなく規則のほうが育ちます。<strong>規則を消すと、その例文も消えます。</strong>
+    </p>
+
+    <div class="dialog-secondary">
+      <h3 class="dialog-subtitle">新しく作る</h3>
+      <label class="field">
+        <span class="field-label">名前</span>
+        <input type="text" id="gram-new-rule" class="field-input" autocomplete="off"
+          placeholder="例：There is / There are">
+      </label>
+      <label class="field">
+        <span class="field-label">出し方</span>
+        <select id="gram-new-mode" class="field-input">
+          <option value="pick">二択だけ（続きは出すだけ）</option>
+          <option value="type">二択のあと、続きをタイプ</option>
+          <option value="gate">形と意味の結び（日本語で二択）</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">説明（1 行）</span>
+        <input type="text" id="gram-new-note" class="field-input" autocomplete="off"
+          placeholder="three apples が複数だから are">
+        <span class="field-hint">
+          <strong>その例文の語で書いてください。</strong>「There are のあとは複数」のような
+          規則の言い換えだけにしないこと。
+        </span>
+      </label>
+      <button type="button" id="btn-gram-new-rule" class="btn btn--primary">＋ 新しい規則</button>
+    </div>
+
+    <h3 class="dialog-subtitle">いまある規則</h3>
+    <!-- 1 行は「名前・件数・次はいつ・直す・消す」。gram.js が作る -->
+    <ul class="deck-manage-list gram-rule-list" id="gram-rule-manage-list"></ul>
+
+    <p class="dialog-note" id="gram-rule-status" role="status" aria-live="polite"></p>
+
+    <div class="dialog-actions">
+      <button type="button" id="btn-gram-rule-close" class="btn btn--primary">閉じる</button>
     </div>
   </form>
 </dialog>
@@ -1540,22 +1781,23 @@ export default {
   </form>
 </dialog>
 
-<script src="assets/speech.js?v=69"></script>
-<script src="assets/data.js?v=69"></script>
-<script src="assets/app.js?v=69"></script>
+<script src="assets/speech.js?v=70"></script>
+<script src="assets/data.js?v=70"></script>
+<script src="assets/app.js?v=70"></script>
 <!-- タブでのモード切り替えだけを持つ（もとは paraphrase.js の中にあった） -->
-<script src="assets/mode.js?v=69"></script>
+<script src="assets/mode.js?v=70"></script>
 <!-- 場面の本体。ファイル名は phrase.js のまま（保存先の名前も変えない。データ保護） -->
-<script src="assets/phrase.js?v=69"></script>
-<script src="assets/listen.js?v=69"></script>
+<script src="assets/phrase.js?v=70"></script>
+<script src="assets/gram.js?v=70"></script>
+<script src="assets/listen.js?v=70"></script>
 
-<script src="assets/media.js?v=69"></script>
-<script src="assets/audio.js?v=69"></script>
-<script src="assets/srs.js?v=69"></script>
-<script src="assets/import.js?v=69"></script>
-<script src="assets/inbox.js?v=69"></script>
-<script src="assets/sync.js?v=69"></script>
-<script src="assets/update.js?v=69"></script>
+<script src="assets/media.js?v=70"></script>
+<script src="assets/audio.js?v=70"></script>
+<script src="assets/srs.js?v=70"></script>
+<script src="assets/import.js?v=70"></script>
+<script src="assets/inbox.js?v=70"></script>
+<script src="assets/sync.js?v=70"></script>
+<script src="assets/update.js?v=70"></script>
 <script>
 if ('serviceWorker' in navigator) {
   // 起動時点で既に worker に制御されていたか。
