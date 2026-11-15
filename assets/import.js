@@ -1,6 +1,10 @@
 /* Duo — 取り込み（PDF・テキスト・表）
  *
- * **カードと瞬間英作文の両方**がここを通る。
+ * **瞬間英作文・場面・リスニングの 3 つ**がここを通る。
+ * もとはカードの取り込みが主で、ほかが相乗りしていた。カードは build 69 で
+ * 畳んだが、**「決まった書き方」の読み方（parseBlocks / parseTable）は
+ * そのまま残してある** — カード用に書いた PDF をいまも瞬間英作文へ取り込めて、
+ * 手元のファイルが読めなくならないようにするため。
  *
  * 「どんな PDF でも同じ形になる」を 2 本立てで満たす。
  *
@@ -12,7 +16,7 @@
  * ブラウザだけで任意の PDF を正しく読み解くことはできないので、そこは正直に AI に投げて、
  * 代わりに「出口の形」を 1 つに固定することで揃えている。
  *
- * 保存には手を出さない。足すのは window.SUNKAN_CARDS.addCards と
+ * 保存には手を出さない。足すのは
  * window.SUNKAN_DRILL.addSentences 越しに限る。
  */
 'use strict';
@@ -26,11 +30,6 @@
   function $(id) { return document.getElementById(id); }
   function str(v) { return (v === null || v === undefined) ? '' : String(v); }
   function trim(v) { return str(v).trim(); }
-
-  function cardsAPI() {
-    var api = window.SUNKAN_CARDS;
-    return (api && typeof api.addCards === 'function') ? api : null;
-  }
 
   /** app.js が持っている表の割り方（TSV / CSV 自動判定）を借りる */
   function splitTable(text) {
@@ -110,66 +109,6 @@
 
   /** セット名の指定（# セット: 〜） */
   var DECK_LINE = /^\s*#+\s*(?:セット名?|deck|set)\s*[:：]\s*(.+)$/i;
-
-  var CARD_PROMPT = [
-    'この PDF（資料）から、英語学習用のフラッシュカードを作ってください。',
-    '',
-    '出力は下の形式の文字だけを、そのまま返してください。',
-    'コードブロック・前置き・説明・通し番号・箇条書きは一切付けないでください。',
-    '',
-    'EN: 覚える英語の語または表現（原形で）',
-    'JA: その日本語の意味（20 字以内で簡潔に）',
-    'EX: その語を使った英語の例文（8〜15 語程度の自然な 1 文）',
-    'EXJA: EX の日本語訳（自然な日本語で）',
-    'MEMO: 使い方の注意が 1 つだけあれば 20 字以内で。無ければこの行ごと省く',
-    '---',
-    '',
-    'ルール:',
-    '- 1 枚につき上の形で書き、そのあとに --- を必ず入れる',
-    '- EX は必ず EN の語を含める（活用した形でよい）',
-    '- 資料に例文があればそれを使い、無ければ自然な例文を作る',
-    '- EN と JA と EX と EXJA は必ず埋める。空にしない',
-    '- 1 枚ぶんを 1 行にまとめず、上のとおり 1 項目 1 行で書く',
-    '- 同じ語を 2 枚作らない',
-    '- 固有名詞・記号・数字だけの項目はカードにしない',
-    '- 資料に出てくる語だけを使い、勝手に語を足さない',
-    '- 最大 100 枚まで',
-    '',
-    '例:',
-    'EN: take after',
-    'JA: 〜に似ている',
-    'EX: She takes after her mother in both looks and temper.',
-    'EXJA: 彼女は見た目も気性も母親に似ている。',
-    'MEMO: 家族の話で頻出',
-    '---'
-  ].join('\n');
-
-  var CARD_TEMPLATE = [
-    '# セット: サンプル',
-    '',
-    '# この形で書いた PDF・テキストは、Instant English がそのまま読み込めます。',
-    '# 使う見出しは EN / JA / EX / EXJA / MEMO の 5 つだけ。',
-    '# 英語: 意味: 例文: 訳: メモ: と日本語で書いてもかまいません。',
-    '# --- が 1 枚の区切りです。MEMO と EXJA は空でも通ります。',
-    '# 長い文が途中で折り返されていても、続きとしてつなげて読みます。',
-    '',
-    'EN: take after',
-    'JA: 〜に似ている',
-    'EX: She takes after her mother in both looks and temper.',
-    'EXJA: 彼女は見た目も気性も母親に似ている。',
-    'MEMO: 家族の話で頻出',
-    '---',
-    'EN: put off',
-    'JA: 延期する',
-    'EX: They put off the meeting until Friday afternoon.',
-    'EXJA: 彼らは会議を金曜の午後まで延期した。',
-    '---',
-    'EN: come up with',
-    'JA: 思いつく',
-    'EX: She came up with a clever way to cut the cost.',
-    'EXJA: 彼女は費用を減らす賢いやり方を思いついた。',
-    '---'
-  ].join('\n');
 
   /* --- 瞬間英作文（日本語の文 → 英文）用 --- */
 
@@ -488,278 +427,16 @@
   }
 
   /* ============================================================
-   * 5. 画面
+   * 5. 画面をつなぐ
+   *
+   * カードの取り込みダイアログは build 69 で無くなった（カードのモードごと
+   * 畳んだ）。ここに残っているのは瞬間英作文・場面・リスニングのぶんだけ。
+   * **「決まった書き方を読む」側（parseBlocks / parseTable / toDrillPairs）は
+   * 消していない** — カード用に書いた PDF を瞬間英作文へ取り込む道が、
+   * いまもその読み方を通っている。
    * ========================================================== */
 
-  var elDialog = $('card-import-dialog');
-  var elOpenBtn = $('btn-card-import');
-  var elName = $('card-import-name');
-  var elText = $('card-import-text');
-  var elPreview = $('card-import-preview');
-  var elSave = $('btn-card-import-save');
-  var elCancel = $('btn-card-import-cancel');
-
-  var elPdfBtn = $('btn-card-pdf');
-  var elPdfFile = $('card-pdf-file');
-  var elPdfStatus = $('card-pdf-status');
-  var elTemplateBtn = $('btn-card-template');
-  var elPromptBtn = $('btn-card-prompt');
-  var elPromptStatus = $('card-prompt-status');
-  var elTarget = $('card-import-target');
-  var elNameField = $('card-import-name-field');
-
-  /** セット名を、こちらが勝手に入れたものか（人が打ったものは上書きしない） */
-  var nameAuto = false;
-
-  /**
-   * 「入れ先」の選択肢を作る。
-   *
-   * **いま開いているセットを初期値にする。** 毎回 新しいセットを作らせると、
-   * 少し足したいだけでもセットが増えていって続かない。
-   */
-  function renderTarget() {
-    if (!elTarget) return;
-    var api = window.SUNKAN_CARDS;
-    var decks = (api && typeof api.decks === 'function') ? api.decks() : [];
-    var keep = elTarget.value;
-
-    while (elTarget.firstChild) elTarget.removeChild(elTarget.firstChild);
-
-    var fresh = document.createElement('option');
-    fresh.value = '';
-    fresh.textContent = '＋ 新しいセットを作る';
-    elTarget.appendChild(fresh);
-
-    var known = {};
-    for (var i = 0; i < decks.length; i++) {
-      known[decks[i].id] = true;
-      var opt = document.createElement('option');
-      opt.value = decks[i].id;
-      opt.textContent = decks[i].name + '（' + decks[i].count + '）';
-      elTarget.appendChild(opt);
-    }
-
-    var current = (api && typeof api.currentDeckId === 'function') ? api.currentDeckId() : '';
-    var want = known[keep] ? keep : current;
-    elTarget.value = known[want] ? want : '';
-    syncTargetField();
-  }
-
-  /** 新しいセットを選んだときだけ、名前の欄を出す */
-  function syncTargetField() {
-    if (!elNameField) return;
-    elNameField.hidden = !!(elTarget && elTarget.value);
-  }
-
-  /** いま選ばれている入れ先の名前（新しく作るときは空） */
-  function targetName() {
-    if (!elTarget || !elTarget.value) return '';
-    var opt = elTarget.options[elTarget.selectedIndex];
-    return opt ? opt.textContent.replace(/（\d+）$/, '') : '';
-  }
-
-  /**
-   * セット名を自動で埋める。
-   * 順番は「人が打った名前 > 中身に書いてある # セット: > ファイル名」。
-   * ファイル名を先に入れてしまうので、あとから中身の名前で上書きできるようにしてある。
-   */
-  function autofillName(value) {
-    if (!elName) return;
-    var name = trim(value);
-    if (!name) return;
-    if (trim(elName.value) && !nameAuto) return;   // 人が打ったものは触らない
-    elName.value = name;
-    nameAuto = true;
-  }
-
-  function openDialog() {
-    if (!elDialog) return;
-    if (elPreview) elPreview.textContent = '';
-    if (elPdfStatus) elPdfStatus.textContent = '';
-    if (elPromptStatus) elPromptStatus.textContent = '';
-    renderTarget();   // セットは増えているかもしれないので毎回作り直す
-    if (typeof elDialog.showModal === 'function') {
-      if (!elDialog.open) elDialog.showModal();
-    } else {
-      elDialog.setAttribute('open', 'open');
-    }
-    // いちばん上（入れ先）から見せる。中ほどの欄に焦点を当てると、
-    // ダイアログがそこまでスクロールした状態で開き、**入れ先を見落とす**。
-    elDialog.scrollTop = 0;
-    if (elTarget) elTarget.focus();
-  }
-
-  function closeDialog() {
-    if (!elDialog) return;
-    if (typeof elDialog.close === 'function') {
-      if (elDialog.open) elDialog.close();
-    } else {
-      elDialog.removeAttribute('open');
-    }
-  }
-
-  /** 貼り付けた中身を読んで、何枚できるかを先に見せる */
-  function preview() {
-    if (!elPreview) return;
-    var text = str(elText && elText.value);
-    if (!trim(text)) { elPreview.textContent = ''; return; }
-
-    var parsed = parseAny(text);
-    if (!parsed.items.length) {
-      elPreview.textContent = 'カードとして読めませんでした。EN: JA: EX: EXJA: の書き方か、' +
-        '英語 / 意味 / 例文 / 訳 の 4 列の表にしてください。';
-      return;
-    }
-    var withEx = 0;
-    for (var i = 0; i < parsed.items.length; i++) {
-      if (trim(parsed.items[i].exEn)) withEx++;
-    }
-    // どこに入るのかを先に言う。押すまで分からないのがいちばん困る
-    var into = targetName();
-    elPreview.textContent = (into ? '「' + into + '」に ' : '') +
-      parsed.items.length + ' 枚ぶん読めました' +
-      '（うち例文つき ' + withEx + ' 枚）。' +
-      (withEx < parsed.items.length ? '例文の無い札は「聞く」「言う」の面が弱くなります。' : '');
-
-    if (!targetName()) autofillName(parsed.deckName);   // 新しく作るときだけ
-  }
-
-  function save() {
-    var api = cardsAPI();
-    if (!api) return;
-
-    var text = str(elText && elText.value);
-    var parsed = parseAny(text);
-
-    if (!parsed.items.length) {
-      if (elPreview) elPreview.textContent = '読み込めるカードがありませんでした。';
-      return;
-    }
-    var targetId = elTarget ? trim(elTarget.value) : '';
-    var name = trim(elName && elName.value) || parsed.deckName || '取り込んだカード';
-    var result = api.addCards(name, parsed.items, targetId);
-
-    closeDialog();
-    if (elText) elText.value = '';
-    if (elName) elName.value = '';
-    nameAuto = false;
-    if (elPreview) elPreview.textContent = '';
-
-    api.flash('「' + result.deckName + '」に ' + result.added + ' 枚入れました' +
-      (result.skipped ? '（' + result.skipped + ' 枚は同じものか中身が足りないので飛ばしました）' : '') + '。');
-  }
-
-  function pickFile() {
-    if (elPdfFile) elPdfFile.click();
-  }
-
-  function onFile() {
-    if (!elPdfFile || !elPdfFile.files || !elPdfFile.files.length) return;
-    var file = elPdfFile.files[0];
-    var isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
-
-    // ファイル名はとりあえずの名前。中身に # セット: があれば、あとで上書きする
-    autofillName(file.name.replace(/\.(pdf|txt|md)$/i, ''));
-
-    // PDF でないものは、そのまま文字として読む
-    if (!isPdf) {
-      var reader = new FileReader();
-      reader.onload = function () {
-        if (elText) elText.value = str(reader.result);
-        if (elPdfStatus) elPdfStatus.textContent = file.name + ' を読みました。';
-        preview();
-      };
-      reader.onerror = function () {
-        if (elPdfStatus) elPdfStatus.textContent = 'ファイルを読めませんでした。';
-      };
-      reader.readAsText(file);
-      elPdfFile.value = '';
-      return;
-    }
-
-    if (elPdfStatus) elPdfStatus.textContent = 'PDF を読んでいます…';
-    if (elPdfBtn) elPdfBtn.disabled = true;
-
-    pdfToText(file, function (page, total) {
-      if (elPdfStatus) elPdfStatus.textContent = 'PDF を読んでいます… ' + page + ' / ' + total + ' ページ';
-    }).then(function (text) {
-      if (elText) elText.value = text;
-      if (elPdfBtn) elPdfBtn.disabled = false;
-
-      var parsed = parseAny(text);
-      if (!parsed.items.length) {
-        if (elPdfStatus) {
-          elPdfStatus.textContent = file.name + ' の文字は取れましたが、決まった書き方ではありませんでした。' +
-            '下の「AI への指示をコピー」を使って整えてから貼り付けてください。';
-        }
-      } else if (elPdfStatus) {
-        elPdfStatus.textContent = file.name + ' を読みました。';
-      }
-      preview();
-    }).catch(function (err) {
-      if (elPdfBtn) elPdfBtn.disabled = false;
-      if (elPdfStatus) {
-        elPdfStatus.textContent = 'PDF を読めませんでした（' +
-          ((err && err.message) || '理由は分かりません') + '）。' +
-          '文字ではなく画像として取り込まれた PDF は読めません。その場合は AI への指示を使ってください。';
-      }
-    });
-
-    elPdfFile.value = '';   // 同じファイルをもう一度選べるように
-  }
-
-  function copyPrompt() {
-    copyText(CARD_PROMPT, function (ok) {
-      if (!elPromptStatus) return;
-      elPromptStatus.textContent = ok
-        ? 'コピーしました。PDF といっしょに AI へ渡してください。'
-        : 'コピーできませんでした。長押しで選んでコピーしてください。';
-    });
-  }
-
-  function downloadTemplate() {
-    try {
-      var blob = new Blob(['﻿' + CARD_TEMPLATE], { type: 'text/plain;charset=utf-8' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'duo-カードの書き方.txt';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-      if (elPdfStatus) elPdfStatus.textContent = '見本を書き出しました。この形で書けば、そのまま読み込めます。';
-    } catch (e) {
-      // 書き出せない端末では、欄に入れてしまうほうが早い
-      if (elText) elText.value = CARD_TEMPLATE;
-      preview();
-      if (elPdfStatus) elPdfStatus.textContent = '見本を下の欄に入れました。';
-    }
-  }
-
   function bindEvents() {
-    if (elOpenBtn) elOpenBtn.addEventListener('click', openDialog);
-    if (elCancel) elCancel.addEventListener('click', closeDialog);
-    if (elSave) elSave.addEventListener('click', save);
-    if (elText) {
-      elText.addEventListener('input', preview);
-      elText.addEventListener('paste', function () { window.setTimeout(preview, 0); });
-    }
-    if (elName) {
-      // 人が打ったら、こちらからは触らない
-      elName.addEventListener('input', function () { nameAuto = false; });
-    }
-    if (elTarget) {
-      elTarget.addEventListener('change', function () {
-        syncTargetField();
-        preview();     // 「どこに入るか」の言い方が変わる
-      });
-    }
-    if (elPdfBtn) elPdfBtn.addEventListener('click', pickFile);
-    if (elPdfFile) elPdfFile.addEventListener('change', onFile);
-    if (elPromptBtn) elPromptBtn.addEventListener('click', copyPrompt);
-    if (elTemplateBtn) elTemplateBtn.addEventListener('click', downloadTemplate);
-
     bindDrill();
   }
 
@@ -902,7 +579,7 @@
   }
 
   /* ============================================================
-   * 7. 外に出す口（app.js / cards.js / 試すため）
+   * 7. 外に出す口（app.js / 試すため）
    * ========================================================== */
 
   /* ============================================================
@@ -1651,10 +1328,8 @@
     /** PDF のファイルから文字を取り出す */
     pdfToText: pdfToText,
     /** AI に渡す指示文 */
-    cardPrompt: CARD_PROMPT,
     drillPrompt: DRILL_PROMPT,
     /** 決まった書き方の見本 */
-    cardTemplate: CARD_TEMPLATE,
     /** 場面。表は **日本語が先**（カードと 1 列目が逆） */
     parsePhrase: parsePhraseAny,
     parsePhraseTable: parsePhraseTable,

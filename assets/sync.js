@@ -1,10 +1,10 @@
 /*!
  * 瞬間英作文 — 端末どうしの同期（GitHub のシークレット Gist 経由）
  *
- * iPhone と MacBook で、自作セット・足した文・「もう一度」・パラフレ帳を揃える。
+ * iPhone と MacBook で、自作セット・足した文・「もう一度」・場面・リスニングを揃える。
  * サーバーは持たない。GitHub の Gist を 1 枚の置き場として使うだけ。
  *
- * app.js / paraphrase.js の中身には触らない。localStorage を読み書きしたあと、
+ * 各モードの中身には触らない。localStorage を読み書きしたあと、
  * それぞれが開けている reload() を呼んで画面を追いつかせる。
  * 消したものが同期で戻ってこないよう、削除は SUNKAN_SYNC.recordDelete で覚える。
  * 取り決めは CONTRACT.md を参照。
@@ -51,6 +51,14 @@
   var LS_LISTEN_ITEMS = 'sunkan:listen:items';
   var LS_LISTEN_STARS = 'sunkan:listen:stars';
   var LS_LISTEN_DECKS = 'sunkan:listen:decks';
+  /* 文法予測。**ui（端末ごとの好み）は送らない。**
+     log（規則ごとの記録）は送る — 段（二択／タイプ）をこれから数えるので、
+     落とすと 2 台目で段が巻き戻る。 */
+  var LS_GRAM_RULES = 'sunkan:gram:rules';
+  var LS_GRAM_ITEMS = 'sunkan:gram:items';
+  var LS_GRAM_SRS = 'sunkan:gram:srs';
+  var LS_GRAM_SEEN = 'sunkan:gram:seen';
+  var LS_GRAM_LOG = 'sunkan:gram:log';
 
   var LS_TOKEN = 'sunkan:sync:token';
   var LS_GIST = 'sunkan:sync:gistId';
@@ -122,7 +130,7 @@
   /* ============================================================
    * 3. 消したものの記録（同期で戻ってこないように）
    *
-   * app.js / paraphrase.js が消したときに呼ぶ。足し直したら忘れる。
+   * 各モードが消したときに呼ぶ。足し直したら忘れる。
    * ========================================================== */
 
   function readTombs() {
@@ -213,7 +221,7 @@
     return !!rec && rec.t > rec.a;
   }
 
-  // 鍵の作り方。app.js / paraphrase.js / inbox.js もこれと同じ形で渡す
+  // 鍵の作り方。app.js / inbox.js もこれと同じ形で渡す
   function addedKey(deckId, ja, en) { return 'added:' + deckId + '\n' + ja + '\n' + en; }
 
   /** 収録の文 1 つぶんの上書きの鍵。「元に戻す」は取り消しなので、これで記録に残す */
@@ -269,6 +277,13 @@
         stars: isArray(readJSON(LS_LISTEN_STARS, [])) ? readJSON(LS_LISTEN_STARS, []) : [],
         decks: isArray(readJSON(LS_LISTEN_DECKS, [])) ? readJSON(LS_LISTEN_DECKS, []) : []
       },
+      gram: {
+        rules: isArray(readJSON(LS_GRAM_RULES, [])) ? readJSON(LS_GRAM_RULES, []) : [],
+        items: isArray(readJSON(LS_GRAM_ITEMS, [])) ? readJSON(LS_GRAM_ITEMS, []) : [],
+        srs: isObject(readJSON(LS_GRAM_SRS, {})) ? readJSON(LS_GRAM_SRS, {}) : {},
+        seen: isObject(readJSON(LS_GRAM_SEEN, {})) ? readJSON(LS_GRAM_SEEN, {}) : {},
+        log: isObject(readJSON(LS_GRAM_LOG, {})) ? readJSON(LS_GRAM_LOG, {}) : {}
+      },
       phrase: {
         items: isArray(readJSON(LS_PHRASE_ITEMS, [])) ? readJSON(LS_PHRASE_ITEMS, []) : [],
         stars: isArray(readJSON(LS_PHRASE_STARS, [])) ? readJSON(LS_PHRASE_STARS, []) : [],
@@ -320,6 +335,18 @@
     };
   }
 
+  /** 古い版が書き出したぶんには gram が無い。読むときはここを通して形を揃える */
+  function gramPart(snap) {
+    var c = (snap && isObject(snap.gram)) ? snap.gram : {};
+    return {
+      rules: isArray(c.rules) ? c.rules : [],
+      items: isArray(c.items) ? c.items : [],
+      srs: isObject(c.srs) ? c.srs : {},
+      seen: isObject(c.seen) ? c.seen : {},
+      log: isObject(c.log) ? c.log : {}
+    };
+  }
+
   /** 古い版が書き出したぶんには cards が無い。読むときはここを通して形を揃える */
   function cardsPart(snap) {
     var c = (snap && isObject(snap.cards)) ? snap.cards : {};
@@ -336,7 +363,7 @@
   // handed は gistGet がその場で数えてぶら下げる内部用の数。中身ではないので、
   // 知らない項目として持ち越すと、同居している My Dictionary と共有する置き場に
   // こちらの内部事情が溜まっていく。名前を知っているものとして扱い、送らない。
-  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'phrase', 'listen', 'media', 'inbox', 'tombs', 'handed'];
+  var KNOWN = ['app', 'v', 'at', 'decks', 'added', 'edits', 'levels', 'drillSrs', 'gaps', 'stars', 'para', 'cards', 'shadow', 'phrase', 'listen', 'gram', 'media', 'inbox', 'tombs', 'handed'];
 
   function isKnown(key) {
     for (var i = 0; i < KNOWN.length; i++) { if (KNOWN[i] === key) return true; }
@@ -380,6 +407,7 @@
       shadow: shadowPart(d),
       phrase: phrasePart(d),
       listen: listenPart(d),
+      gram: gramPart(d),
       // 写真の中身。バックアップにだけ入っている（同期には載せない）
       media: isObject(d.media) ? d.media : {},
       inbox: isArray(d.inbox) ? d.inbox : [],
@@ -397,7 +425,7 @@
     // failed … この端末に書けなかったもの。保存領域がいっぱいだと起きる。
     // 黙って通すと「同期しました」と言いながら相手のぶんがどこにも無い、になる
     var hit = { drill: false, para: false, cards: false, shadow: false, phrase: false,
-                listen: false, inbox: false, failed: [] };
+                listen: false, gram: false, inbox: false, failed: [] };
 
     function put(key, value, empty, group, label) {
       var next = JSON.stringify(value);
@@ -434,6 +462,12 @@
     put(LS_LISTEN_DECKS, ml.decks, [], 'listen', 'リスニングのプレイリスト');
     put(LS_LISTEN_ITEMS, ml.items, [], 'listen', 'リスニング');
     put(LS_LISTEN_STARS, ml.stars, [], 'listen', 'リスニングの「もう一度」');
+    var mg = gramPart(merged);
+    put(LS_GRAM_RULES, mg.rules, [], 'gram', '文法予測の規則');
+    put(LS_GRAM_ITEMS, mg.items, [], 'gram', '文法予測の例文');
+    put(LS_GRAM_SRS, mg.srs, {}, 'gram', '文法予測の復習の予定');
+    put(LS_GRAM_SEEN, mg.seen, {}, 'gram', '文法予測の出した記録');
+    put(LS_GRAM_LOG, mg.log, {}, 'gram', '文法予測の記録');
     put(LS_INBOX, merged.inbox, [], 'inbox', '受信箱');
     writeTombs(merged.tombs);
     return hit;
@@ -726,6 +760,71 @@
     return out;
   }
 
+  /**
+   * 文法予測の「最後に出した例文」。**`at` が新しいほうを残す。**
+   * 旗（`q`）は、どちらかが立てていれば立てたままにする（下ろすのは出した時だけ）。
+   */
+  function mergeGramSeen(mine, theirs, liveIds) {
+    var out = {}, id;
+    function take(src) {
+      for (id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!liveIds[id]) continue;
+        var it = src[id];
+        if (!isObject(it)) continue;
+        var cur = out[id];
+        if (!cur) { out[id] = it; continue; }
+        var keep = ((Number(cur.at) || 0) >= (Number(it.at) || 0)) ? cur : it;
+        var q = (Number(cur.q) === 1 || Number(it.q) === 1) ? 1 : 0;
+        out[id] = { at: Number(keep.at) || 0, g: Number(keep.g) || 0, q: q };
+      }
+    }
+    take(mine);
+    take(theirs);
+    return out;
+  }
+
+  /**
+   * 文法予測の記録。**時刻で突き合わせて混ぜる**（どちらの端末で答えたぶんも残す）。
+   * 段（二択／タイプ）はこの記録から数えるので、片方を捨てると段が巻き戻る。
+   * 伸び続けないように、新しいほうから 50 件だけ残す（gram.js の LOG_MAX と同じ）。
+   */
+  function mergeGramLog(mine, theirs, liveIds) {
+    var GRAM_LOG_MAX = 50;
+    var out = {}, id;
+    function take(src) {
+      for (id in src) {
+        if (!Object.prototype.hasOwnProperty.call(src, id)) continue;
+        if (!liveIds[id]) continue;
+        if (!isArray(src[id])) continue;
+        if (!out[id]) out[id] = {};
+        for (var i = 0; i < src[id].length; i++) {
+          var e = src[id][i];
+          if (!isObject(e)) continue;
+          var at = Number(e.at) || 0;
+          if (!at) continue;
+          // 同じ時刻の記録は 1 つだけ（2 台で同じ答えが二重に数えられないように）
+          out[id][at] = { at: at, g: Number(e.g) || 0, iv: Number(e.iv) || 0 };
+        }
+      }
+    }
+    take(mine);
+    take(theirs);
+
+    var res = {}, k, at2, list;
+    for (k in out) {
+      if (!Object.prototype.hasOwnProperty.call(out, k)) continue;
+      list = [];
+      for (at2 in out[k]) {
+        if (Object.prototype.hasOwnProperty.call(out[k], at2)) list.push(out[k][at2]);
+      }
+      list.sort(function (a, b) { return a.at - b.at; });
+      if (list.length > GRAM_LOG_MAX) list = list.slice(list.length - GRAM_LOG_MAX);
+      res[k] = list;
+    }
+    return res;
+  }
+
   function mergeStars(mine, theirs, tombs) {
     var out = {};
     function take(src) {
@@ -909,6 +1008,25 @@
           }),
           levels: mergePhraseLevels(mp.levels, tp.levels, liveIds),
           srs: mergePhraseSrs(mp.srs, tp.srs, liveIds)
+        };
+      })(),
+      /* 文法予測。**予定（srs）と記録（log）の添字は規則 id**で、例文 id ではない。
+         例文は毎回入れ替わる前提なので、例文を消しても規則の予定は残る。
+         消えた規則・例文の記録は連れて戻さない（liveIds に無い id は落とす）。 */
+      gram: (function () {
+        var mg = gramPart(mine), tg = gramPart(theirs);
+        var rules = mergeById(mg.rules, tg.rules, map, 'gramrule:');
+        var items = mergeById(mg.items, tg.items, map, 'gramitem:');
+        var liveRules = {}, liveItems = {}, n;
+        for (n = 0; n < rules.length; n++) liveRules[trim(rules[n].id)] = true;
+        for (n = 0; n < items.length; n++) liveItems[trim(items[n].id)] = true;
+        return {
+          rules: rules,
+          items: items,
+          // 予定は場面と同じ「最後に答えたほうを残す」
+          srs: mergePhraseSrs(mg.srs, tg.srs, liveRules),
+          seen: mergeGramSeen(mg.seen, tg.seen, liveItems),
+          log: mergeGramLog(mg.log, tg.log, liveRules)
         };
       })(),
       // リスニングは場面と同じ作り（文はセットを持たないので入れ物が 1 段ひらたい）。
@@ -1667,20 +1785,21 @@
     }
   }
 
-  /** 画面を作り直す。app.js / paraphrase.js がそれぞれ開けている口 */
+  /** 画面を作り直す。各モードがそれぞれ開けている口 */
   /** 変わった所だけ作り直す。触らなくていい画面はそのままにしておく */
   function refreshViews(hit) {
-    var drill = window.SUNKAN_DRILL, para = window.SUNKAN_PARA, inbox = window.SUNKAN_INBOX;
-    var cards = window.SUNKAN_CARDS;
+    var drill = window.SUNKAN_DRILL, inbox = window.SUNKAN_INBOX;
     if (hit.drill && drill && typeof drill.reload === 'function') drill.reload();
-    if (hit.para && para && typeof para.reload === 'function') para.reload();
-    if (hit.cards && cards && typeof cards.reload === 'function') cards.reload();
+    // パラフレ帳とカードは build 69 で畳んだ。**預かりと突き合わせは残してある**
+    // ので、前の端末にあるぶんは消えずに往復する。作り直す画面だけが無い。
     var shadow = window.SUNKAN_SHADOW;
     if (hit.shadow && shadow && typeof shadow.reload === 'function') shadow.reload();
     var phrase = window.SUNKAN_PHRASE;
     if (hit.phrase && phrase && typeof phrase.reload === 'function') phrase.reload();
     var listen = window.SUNKAN_LISTEN;
     if (hit.listen && listen && typeof listen.reload === 'function') listen.reload();
+    var gram = window.SUNKAN_GRAM;
+    if (hit.gram && gram && typeof gram.reload === 'function') gram.reload();
     if (hit.inbox && inbox && typeof inbox.refresh === 'function') inbox.refresh();
   }
 
@@ -1769,6 +1888,7 @@
    */
   function countsOf(snap) {
     var ph = phrasePart(snap), cd = cardsPart(snap), sh = shadowPart(snap), ls = listenPart(snap);
+    var gr = gramPart(snap);
     var para = isObject(snap && snap.para) ? snap.para : {};
     var a = isObject(snap && snap.added) ? snap.added : {};
     var added = 0, k;
@@ -1781,14 +1901,16 @@
       cards: cd.items.length,
       shadow: sh.items.length,
       listen: ls.items.length,
+      gram: gr.items.length,
       para: isArray(para.cards) ? para.cards.length : 0
     };
   }
 
   function countsLine(snap) {
     var n = countsOf(snap);
-    return '場面 ' + n.phrase + '／足した文 ' + n.added + '／カード ' + n.cards
-         + '／シャドー ' + n.shadow + '／リスニング ' + n.listen + '／言い換え ' + n.para;
+    return '場面 ' + n.phrase + '／足した文 ' + n.added + '／文法予測 ' + n.gram
+         + '／リスニング ' + n.listen + '／カード ' + n.cards
+         + '／シャドー ' + n.shadow + '／言い換え ' + n.para;
   }
 
   /** つながらなかった理由ごとに、**直す場所**を言う */
@@ -2052,6 +2174,7 @@
             LS_CARD_DECKS, LS_CARD_ITEMS, LS_CARD_SRS, LS_CARD_STARS,
             LS_SHADOW_DECKS, LS_SHADOW_ITEMS,
             LS_LISTEN_ITEMS, LS_LISTEN_STARS, LS_LISTEN_DECKS,
+            LS_GRAM_RULES, LS_GRAM_ITEMS, LS_GRAM_SRS, LS_GRAM_SEEN, LS_GRAM_LOG,
             LS_INBOX, LS_TOMBS]
       .map(function (k) { var v = lsGet(k); return v ? v.length + ':' + hash(v) : '0'; }).join('|');
   }
@@ -2522,7 +2645,7 @@
         return { ok: false, message: '置き場につながりませんでした' };
       });
     },
-    /** app.js / paraphrase.js が消したときに呼ぶ（同期で戻ってこないように） */
+    /** 各モードが消したときに呼ぶ（同期で戻ってこないように） */
     recordDelete: recordDelete,
     /** 受信箱の 1 件の鍵。inbox.js と作り方をそろえるためここで配る */
     inboxKey: inboxKey,

@@ -9,6 +9,11 @@
  * 日本語を見て英語を言う練習（瞬間英作文・場面）と向きが反対で、
  * ここでは音が先・文字が後なので、先に押すものを左に置いてある。
  *
+ * 音は**まるごと**とは別に、**かたまり 1 つだけ**鳴らせる（英文の下の番号の札）。
+ * 速い流れの中では切れ目が取れなくても、そこだけ抜き出して聞くと取れることがある。
+ * 札は**出したかたまりのぶんだけ**出すので、札の数が「残りいくつ」の答えにならない。
+ * 道は まるごと とまったく同じ（しまってあるぶん → 無ければ置き場 → だめなら端末の声）。
+ *
  * 文は**プレイリスト**で分けられる（瞬間英作文の「セット」と同じ考え方。
  * 画面に出す言葉は「プレイリスト」で、保存先は `sunkan:listen:decks`）。
  * 1 件の `deck` がその id で、`''` は「どこにも入れていない」＝未分類。
@@ -18,7 +23,7 @@
  * **段階（％）と忘却曲線は持たない。** 聞き取りは「言えたか」の自己採点と
  * 噛み合わないので、印は ↻「もう一度」だけにしてある。
  *
- * app.js / paraphrase.js / cards.js / phrase.js とは状態も保存先も共有しない。
+ * app.js / phrase.js とは状態も保存先も共有しない。
  * 触れ合うのは <html data-mode> と window.SUNKAN_LISTEN だけ。
  *
  * DOM の定義は index.html、取り決めは CONTRACT.md を参照。
@@ -95,7 +100,7 @@
     return lsSet(key, text);
   }
 
-  /** 一意な id。phrase.js / cards.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
+  /** 一意な id。phrase.js と同じ作り（同じミリ秒に 2 件作っても当たらない） */
   function makeId(prefix) {
     return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
   }
@@ -307,7 +312,8 @@
     editingId: null,    // 直している行の id（新しく足すときは null）
     started: false,     // いちどでも画面を開いたか（開くまで行を作らない）
     flashTimer: null,
-    lastFocus: null
+    lastFocus: null,
+    cuedEl: null        // いま下線を引いているかたまり（札に触れているあいだ）
   };
 
   /* ============================================================
@@ -497,6 +503,9 @@
         speakEl: null,
         chunkEls: [],      // かたまりの外枠
         chunkJaEls: [],     // かたまりごとの日本語
+        playEls: [],        // かたまりごとに鳴らす札（番号）
+        playsEl: null,      // その札の並びの入れ物
+        chunksAsked: false, // その行のかたまりの音を、もう用意させたか
         wholeJaEl: null     // まとめて 1 行の日本語
       };
       state.rows.push(row);
@@ -521,6 +530,7 @@
     row.wholeJaEl = li.querySelector('.listen-ja');
 
     renderChunkElements(row, li.querySelector('.listen-chunks'));
+    renderPlayElements(row, li.querySelector('.listen-plays'));
 
     // メモは「どこが聞き取りにくいか」のヒント。開いた行だけ見えるように
     // するのは CSS の仕事（ほかのモードの .note と同じ扱い）。
@@ -536,7 +546,7 @@
     // 読み上げが使えない端末ではボタンごと隠す（押しても鳴らないものを出さない）
     // 読み上げが使えない端末では 🔈 を出さない。**ただし AI の音声を使うなら出す**
     // （端末に声が入っていなくても、しまってある音なら鳴らせる）
-    if (row.speakEl && !state.speechOK && !aiOn()) row.speakEl.hidden = true;
+    if (row.speakEl && !canSpeak()) row.speakEl.hidden = true;
 
     renderStar(row);
     renderShown(row);
@@ -588,6 +598,42 @@
   }
 
   /**
+   * かたまりごとに鳴らす札を並べる。
+   *
+   * ・札は**かたまりと同じ数**だけ作り、出していないぶんは `hidden` で畳む。
+   *   作り直さず畳むだけなので、押している途中に札がちらつかない。
+   *   畳んだ札は読み上げにも Tab にも出てこないので、**残りの数は漏れない。**
+   * ・**かたまりが 1 つの文では出さない**（左の 🔈 とまったく同じものになる）。
+   * ・札に書くのは番号だけ。英文をもう一度書くと行がうるさくなるので、
+   *   どのかたまりかは `aria-label` と、触れたときの下線（`.is-cued`）で出す。
+   */
+  function renderPlayElements(row, box) {
+    row.playEls = [];
+    row.playsEl = box || null;
+    if (!box) return;
+
+    // 札だけ消す（先頭の「かたまり」の字は index.html にある飾りなので残す）
+    var olds = box.querySelectorAll('.listen-play'), i;
+    for (i = 0; i < olds.length; i++) box.removeChild(olds[i]);
+
+    box.hidden = true;
+    if (row.en.length < 2) return;
+
+    for (i = 0; i < row.en.length; i++) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'listen-play';
+      b.setAttribute('data-i', String(i));
+      // 番号だけでは何の番号か分からないので、読み上げには中身まで言わせる
+      b.setAttribute('aria-label', (i + 1) + 'つめ「' + row.en[i] + '」だけ鳴らす');
+      b.textContent = String(i + 1);
+      b.hidden = true;
+      box.appendChild(b);
+      row.playEls.push(b);
+    }
+  }
+
+  /**
    * いま何かたまりまで出しているかを画面に当てる。
    *
    * ・出したぶんは `.is-shown`（ぼかしを外す）
@@ -608,6 +654,13 @@
       if (row.chunkJaEls[i]) {
         row.chunkJaEls[i].hidden = !(on && row.perChunk && row.ja[i]);
       }
+    }
+
+    // かたまりごとに鳴らす札も、**出したぶんだけ**出す。
+    // まだ出していないぶんまで出すと、札の数が「あと何かたまりか」の答えになる。
+    for (i = 0; i < row.playEls.length; i++) row.playEls[i].hidden = !(i < shown);
+    if (row.playsEl) {
+      row.playsEl.hidden = !(row.en.length > 1 && shown > 0 && canSpeak());
     }
 
     // かたまりの数が合わないときの 1 行は、**ぜんぶ出し終わってから**出す。
@@ -901,6 +954,8 @@
     renderShown(row);
     // ぜんぶ隠したら、その行の音も残さない
     if (!n && state.speakingId === row.id) stopSpeech();
+    // 畳んだかたまりに下線が残らないように（ぼけた字に線が引かれて見える）
+    if (!n && state.cuedEl && row.el && row.el.contains(state.cuedEl)) setCue(null);
   }
 
   /**
@@ -915,12 +970,20 @@
       if (row.shown >= total) {
         setShown(row, 0);
       } else {
+        var first = row.shown === 0;
         var next = row.shown + 1;
         setShown(row, next);
         // 「英語を表示したら自動で読み上げる」のときだけ、**出したかたまりだけ**鳴らす。
         // ここは行のクリックから**同期で**呼ばれている（あいだに setTimeout を
-        // 挟むと iOS では鳴らない）。
-        if (autoSpeakOn()) speakText(row.en[next - 1], row.id);
+        // 挟むと iOS では鳴らない）。AI の音声が入っていればそちらで鳴る
+        // （前は端末の声だけだった。同じ 🔈 で声が変わるのをやめた）。
+        if (autoSpeakOn()) speakChunk(row, next - 1);
+        // 開いた行のぶんだけ、押される前に用意しておく。
+        // **鳴らしたあとに回す**（先に置き場を叩くと、指の中の play() に間に合わない）。
+        // 毎回ためすのは、まるごとの先読みが走っている間は譲って帰るため
+        //（1 度でも用意できたら `chunksAsked` でもう行かない）。
+        if (first) refreshRowChunkMarks(row);
+        window.setTimeout(function () { prefetchRowChunks(row); }, 300);
       }
     }
     setCurrent(row);
@@ -1088,24 +1151,50 @@
     } catch (e) { return false; }
   }
 
-  /** その行の英文を**まるごと**鳴らす（🔈）。` / ` は外して渡す */
+  /** この端末で鳴らせるか。**端末に声が無くても、AI の音を使うなら鳴らせる** */
+  function canSpeak() {
+    return !!(state.speechOK || aiOn());
+  }
+
+  /** その行の英文を**まるごと**鳴らす（左の 🔈）。` / ` は外して渡す */
   function speakRow(row) {
     if (!row) return;
-    var text = speechText(row.en);
-    if (!trim(text)) return;
-    if (!aiOn()) { speakText(text, row.id); return; }
+    playPiece(row, speechText(row.en), -1);
+  }
+
+  /**
+   * **かたまり 1 つだけ**鳴らす（英文の下の番号の札）。
+   * 鍵は読ませた文そのものから作る（`keyFor`）ので、かたまりの音も別の音として
+   * しまわれ、**同じかたまりは 2 度作らせない**。まるごとのぶんとも取り違えない。
+   */
+  function speakChunk(row, i) {
+    if (!row || !isArr(row.en)) return;
+    if (!(i >= 0) || i >= row.en.length) return;
+    playPiece(row, row.en[i], i);
+  }
+
+  /**
+   * 鳴らす本体。`which` は **-1 が「まるごと」**、0 以上が「そのかたまり」
+   *（できた音の印をどこに付けるかだけに使う）。
+   * **タップから同期で呼ぶこと**（あいだに setTimeout を挟むと iOS で鳴らない）。
+   */
+  function playPiece(row, text, which) {
+    if (!row) return;
+    var say = trim(text);
+    if (!say) return;
+    if (!aiOn()) { speakText(say, row.id); return; }
 
     wakeAudio();   // **タップの中で**呼ぶ（あとからでは iOS で鳴らない）
     var store = audioStore();
-    var key = store.keyFor(text, 'ai');
+    var key = store.keyFor(say, 'ai');
     store.url(key).then(function (url) {
       if (url) { playUrl(url, row.id); return; }
-      makeAudio(row, text, key);
-    }, function () { speakText(text, row.id); });
+      makeAudio(row, say, key, which);
+    }, function () { speakText(say, row.id); });
   }
 
   /** 置き場に作らせて、しまって、鳴らす */
-  function makeAudio(row, text, key) {
+  function makeAudio(row, text, key, which) {
     var port = ttsPort();
     if (!port) {
       speakText(text, row.id);
@@ -1127,7 +1216,7 @@
       var store = audioStore();
       if (!store) { speakText(text, row.id); return; }
       store.put(key, res.blob).then(function () {
-        markAudio(row, true);
+        markMade(row, which, true);
         return store.url(key);
       }).then(function (url) {
         if (!url || !playUrl(url, row.id)) speakText(text, row.id);
@@ -1145,6 +1234,7 @@
 
   var PREFETCH_MAX = 20;    // 1 回に用意する上限。無料枠を知らないうちに使い切らない
   var PREFETCH_GAP = 400;   // 1 つ作るごとに置く間（置き場を叩き続けない）
+  var CHUNK_PREFETCH_MAX = 8;   // 1 行のかたまりで用意する上限（長い文でも打ち止め）
 
   /**
    * **押される前に作っておく。**
@@ -1163,7 +1253,34 @@
       row = state.rows[i];
       if (!row.el || row.el.hidden) continue;            // 絞り込みで消えている行はしない
       if (!trim(speechText(row.en))) continue;
-      queue.push(row);
+      queue.push({ row: row, text: speechText(row.en), which: -1 });
+    }
+    if (!queue.length) return;
+    state.prefetching = true;
+    runPrefetch(queue, 0, 0);
+  }
+
+  /**
+   * **開いた行のかたまりだけ**用意する。
+   *
+   * ぜんぶの行のかたまりを先に作ると、1 文が 3〜5 個に増えて無料枠がすぐ尽きる。
+   * かたまりを押すのは「その行を開いた人」だけなので、**開いたときに**その行のぶんを
+   * 作る。上限は 1 行ぶん（`CHUNK_PREFETCH_MAX`）で、まるごとの先読みが走っている
+   * あいだは譲る（置き場を二重に叩かない）。同じ行で二度は行かない。
+   */
+  function prefetchRowChunks(row) {
+    if (!row || !isArr(row.en) || row.en.length < 2) return;
+    if (row.chunksAsked) return;
+    if (!aiOn() || !ttsPort()) return;
+    if (window.navigator.onLine === false) return;
+    if (state.prefetching) return;
+    if (docEl.getAttribute('data-mode') !== 'listen') return;
+    row.chunksAsked = true;
+
+    var queue = [], i;
+    for (i = 0; i < row.en.length && queue.length < CHUNK_PREFETCH_MAX; i++) {
+      if (!trim(row.en[i])) continue;
+      queue.push({ row: row, text: row.en[i], which: i });
     }
     if (!queue.length) return;
     state.prefetching = true;
@@ -1172,19 +1289,24 @@
 
   function runPrefetch(queue, i, made) {
     var store = audioStore();
+    var chunks = !!(queue[0] && queue[0].which >= 0);
     var done = function () {
       state.prefetching = false;
-      if (made) flashStatus('音を ' + made + ' 文ぶん用意しました。押すとすぐ鳴ります。');
+      if (made) {
+        flashStatus('音を ' + made + (chunks ? ' かたまりぶん' : ' 文ぶん')
+          + '用意しました。押すとすぐ鳴ります。');
+      }
     };
     if (!store || i >= queue.length) { done(); return; }
 
-    var row = queue[i];
-    var text = speechText(row.en);
+    var job = queue[i];
+    var row = job.row;
+    var text = job.text;
     var key = store.keyFor(text, 'ai');
 
     store.get(key).then(function (rec) {
       if (rec) {                                   // もうある
-        markAudio(row, true);
+        markMade(row, job.which, true);
         runPrefetch(queue, i + 1, made);
         return;
       }
@@ -1197,7 +1319,7 @@
           return;
         }
         store.put(key, res.blob).then(function () {
-          markAudio(row, true);
+          markMade(row, job.which, true);
           window.setTimeout(function () { runPrefetch(queue, i + 1, made + 1); }, PREFETCH_GAP);
         }, function () { state.prefetching = false; });
       }, function () { state.prefetching = false; });
@@ -1211,18 +1333,58 @@
     else row.speakEl.classList.remove('has-audio');
   }
 
+  /** かたまりの札にも同じ印を付ける（押す前に「もう有る＝すぐ鳴る」が分かる） */
+  function markChunkAudio(row, i, on) {
+    var el = (row && isArr(row.playEls)) ? row.playEls[i] : null;
+    if (!el) return;
+    if (on) el.classList.add('has-audio');
+    else el.classList.remove('has-audio');
+  }
+
+  /** `which` は -1 が行の 🔈、0 以上がそのかたまりの札 */
+  function markMade(row, which, on) {
+    if (!(which >= 0)) markAudio(row, on);
+    else markChunkAudio(row, which, on);
+  }
+
+  /**
+   * その行のかたまりの札に印を付け直す。
+   * **開いた行だけ**にする（閉じた行の札は畳んであって見えないので、
+   * ぜんぶの行のかたまりを置き場に問い合わせると、ただ遅くなるだけ）。
+   */
+  function refreshRowChunkMarks(row) {
+    var store = audioStore();
+    if (!row || !isArr(row.playEls) || !row.playEls.length) return;
+    if (!store || !aiOn()) {
+      for (var k = 0; k < row.playEls.length; k++) markChunkAudio(row, k, false);
+      return;
+    }
+    for (var i = 0; i < row.playEls.length; i++) {
+      (function (idx) {
+        var t = trim(row.en[idx]);
+        if (!t) return;
+        store.get(store.keyFor(t, 'ai')).then(function (rec) { markChunkAudio(row, idx, !!rec); });
+      })(i);
+    }
+  }
+
   /** 画面に出ている行ぶんだけ、しまってある音があるか見て印を付ける */
   function refreshAudioMarks() {
     var store = audioStore();
     if (!store || !aiOn()) {
-      for (var j = 0; j < state.rows.length; j++) markAudio(state.rows[j], false);
+      for (var j = 0; j < state.rows.length; j++) {
+        markAudio(state.rows[j], false);
+        refreshRowChunkMarks(state.rows[j]);
+      }
       return;
     }
     for (var i = 0; i < state.rows.length; i++) {
       (function (row) {
         var text = speechText(row.en);
-        if (!trim(text)) return;
-        store.get(store.keyFor(text, 'ai')).then(function (rec) { markAudio(row, !!rec); });
+        if (trim(text)) {
+          store.get(store.keyFor(text, 'ai')).then(function (rec) { markAudio(row, !!rec); });
+        }
+        if (row.shown > 0) refreshRowChunkMarks(row);
       })(state.rows[i]);
     }
   }
@@ -1236,12 +1398,30 @@
     elAiBtn.classList.toggle('is-on', !!state.ai);
   }
 
+  /**
+   * 🔈 と かたまりの札 を、いま鳴らせるかどうかで出し入れする。
+   *
+   * 端末に声が 1 つも入っていない人は、行を作ったときに 🔈 が畳まれている。
+   * そこで AI の音声を入にすると**鳴らせるようになる**のに、作り直すまで
+   * 畳まれたままだった（CONTRACT には「付け直す」と書いてあるのに、
+   * `refreshAudioMarks` は印を付けるだけで出し入れはしていなかった）。
+   */
+  function refreshSpeakVisibility() {
+    var on = canSpeak();
+    for (var i = 0; i < state.rows.length; i++) {
+      var row = state.rows[i];
+      if (row.speakEl) row.speakEl.hidden = !on;
+      if (row.playsEl) row.playsEl.hidden = !(on && row.en.length > 1 && row.shown > 0);
+    }
+  }
+
   function toggleAi() {
     var d = sharedAi();
     state.ai = !(d ? d.aiVoice() : state.ai);
     if (d) d.setAiVoice(state.ai);
     saveUI();
     renderAiChip();
+    refreshSpeakVisibility();
     refreshAudioMarks();
     if (!state.ai) { flashStatus('端末の声に戻しました。'); return; }
     if (!audioStore()) {
@@ -1249,6 +1429,7 @@
       state.ai = false;
       saveUI();
       renderAiChip();
+      refreshSpeakVisibility();
       return;
     }
     if (!ttsPort()) {
@@ -1392,6 +1573,7 @@
 
   function render() {
     renderDeckSelect();   // 件数が変わるので、行より先に作り直す
+    setCue(null);         // 指す先ごと作り直すので、下線は持ち越さない
     buildRows();
     renderRows();
     applyFilter();
@@ -1637,6 +1819,17 @@
       return;
     }
 
+    // かたまりの札。**行を進めない**（.row-main の外にあるので、ここで返すだけ）
+    var playBtn = target.closest('.listen-play');
+    if (playBtn && elRows.contains(playBtn)) {
+      var rowP = rowFromEvent(playBtn);
+      if (rowP) {
+        speakChunk(rowP, parseInt(playBtn.getAttribute('data-i'), 10));
+        setCurrent(rowP);
+      }
+      return;
+    }
+
     var starBtn = target.closest('.row-star');
     if (starBtn && elRows.contains(starBtn)) {
       toggleStar(rowFromEvent(starBtn));
@@ -1661,6 +1854,31 @@
     if (mainBtn && elRows.contains(mainBtn)) {
       advanceRow(rowFromEvent(mainBtn));
     }
+  }
+
+  /**
+   * 札に触れている（指を置いた・Tab で止まった）あいだ、そのかたまりに下線を引く。
+   * 札は番号しか書いていないので、これが無いと「2 がどこなのか」を数えさせてしまう。
+   * 1 つしか光らせないので、覚えておくのは**いま光っているもの 1 つ**だけ。
+   */
+  function setCue(el) {
+    if (state.cuedEl === el) return;
+    if (state.cuedEl && state.cuedEl.classList) state.cuedEl.classList.remove('is-cued');
+    state.cuedEl = el || null;
+    if (state.cuedEl && state.cuedEl.classList) state.cuedEl.classList.add('is-cued');
+  }
+
+  function onRowsCue(e) {
+    var t = e.target;
+    var btn = (t && t.closest) ? t.closest('.listen-play') : null;
+    var on = (e.type === 'mouseover' || e.type === 'focusin');
+    if (!btn || !elRows || !elRows.contains(btn)) {
+      if (!on) setCue(null);
+      return;
+    }
+    var row = rowFromEvent(btn);
+    var i = parseInt(btn.getAttribute('data-i'), 10);
+    setCue(on && row && row.chunkEls ? row.chunkEls[i] : null);
   }
 
   function toggleStar(row) {
@@ -1695,7 +1913,14 @@
   }
 
   function bindEvents() {
-    if (elRows) elRows.addEventListener('click', onRowsClick);
+    if (elRows) {
+      elRows.addEventListener('click', onRowsClick);
+      // 札とかたまりの結び付け。委譲なので、行を作り直しても貼り直さなくてよい
+      elRows.addEventListener('mouseover', onRowsCue);
+      elRows.addEventListener('mouseout', onRowsCue);
+      elRows.addEventListener('focusin', onRowsCue);
+      elRows.addEventListener('focusout', onRowsCue);
+    }
 
     // AI の音声の入／切。**押した指の中で**音を目覚めさせておく（iOS 対策）
     if (elAiBtn) {
@@ -1885,7 +2110,7 @@
     return added;
   }
 
-  /** 画面を開いたとき（paraphrase.js の setMode から） */
+  /** 画面を開いたとき（mode.js の setMode から） */
   function onShow() {
     var first = !state.started;
     state.started = true;
@@ -1926,7 +2151,7 @@
 
   /**
    * プレイリストの一覧 `[{id, name, count}]`。取り込みの「入れ先」を
-   * 作るためのもの（`SUNKAN_CARDS.decks()` と同じ役目）。
+   * 作るためのもの（`SUNKAN_DRILL` の「セット」と同じ役目）。
    * **取り込み側に直に保存させない**ための口なので、読むだけ。
    */
   function deckList() {
@@ -1987,9 +2212,9 @@
     renderAiChip();
     renderDeckSelect();
 
-    // **自分で data-mode を見る。** paraphrase.js の init が setMode を呼ぶ時点では
+    // **自分で data-mode を見る。** mode.js の init が setMode を呼ぶ時点では
     // window.SUNKAN_LISTEN がまだ無いので、見ないとリスニングを最後に開いた
-    // 状態で起動したとき画面が空になる（phrase.js / cards.js と同じ）。
+    // 状態で起動したとき画面が空になる（phrase.js と同じ）。
     if (docEl.getAttribute('data-mode') === 'listen') onShow();
   }
 
